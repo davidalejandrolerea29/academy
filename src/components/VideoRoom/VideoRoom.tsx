@@ -153,26 +153,28 @@ const VideoRoom: React.FC = () => {
         <JitsiMeeting
           domain="meet.jit.si"
           roomName={`secure-${room.id}`}
-          configOverwrite={{
-            startWithAudioMuted: true,
-            startWithVideoMuted: false,
-            prejoinPageEnabled: false,
-            disableDeepLinking: true
-          }}
+      configOverwrite={{
+  startWithAudioMuted: true,
+  startWithVideoMuted: true,
+  prejoinPageEnabled: false,
+  disableInviteFunctions: true,
+  enableWelcomePage: false,
+  requireDisplayName: false,
+  disableDeepLinking: true
+}}
+
           interfaceConfigOverwrite={{
             TOOLBAR_BUTTONS: [
-              'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
-              'fodeviceselection', 'hangup', 'chat', 'settings', 'raisehand',
-              'videoquality', 'filmstrip', 'tileview', 'download', 'help'
-            ],
+    'microphone', 'camera', 'raisehand', 'hangup', 'tileview'
+  ],
             SETTINGS_SECTIONS: ['devices', 'language', 'moderator'],
             SHOW_JITSI_WATERMARK: false,
             DEFAULT_LANGUAGE: 'es'
           }}
-          userInfo={{
-            displayName: currentUser?.displayName || '',
-            email: currentUser?.email || '',
-          }}
+        userInfo={{
+  displayName: currentUser?.display_name || 'Invitado'
+}}
+
           getIFrameRef={(iframeRef) => { iframeRef.style.height = '100%'; }}
         />
       </div>

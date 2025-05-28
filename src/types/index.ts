@@ -15,7 +15,7 @@ export interface Room {
   teacherId: string;
   start_time: Date;
   end_time: Date;
-  isActive: boolean;
+  is_active: boolean;
   isRecording: boolean;
   participants: string[]; // User IDs of allowed participants
 }

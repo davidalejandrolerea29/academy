@@ -96,7 +96,7 @@ const RoomList: React.FC = () => {
     const { error } = await supabase
       .from('rooms')
       .update({
-        isActive: !currentStatus,
+        is_active: !currentStatus,
         lastUpdated: new Date()
       })
       .eq('id', roomId);
@@ -114,7 +114,7 @@ const RoomList: React.FC = () => {
     const now = new Date();
     if (room.end_time < now) return { label: 'Finalizada', color: 'gray', icon: CheckCircle };
     if (room.start_time > now) return { label: 'Programada', color: 'blue', icon: Calendar };
-    if (room.isActive) return { label: 'En curso', color: 'green', icon: Play };
+    if (room.is_active) return { label: 'En curso', color: 'green', icon: Play };
     return { label: 'Inactiva', color: 'red', icon: XCircle };
   };
 
@@ -189,7 +189,7 @@ const RoomList: React.FC = () => {
             const status = getRoomStatus(room);
             const StatusIcon = status.icon;
             const now = new Date();
-            const isLive = room.start_time <= now && room.end_time >= now && room.isActive;
+            const isLive = room.start_time <= now && room.end_time >= now && room.is_active;
             const teacher = teachers[room.teacherId];
             
             return (
@@ -253,15 +253,15 @@ const RoomList: React.FC = () => {
                     
                     {(currentUser?.role === 'admin' || (currentUser?.role === 'teacher' && room.teacherId === currentUser.id)) && (
                       <button
-                        onClick={() => toggleRoomActive(room.id, room.isActive)}
+                        onClick={() => toggleRoomActive(room.id, room.is_active)}
                         className={`ml-2 px-3 py-1 rounded-md text-sm ${
-                          room.isActive
+                          room.is_active
                             ? 'bg-red-100 text-red-700 hover:bg-red-200'
                             : 'bg-green-100 text-green-700 hover:bg-green-200'
                         }`}
                         disabled={room.end_time < now}
                       >
-                        {room.isActive ? 'Desactivar' : 'Activar'}
+                        {room.is_active ? 'Desactivar' : 'Activar'}
                       </button>
                     )}
                   </div>
