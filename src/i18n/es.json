@@ -1,0 +1,112 @@
+{
+  "common": {
+    "login": "Iniciar sesión",
+    "register": "Registrarse",
+    "logout": "Cerrar sesión",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "fullName": "Nombre completo",
+    "role": "Rol",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "search": "Buscar",
+    "loading": "Cargando...",
+    "error": "Error",
+    "success": "Éxito"
+  },
+  "roles": {
+    "admin": "Administrador",
+    "teacher": "Profesor",
+    "alumno": "Alumno"
+  },
+  "auth": {
+    "loginTitle": "Iniciar sesión",
+    "loginSubtitle": "Accede a tu cuenta de EduVídeo",
+    "registerTitle": "Crear una cuenta",
+    "registerSubtitle": "Regístrate en EduVídeo",
+    "alreadyHaveAccount": "¿Ya tienes una cuenta?",
+    "dontHaveAccount": "¿No tienes una cuenta?",
+    "forgotPassword": "¿Olvidaste tu contraseña?",
+    "loginButton": "Iniciar sesión",
+    "registerButton": "Registrarse",
+    "loginError": "Credenciales incorrectas. Por favor intenta de nuevo.",
+    "registerError": "Error al registrar. El correo ya puede estar en uso.",
+    "passwordMismatch": "Las contraseñas no coinciden",
+    "passwordTooShort": "La contraseña debe tener al menos 6 caracteres",
+    "fillAllFields": "Por favor completa todos los campos"
+  },
+  "rooms": {
+    "title": "Salas de Videollamada",
+    "create": "Crear Sala",
+    "viewRooms": "Ver Salas",
+    "noRooms": "No hay salas disponibles",
+    "upcoming": "Próximas",
+    "past": "Pasadas",
+    "all": "Todas",
+    "status": {
+      "active": "En curso",
+      "inactive": "Inactiva",
+      "scheduled": "Programada",
+      "finished": "Finalizada"
+    },
+    "actions": {
+      "join": "Unirse ahora",
+      "view": "Ver sala",
+      "activate": "Activar",
+      "deactivate": "Desactivar"
+    },
+    "form": {
+      "title": "Crear Nueva Sala",
+      "name": "Nombre de la Sala",
+      "description": "Descripción",
+      "date": "Fecha",
+      "startTime": "Hora de Inicio",
+      "endTime": "Hora de Finalización",
+      "selectStudents": "Seleccionar Alumnos",
+      "noStudents": "No hay alumnos disponibles",
+      "studentsSelected": "Seleccionados: {count} alumnos",
+      "createButton": "Crear Sala",
+      "creating": "Creando...",
+      "success": "Sala creada exitosamente",
+      "error": "Error al crear la sala",
+      "noPermission": "No tienes permisos para crear salas",
+      "fillRequired": "Por favor completa todos los campos requeridos",
+      "startBeforeEnd": "La hora de inicio debe ser anterior a la hora de finalización",
+      "noPastRooms": "No puedes crear salas en el pasado"
+    }
+  },
+  "videoRoom": {
+    "startRecording": "Iniciar Grabación",
+    "stopRecording": "Detener Grabación",
+    "roomNotFound": "Sala no encontrada",
+    "accessError": "No tienes permiso para entrar a esta sala"
+  },
+  "messaging": {
+    "title": "Mensajes",
+    "contacts": "Contactos",
+    "chat": "Chat",
+    "backToContacts": "Volver a contactos",
+    "noMessages": "No hay mensajes. ¡Envía el primero!",
+    "writeMessage": "Escribe un mensaje...",
+    "searchContacts": "Buscar contactos...",
+    "noContactsFound": "No se encontraron contactos",
+    "noContactsAvailable": "No hay contactos disponibles",
+    "selectContact": "Selecciona un contacto para comenzar a chatear"
+  },
+  "userManagement": {
+    "title": "Gestión de Usuarios",
+    "searchUsers": "Buscar usuarios...",
+    "allRoles": "Todos los roles",
+    "noUsersFound": "No se encontraron usuarios",
+    "user": "Usuario",
+    "email": "Correo Electrónico",
+    "role": "Rol",
+    "actions": "Acciones",
+    "deleteConfirm": "¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.",
+    "accessDenied": "Acceso Denegado",
+    "noPermission": "No tienes permisos para acceder a esta sección."
+  }
+}
