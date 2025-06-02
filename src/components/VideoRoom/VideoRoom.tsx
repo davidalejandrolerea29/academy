@@ -59,7 +59,7 @@ const VideoRoom: React.FC = () => {
           .update({
             participant_history: [...(room.participant_history || []), {
               userId: currentUser.id,
-              displayName: currentUser.displayName,
+              displayName: currentUser.display_name,
               joinTime: new Date().toISOString(),
               role: currentUser.role
             }]

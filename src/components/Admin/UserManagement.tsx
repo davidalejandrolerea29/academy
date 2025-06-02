@@ -24,7 +24,7 @@ const UserManagement: React.FC = () => {
   const [newUser, setNewUser] = useState({
     email: '',
     password: '',
-    displayName: '',
+    display_name: '',
     role: 'alumno' as UserRole,
   });
   const [createError, setCreateError] = useState<string | null>(null);
@@ -40,18 +40,23 @@ const UserManagement: React.FC = () => {
         console.error('Error fetching current user:', error);
         setCurrentUser(null);
       } else if (user) {
-        const { data, error: roleError } = await supabase
-          .from<User>('users')
-          .select('id, email, displayName, role')
-          .eq('id', user.id)
-          .single();
+       const { data, error: roleError } = await supabase
+  .from('usuarios')
+  .select('id, email, display_name, role')
+  .eq('id', user.id)
+  .maybeSingle(); 
 
-        if (roleError) {
-          console.error('Error fetching user role:', roleError);
-          setCurrentUser(null);
-        } else {
-          setCurrentUser(data);
-        }
+if (roleError) {
+  console.error('Error fetching user role:', roleError);
+  setCurrentUser(null);
+} else if (!data) {
+  console.warn('No existe el usuario en la tabla "user" con ese ID');
+  setCurrentUser(null);
+} else {
+  setCurrentUser(data as User);
+}
+
+
       }
     };
     fetchCurrentUser();
@@ -59,16 +64,13 @@ const UserManagement: React.FC = () => {
 
   useEffect(() => {
     const fetchUsers = async () => {
-      if (!currentUser || currentUser.role !== 'admin') {
-        setLoading(false);
-        return;
-      }
+      
 
       try {
         const { data, error } = await supabase
-          .from<User>('users')
-          .select('id, email, displayName, role')
-          .order('displayName', { ascending: true });
+          .from<User>('usuarios')
+          .select('id, email, display_name, role')
+          .order('display_name', { ascending: true });
 
         if (error) {
           console.error('Error fetching users:', error);
@@ -87,7 +89,7 @@ const UserManagement: React.FC = () => {
 
   const createUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || currentUser.role !== 'admin') return;
+   
 
     try {
       setCreateError(null);
@@ -101,10 +103,10 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       if (!data.user) throw new Error('No user returned');
 
-      const { error: insertError } = await supabase.from('users').insert({
+      const { error: insertError } = await supabase.from('usuarios').insert({
         id: data.user.id,
         email: newUser.email,
-        displayName: newUser.displayName,
+        display_name: newUser.display_name,
         role: newUser.role,
         created_at: new Date().toISOString(),
       });
@@ -116,12 +118,12 @@ const UserManagement: React.FC = () => {
         {
           id: data.user.id,
           email: newUser.email,
-          displayName: newUser.displayName,
+          display_name: newUser.display_name,
           role: newUser.role,
         },
       ]);
 
-      setNewUser({ email: '', password: '', displayName: '', role: 'alumno' });
+      setNewUser({ email: '', password: '', display_name: '', role: 'alumno' });
       setShowCreateForm(false);
     } catch (error: any) {
       console.error('Error creating user:', error);
@@ -136,11 +138,11 @@ const UserManagement: React.FC = () => {
   };
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
-    if (!currentUser || currentUser.role !== 'admin') return;
+
 
     try {
       const { error } = await supabase
-        .from('users')
+        .from('usuarios')
         .update({ role: newRole, updated_at: new Date().toISOString() })
         .eq('id', userId);
 
@@ -158,11 +160,11 @@ const UserManagement: React.FC = () => {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!currentUser || currentUser.role !== 'admin') return;
+   
     if (!confirm('¿Estás seguro de que deseas eliminar este usuario?')) return;
 
     try {
-      const { error } = await supabase.from('users').delete().eq('id', userId);
+      const { error } = await supabase.from('usuarios').delete().eq('id', userId);
       if (error) throw error;
 
       setUsers((prevUsers) => prevUsers.filter((user) => user.id !== userId));
@@ -195,7 +197,7 @@ const UserManagement: React.FC = () => {
 
   const filteredUsers = users.filter((user) => {
     const matchesSearch =
-      user.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesRole = roleFilter === 'all' || user.role === roleFilter;
@@ -203,18 +205,7 @@ const UserManagement: React.FC = () => {
     return matchesSearch && matchesRole;
   });
 
-  if (!currentUser || currentUser.role !== 'admin') {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-full p-8">
-        <div className="text-red-500 mb-4">
-          {/* Icono Shield no definido, puedes agregarlo o reemplazar */}
-          <Users className="h-16 w-16" />
-        </div>
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">Acceso Denegado</h1>
-        <p className="text-gray-600">No tienes permisos para acceder a esta sección.</p>
-      </div>
-    );
-  }
+
 
   if (loading) {
     return (
@@ -250,8 +241,8 @@ const UserManagement: React.FC = () => {
               <input
                 type="text"
                 required
-                value={newUser.displayName}
-                onChange={(e) => setNewUser((prev) => ({ ...prev, displayName: e.target.value }))}
+                value={newUser.display_name}
+                onChange={(e) => setNewUser((prev) => ({ ...prev, display_name: e.target.value }))}
                 className="w-full border rounded px-3 py-2"
                 placeholder="Juan Pérez"
               />
@@ -366,7 +357,7 @@ const UserManagement: React.FC = () => {
               >
                 <td className="py-3 px-4 flex items-center space-x-2">
                   <UserCircle className="w-6 h-6 text-gray-400" />
-                  <span>{user.displayName}</span>
+                  <span>{user.display_name}</span>
                 </td>
                 <td className="py-3 px-4">{user.email}</td>
                 <td className="py-3 px-4">

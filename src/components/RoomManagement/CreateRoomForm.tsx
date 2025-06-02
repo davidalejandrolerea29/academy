@@ -20,7 +20,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
   useEffect(() => {
     const fetchStudents = async () => {
       const { data, error } = await supabase
-        .from('user')
+        .from('usuarios')
         .select('*')
         .eq('role', 'alumno');
 

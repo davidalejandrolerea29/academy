@@ -23,7 +23,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
       if (!currentUser) return;
 
       const { data, error } = await supabase
-        .from('user')
+        .from('usuarios')
         .select('*')
         .neq('id', currentUser.id);
 
@@ -98,9 +98,9 @@ const ContactsList: React.FC<ContactsListProps> = ({
                 `}
               >
                 <div className="flex items-center">
-                  {contact.photoURL ? (
+                  {contact.photo_url ? (
                     <img
-                      src={contact.photoURL}
+                      src={contact.photo_url}
                       alt={contact.display_name}
                       className="w-10 h-10 rounded-full mr-3"
                     />

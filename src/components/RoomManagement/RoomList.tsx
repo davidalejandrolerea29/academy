@@ -29,9 +29,10 @@ const RoomList: React.FC = () => {
       let query = supabase.from('rooms').select('*').order('start_time', { ascending: true });
 
       if (currentUser.role === 'teacher') {
-        query = query.eq('teacherId', currentUser.id);
+        query = query.eq('teacher_id', currentUser.id);
       } else if (currentUser.role === 'alumno') {
-        query = query.contains('participants', [currentUser.id]);
+       query = query.filter('participants', 'ilike', `%${currentUser.id}%`);
+
       }
 
       const { data, error } = await query;
@@ -74,7 +75,7 @@ const RoomList: React.FC = () => {
 
     const { data, error } = await supabase
       .from('user')
-      .select('id, displayName, email, role, photoURL')
+      .select('id, display_name, email, role, photo_url')
       .in('id', ids);
 
     if (error) {
@@ -83,9 +84,16 @@ const RoomList: React.FC = () => {
     }
 
     const result: Record<string, User> = {};
-    data.forEach((u) => {
-      result[u.id] = u;
-    });
+data.forEach((u) => {
+  result[u.id] = {
+    id: u.id,
+    display_name: u.display_name, // corregido aquí
+    email: u.email,
+    role: u.role,
+    photo_url: u.photo_url,
+  };
+});
+
 
     setTeachers(result);
   };
@@ -190,7 +198,7 @@ const RoomList: React.FC = () => {
             const StatusIcon = status.icon;
             const now = new Date();
             const isLive = room.start_time <= now && room.end_time >= now && room.is_active;
-            const teacher = teachers[room.teacherId];
+            const teacher = teachers[room.teacher_id];
             
             return (
               <div key={room.id} className="bg-white rounded-lg shadow overflow-hidden">
@@ -251,7 +259,7 @@ const RoomList: React.FC = () => {
                       </span>
                     )}
                     
-                    {(currentUser?.role === 'admin' || (currentUser?.role === 'teacher' && room.teacherId === currentUser.id)) && (
+                    {(currentUser?.role === 'admin' || (currentUser?.role === 'teacher' && room.teacher_id === currentUser.id)) && (
                       <button
                         onClick={() => toggleRoomActive(room.id, room.is_active)}
                         className={`ml-2 px-3 py-1 rounded-md text-sm ${

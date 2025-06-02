@@ -117,7 +117,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
     <div className="flex flex-col h-full">
       <div className="bg-white shadow-sm p-4 border-b">
         <h2 className="text-lg font-semibold text-gray-800">
-          {recipientData.displayName}
+          {recipientData.display_name}
         </h2>
         <span className="text-sm text-gray-500">
           {recipientData.role === 'teacher' ? 'Profesor' :

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Video, Lock, Mail, AlertCircle } from 'lucide-react';
+import logo from '../../assets/logo.png';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -57,13 +58,14 @@ useEffect(() => {
       <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow">
         <div className="text-center">
           <div className="flex justify-center">
-            <Video className="h-12 w-12 text-blue-500" />
+            <img src={logo} alt="Logo English New Path" className="h-20 w-20 object-contain" />
+
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
             Iniciar sesión
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            Accede a tu cuenta de EduVídeo
+           English New Path Academia de Inglés online
           </p>
         </div>
         

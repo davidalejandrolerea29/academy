@@ -5,25 +5,26 @@ export interface User {
   email: string;
   display_name: string;
   role: UserRole;
-  photoURL?: string;
+  photo_url?: string;
 }
 
 export interface Room {
   id: string;
   name: string;
   description: string;
-  teacherId: string;
+  teacher_id: string;
   start_time: Date;
   end_time: Date;
   is_active: boolean;
-  isRecording: boolean;
+  participant_history:string;
+  is_recording: boolean;
   participants: string[]; // User IDs of allowed participants
 }
 
 export interface Message {
   id: string;
-  senderId: string;
-  receiverId: string;
+  sender_id: string;
+  receiver_id: string;
   content: string;
   timestamp: Date;
   read: boolean;

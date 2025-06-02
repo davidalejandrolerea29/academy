@@ -31,7 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     try {
       const { data, error: insertError } = await supabase
-        .from('user')
+        .from('usuarios')
         .insert({
           email,
           password, // ⚠️ En producción, ¡nunca almacenes contraseñas sin hash!
@@ -49,7 +49,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: data.email,
         display_name: data.display_name,
         role: data.role,
-        photoURL: data.photoURL ?? undefined,
+        photo_url: data.photo_url ?? undefined,
       });
     } catch (err: any) {
       setError(err.message || 'Error during registration');
@@ -63,7 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     try {
       const { data, error: selectError } = await supabase
-        .from('user')
+        .from('usuarios')
         .select('*')
         .eq('email', email)
         .eq('password', password) // ⚠️ ¡No recomendado en producción!
@@ -80,7 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: data.email,
         display_name: data.display_name,
         role: data.role,
-        photoURL: data.photoURL ?? undefined,
+        photo_url: data.photo_url ?? undefined,
       });
     } catch (err: any) {
       setError(err.message || 'Error al iniciar sesión');

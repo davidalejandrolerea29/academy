@@ -10,6 +10,7 @@ import {
   X,
   UserCircle
 } from 'lucide-react';
+import logo from '../../assets/logo.png';
 
 const Layout: React.FC = () => {
   const { currentUser, logout } = useAuth();
@@ -57,32 +58,41 @@ const Layout: React.FC = () => {
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between p-4 border-b">
-            <h1 className="text-xl font-bold text-blue-600">EduVídeo</h1>
-            <button 
-              className="lg:hidden text-gray-500 hover:text-gray-700"
-              onClick={closeSidebar}
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
+       <div className="flex flex-col h-full">
+  <div className="flex flex-col items-center justify-center p-4 border-b text-center relative">
+    <img
+      src={logo}
+      alt="Logo English New Path"
+      className="h-16 w-16 object-contain mb-2"
+    />
+    <h1 className="text-sm font-semibold text-gray-700 leading-tight">
+      English New Path<br />Academia de Inglés online
+    </h1>
+    <button
+      className="absolute right-4 top-4 lg:hidden text-gray-500 hover:text-gray-700"
+      onClick={closeSidebar}
+    >
+      <X className="w-6 h-6" />
+    </button>
+  </div>
+
+
           
           {currentUser && (
             <>
               <div className="p-4 border-b">
                 <div className="flex items-center">
-                  {currentUser.photoURL ? (
+                  {currentUser.photo_url ? (
                     <img 
-                      src={currentUser.photoURL} 
-                      alt={currentUser.displayName}
+                      src={currentUser.photo_url} 
+                      alt={currentUser.display_name}
                       className="w-10 h-10 rounded-full mr-3"
                     />
                   ) : (
                     <UserCircle className="w-10 h-10 text-gray-400 mr-3" />
                   )}
                   <div>
-                    <div className="font-medium text-gray-800">{currentUser.displayName}</div>
+                    <div className="font-medium text-gray-800">{currentUser.display_name}</div>
                     <div className="text-sm text-gray-500">{getRoleLabel()}</div>
                   </div>
                 </div>
