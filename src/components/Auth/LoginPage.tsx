@@ -140,12 +140,7 @@ useEffect(() => {
             </button>
           </div>
           
-          <div className="text-center text-sm">
-            <span className="text-gray-600">¿No tienes una cuenta? </span>
-            <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
-              Regístrate
-            </Link>
-          </div>
+         
         </form>
       </div>
     </div>
