@@ -22,26 +22,24 @@ const RoomList: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming');
 
   useEffect(() => {
-    if (!currentUser) return;
+  if (!currentUser) return;
 
-    const fetchRooms = async () => {
-      setLoading(true);
-      let query = supabase.from('rooms').select('*').order('start_time', { ascending: true });
+  const fetchRooms = async () => {
+    setLoading(true);
 
-      if (currentUser.role === 'teacher') {
-        query = query.eq('teacher_id', currentUser.id);
-      } else if (currentUser.role === 'alumno') {
-       query = query.filter('participants', 'ilike', `%${currentUser.id}%`);
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/v1/rooms', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentUser.token}` // si usas token
+        }
+      });
 
+      if (!response.ok) {
+        throw new Error('Error al obtener las salas');
       }
 
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('Error fetching rooms:', error);
-        setLoading(false);
-        return;
-      }
+      const data = await response.json();
 
       const mappedRooms = data.map((room: any) => ({
         ...room,
@@ -52,23 +50,20 @@ const RoomList: React.FC = () => {
       setRooms(mappedRooms);
       setLoading(false);
 
-      const teacherIds = [...new Set(mappedRooms.map((r) => r.teacherId))];
+      const teacherIds = [...new Set(mappedRooms.map((r) => r.teacher_id))];
       fetchTeachers(teacherIds);
-    };
 
-    fetchRooms();
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
+      setLoading(false);
+    }
+  };
 
-    const channel = supabase
-      .channel('rooms-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, (payload) => {
-        fetchRooms();
-      })
-      .subscribe();
+  fetchRooms();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentUser]);
+  // puedes mantener el canal de Supabase si sigues usándolo para otras partes
+}, [currentUser]);
+
 
   const fetchTeachers = async (ids: string[]) => {
     if (ids.length === 0) return;

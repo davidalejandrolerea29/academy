@@ -65,8 +65,14 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
       setLoading(true);
       setError(null);
 
-      const { error: insertError } = await supabase.from('rooms').insert([
-        {
+      const response = await fetch('http://127.0.0.1:8000/api/v1/rooms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Si usás auth con token, agregalo acá:
+          // 'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
           name,
           description,
           teacher_id: currentUser.id,
@@ -76,12 +82,14 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
           is_recording: false,
           participants: selectedStudents,
           created_at: new Date().toISOString(),
-        },
-      ]);
+        }),
+      });
 
-      if (insertError) {
-        console.error('Error creating room:', insertError.message);
-        setError('Error al crear la sala');
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error('Error al crear sala:', result);
+        setError(result.message || 'Error al crear la sala');
         return;
       }
 
