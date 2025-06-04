@@ -160,7 +160,9 @@ const VideoRoom: React.FC = () => {
   disableInviteFunctions: true,
   enableWelcomePage: false,
   requireDisplayName: false,
-  disableDeepLinking: true
+  disableDeepLinking: true,
+  enableAuthentication: false,
+  enableUserRolesBasedOnToken: false,
 }}
 
           interfaceConfigOverwrite={{
@@ -172,6 +174,7 @@ const VideoRoom: React.FC = () => {
             DEFAULT_LANGUAGE: 'es'
           }}
         userInfo={{
+    email: currentUser?.email || '',
   displayName: currentUser?.display_name || 'Invitado'
 }}
 
