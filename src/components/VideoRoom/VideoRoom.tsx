@@ -39,7 +39,7 @@ const VideoRoom: React.FC = () => {
         };
 
         const canJoin =
-          currentUser.role === 'admin' ||
+          currentUser.role_description === 'Admin' ||
           room.teacher_id === currentUser.id ||
           room.participants?.includes(currentUser.id);
 
@@ -50,7 +50,7 @@ const VideoRoom: React.FC = () => {
         }
 
         setRoom(room);
-        setIsTeacher(currentUser.role === 'teacher' || currentUser.role === 'admin');
+        setIsTeacher(currentUser.role_description === 'teacher' || currentUser.role_description === 'Admin');
         setIsRecording(room.is_recording);
 
         // Agregar historial de participación

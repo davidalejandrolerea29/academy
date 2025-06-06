@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import { User, UserRole } from '../types';
 
 interface AuthContextType {
@@ -12,7 +11,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -20,6 +18,8 @@ export const useAuth = () => {
   }
   return context;
 };
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -30,29 +30,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     setError(null);
     try {
-      const { data, error: insertError } = await supabase
-        .from('usuarios')
-        .insert({
+      const response = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
           email,
-          password, // ⚠️ En producción, ¡nunca almacenes contraseñas sin hash!
-          display_name: displayName,
+          password,
+          name: displayName,
           role,
-          created_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      setCurrentUser({
-        id: data.id,
-        email: data.email,
-        display_name: data.display_name,
-        role: data.role,
-        photo_url: data.photo_url ?? undefined,
+        }),
       });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Error al registrarse');
+      }
+
+      const { access_token, user } = data;
+      localStorage.setItem('token', access_token);
+
+     setCurrentUser({
+  id: user.id,
+  email: user.email,
+  display_name: user.name ?? '',
+  role_id: user.role_id,
+  role_description: user.role_description, // Sin fallback
+ // photo_url: user.photo_url ?? undefined,
+});
+
     } catch (err: any) {
-      setError(err.message || 'Error during registration');
+      setError(err.message || 'Error al registrarse');
     } finally {
       setLoading(false);
     }
@@ -62,26 +73,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     setError(null);
     try {
-      const { data, error: selectError } = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('email', email)
-        .eq('password', password) // ⚠️ ¡No recomendado en producción!
-        .maybeSingle();
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+    
+      const data = await response.json();
 
-      if (selectError) throw selectError;
-
-      if (!data) {
-        throw new Error('Usuario o contraseña incorrectos');
+      if (!response.ok) {
+        throw new Error(data.message || 'Error al iniciar sesión');
       }
 
+      const { access_token, user } = data;
+      localStorage.setItem('token', access_token);
+      console.log('respuesta de la api', response)
       setCurrentUser({
-        id: data.id,
-        email: data.email,
-        display_name: data.display_name,
-        role: data.role,
-        photo_url: data.photo_url ?? undefined,
-      });
+  id: user.id,
+  email: user.email,
+  display_name: user.name ?? '',
+  role_description: user.role_description,
+  role_id: user.role_id,
+  
+ // photo_url: user.photo_url ?? undefined,
+});
+
     } catch (err: any) {
       setError(err.message || 'Error al iniciar sesión');
       setCurrentUser(null);
@@ -91,8 +110,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      try {
+        await fetch(`${API_URL}/auth/logout`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+        });
+      } catch (e) {
+        console.warn('Error al cerrar sesión en el servidor', e);
+      }
+    }
+
+    localStorage.removeItem('token');
     setCurrentUser(null);
   };
+
+  const fetchCurrentUser = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Sesión inválida');
+      }
+
+      setCurrentUser({
+        id: data.id,
+        email: data.email,
+        display_name: data.name ?? '',
+        role_description: data.role ?? 'Admin',
+        role_id: data.role_id ?? 1,
+        //photo_url: data.photo_url ?? undefined,
+      });
+    } catch (e) {
+      localStorage.removeItem('token');
+      setCurrentUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCurrentUser();
+  }, []);
 
   return (
     <AuthContext.Provider

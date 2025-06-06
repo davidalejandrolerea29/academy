@@ -1,11 +1,13 @@
-export type UserRole = 'alumno' | 'teacher' | 'admin';
+export type UserRole = 'alumno' | 'teacher' | 'Admin';
 
 export interface User {
-  id: string;
+  id: number;
   email: string;
-  display_name: string;
-  role: UserRole;
-  photo_url?: string;
+  name: string;
+  role_description: string;
+  role_id: number;
+  // is_active: boolean;
+ // photo_url?: string;
 }
 
 export interface Room {

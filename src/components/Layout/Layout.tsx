@@ -32,11 +32,11 @@ const Layout: React.FC = () => {
 
   const getRoleLabel = () => {
     if (!currentUser) return '';
-    switch (currentUser.role) {
-      case 'admin': return 'Administrador';
+    switch (currentUser.role_description) {
+      case 'Admin': return 'Administrador';
       case 'teacher': return 'Profesor';
       case 'alumno': return 'Alumno';
-      default: return currentUser.role;
+      default: return currentUser.role_description;
     }
   };
 
@@ -127,7 +127,7 @@ const Layout: React.FC = () => {
                   Mensajes
                 </NavLink>
                 
-                {currentUser.role === 'admin' && (
+                {currentUser.role_description === 'Admin' && (
                   <NavLink
                     to="/admin/users"
                     className={({ isActive }) => `
