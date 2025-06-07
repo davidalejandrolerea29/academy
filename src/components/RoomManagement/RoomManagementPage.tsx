@@ -7,7 +7,8 @@ import { Plus, List, Video } from 'lucide-react';
 const RoomManagementPage: React.FC = () => {
   const { currentUser } = useAuth();
   const [view, setView] = useState<'list' | 'create'>('list');
-  const canCreateRooms = currentUser?.role === 'admin' || currentUser?.role === 'teacher';
+
+  const canCreateRooms = currentUser?.role_description === 'Admin' || currentUser?.role_description === 'Teacher';
 
   const handleRoomCreated = () => {
     setView('list');

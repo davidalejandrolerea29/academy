@@ -31,11 +31,18 @@ const UserManagement: React.FC = () => {
     role_id: 3
   });
   const [createError, setCreateError] = useState<string | null>(null);
-
+  const token = localStorage.getItem('token');
   const fetchUsers = async () => {
     setLoading(true);
+    
     try {
-      const response = await fetch(`${API_URL}/users`);
+      const response = await fetch(`${API_URL}/auth/users`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
       console.log('Response:', response);
       if (!response.ok) throw new Error('Error al obtener los usuarios');
       const data = await response.json();
@@ -58,7 +65,10 @@ const UserManagement: React.FC = () => {
     try {
       const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body:JSON.stringify({
   ...newUser,
   role_id: getRoleIdFromDescription(newUser.role_description),
@@ -90,7 +100,10 @@ const UserManagement: React.FC = () => {
     try {
       const response = await fetch(`${API_URL}/users/${userId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ role: newRole }),
       });
 
@@ -111,7 +124,11 @@ const UserManagement: React.FC = () => {
     if (!confirm('¿Estás seguro de que deseas eliminar este usuario?')) return;
 
     try {
-      const response = await fetch(`${API_URL}/users/${userId}`, { method: 'DELETE' });
+      const response = await fetch(`${API_URL}/users/${userId}`, { method: 'DELETE',         
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        } });
       if (!response.ok) throw new Error('Error al eliminar el usuario');
 
       setUsers((prevUsers) => prevUsers.filter((user) => user.id !== userId));

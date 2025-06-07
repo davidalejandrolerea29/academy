@@ -4,6 +4,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types';
 import { Calendar, Clock, Users, Info } from 'lucide-react';
 
+const API_URL = import.meta.env.VITE_API_URL;
+const token = localStorage.getItem('token');
 const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated }) => {
   const { currentUser } = useAuth();
   const [name, setName] = useState('');
@@ -38,7 +40,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'teacher')) {
+    if (!currentUser || (currentUser.role_description !== 'Admin' && currentUser.role_description !== 'Teacher')) {
       setError('No tienes permisos para crear salas');
       return;
     }
@@ -65,12 +67,11 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
       setLoading(true);
       setError(null);
 
-      const response = await fetch('http://127.0.0.1:8000/api/v1/rooms', {
+      const response = await fetch(`${API_URL}/auth/rooms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // Si usás auth con token, agregalo acá:
-          // 'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           name,

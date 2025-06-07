@@ -14,6 +14,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 const RoomList: React.FC = () => {
   const { currentUser } = useAuth();
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -28,11 +30,15 @@ const RoomList: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/v1/rooms', {
+      const userId = localStorage.getItem('user_id');
+      const token = localStorage.getItem('token');
+
+      const response = await fetch(`${API_URL}/auth/rooms?user_id=${userId}`, {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentUser.token}` // si usas token
-        }
+          'Authorization': `Bearer ${token}`
+        },
       });
 
       if (!response.ok) {
@@ -58,6 +64,7 @@ const RoomList: React.FC = () => {
       setLoading(false);
     }
   };
+
 
   fetchRooms();
 
@@ -254,7 +261,7 @@ data.forEach((u) => {
                       </span>
                     )}
                     
-                    {(currentUser?.role === 'admin' || (currentUser?.role === 'teacher' && room.teacher_id === currentUser.id)) && (
+                    {(currentUser?.role_description === 'Admin' || (currentUser?.role_description === 'Teacher' && room.teacher_id === currentUser.id)) && (
                       <button
                         onClick={() => toggleRoomActive(room.id, room.is_active)}
                         className={`ml-2 px-3 py-1 rounded-md text-sm ${

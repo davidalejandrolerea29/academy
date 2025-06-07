@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../lib/supabase'; // ajusta según tu ruta
+import echo from '../../config-reverb/echo'; // ruta a tu echo.js
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Message, User } from '../../types';
 import { Send, Clock } from 'lucide-react';
@@ -16,9 +17,13 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Calculamos roomId para el canal Laravel Echo (por ejemplo con ambos IDs ordenados)
+  const roomId = currentUser && recipientId ? [currentUser.id, recipientId].sort().join('-') : null;
+
   useEffect(() => {
     if (!currentUser?.id || !recipientId) return;
 
+    // Cargar mensajes iniciales con Supabase
     const fetchMessages = async () => {
       const { data, error } = await supabase
         .from('messages')
@@ -45,7 +50,8 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
 
     fetchMessages();
 
-    const channel = supabase
+    // SUSCRIPCIÓN Supabase para cambios en DB (opcional, si querés mantener)
+    const supabaseChannel = supabase
       .channel('chat')
       .on(
         'postgres_changes',
@@ -57,8 +63,6 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
             (msg.sender_id === recipientId && msg.receiver_id === currentUser.id)
           ) {
             setMessages((prev) => [...prev, msg]);
-
-            // Marcar como leído si es para mí
             if (msg.receiver_id === currentUser.id && !msg.read) {
               supabase.from('messages').update({ read: true }).eq('id', msg.id);
             }
@@ -67,10 +71,46 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
       )
       .subscribe();
 
+    // SUSCRIPCIÓN Laravel Echo a canal privado room.{roomId}
+    if (roomId) {
+       console.log("probandooo");
+      const channel = echo.private(`room.1`)
+        .subscribed(() => {
+          console.log("✅ Suscrito correctamente al canal privado room." + 1);
+        })
+        .listen('.messagecreated', (data: any) => {
+          console.log("🎯 Evento con .messagecreated:", data);
+        })
+        .listen('*', (eventName: any, data: any) => {
+          console.log("👀 Evento recibido con listen('*'):", eventName, data);
+        })
+        .listen('.messagecreated', (data: any) => {
+          console.log("sin datos solo lectura")
+          console.log('🔔 Mensaje recibido por Echo:', data);
+
+          // Solo agregar si el mensaje pertenece a esta conversación
+          const msg = data.message; // depende de cómo enviás el evento en backend
+          if (
+            (msg.sender_id === currentUser.id && msg.receiver_id === recipientId) ||
+            (msg.sender_id === recipientId && msg.receiver_id === currentUser.id)
+          ) {
+            setMessages((prev) => [...prev, msg]);
+          }
+        });
+
+      // Cleanup suscripción Echo
+      return () => {
+        channel.stopListening('.messagecreated');
+        echo.leave(`room.${roomId}`);
+        supabase.removeChannel(supabaseChannel);
+      };
+    }
+
+    // Cleanup si no hay roomId
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(supabaseChannel);
     };
-  }, [currentUser, recipientId]);
+  }, [currentUser, recipientId, roomId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -97,13 +137,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
     }
   };
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('es-ES', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  // ... el resto del render igual, sin cambios
 
   if (loading) {
     return (
@@ -147,7 +181,10 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
                   <div className="text-sm">{message.content}</div>
                   <div className="flex items-center justify-end mt-1">
                     <span className={`text-xs ${isOwnMessage ? 'text-blue-100' : 'text-gray-500'}`}>
-                      {formatTime(message.timestamp)}
+                      {new Date(message.timestamp).toLocaleTimeString('es-ES', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
                     </span>
                     {isOwnMessage && (
                       <span className="ml-1">

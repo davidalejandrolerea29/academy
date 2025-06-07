@@ -90,16 +90,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const { access_token, user } = data;
       localStorage.setItem('token', access_token);
+      localStorage.setItem('user_id', user.id);
       console.log('respuesta de la api', response)
       setCurrentUser({
-  id: user.id,
-  email: user.email,
-  display_name: user.name ?? '',
-  role_description: user.role_description,
-  role_id: user.role_id,
-  
- // photo_url: user.photo_url ?? undefined,
-});
+        id: user.id,
+        email: user.email,
+        display_name: user.name ?? '',
+        role_description: user.role_description,
+        role_id: user.role_id,
+        
+      // photo_url: user.photo_url ?? undefined,
+      });
 
     } catch (err: any) {
       setError(err.message || 'Error al iniciar sesión');
