@@ -317,7 +317,7 @@ const getRoleIdFromDescription = (role: UserRole): number => {
                       <option value="admin">Administrador</option>
                     </select>
                   ) : (
-                    getRoleLabel(user.role_description)
+                    getRoleLabel(roleFilter === 'all' ? user.role_description : roleFilter)
                   )}
                 </td>
                 <td className="py-3 px-4 text-center space-x-2">
