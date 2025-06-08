@@ -13,34 +13,50 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
-  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
   const [allStudents, setAllStudents] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+useEffect(() => {
+  const fetchStudents = async () => {
+    try {
+      const token = localStorage.getItem('token'); // o como manejes tu token
 
-  useEffect(() => {
-    const fetchStudents = async () => {
-      const { data, error } = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('role', 'alumno');
+      const response = await fetch(`${API_URL}/auth/users`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
 
-      if (error) {
-        console.error('Error fetching students:', error.message);
-        setError('Error al cargar los estudiantes');
-      } else {
-        setAllStudents(data as User[]);
+      if (!response.ok) {
+        throw new Error('Error al obtener los usuarios');
       }
-    };
 
-    fetchStudents();
-  }, []);
+      const users = await response.json();
+
+      // Filtrar solo los alumnos
+      const students = users.filter((user: any) => user.role?.description === 'Student');
+
+
+      setAllStudents(students);
+    } catch (error: any) {
+      console.error('Error fetching students:', error.message);
+      setError('Error al cargar los estudiantes');
+    }
+  };
+
+  fetchStudents();
+}, []);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!currentUser || (currentUser.role_description !== 'Admin' && currentUser.role_description !== 'Teacher')) {
+   if (!currentUser || (currentUser.role.description !== 'Admin' && currentUser.role.description !== 'Teacher')) {
+
       setError('No tienes permisos para crear salas');
       return;
     }
@@ -81,7 +97,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
           end_time: endDateTime.toISOString(),
           is_active: true,
           is_recording: false,
-          participants: selectedStudents,
+         participants: selectedStudents,
           created_at: new Date().toISOString(),
         }),
       });
@@ -114,13 +130,14 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
     }
   };
 
-  const handleStudentToggle = (studentId: string) => {
-    setSelectedStudents((prev) =>
-      prev.includes(studentId)
-        ? prev.filter((id) => id !== studentId)
-        : [...prev, studentId]
-    );
-  };
+const handleStudentToggle = (studentId: number) => {
+  setSelectedStudents((prev) =>
+    prev.includes(studentId)
+      ? prev.filter((id) => id !== studentId)
+      : [...prev, studentId]
+  );
+};
+
 
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-6">
@@ -244,12 +261,14 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                     onChange={() => handleStudentToggle(student.id)}
                     className="h-4 w-4 text-blue-600"
                   />
-                  <label
-                    htmlFor={`student-${student.id}`}
-                    className="ml-2 block text-sm text-gray-700 cursor-pointer"
-                  >
-                    {student.name}
-                  </label>
+                 <label
+  htmlFor={`student-${student.id}`}
+  className="ml-2 block text-sm text-gray-700 cursor-pointer"
+>
+  {student.name || 'Alumno sin nombre'}
+</label>
+
+
                 </div>
               ))
             )}

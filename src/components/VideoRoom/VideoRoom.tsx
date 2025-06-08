@@ -7,6 +7,8 @@ import { Room } from '../../types';
 import { Shield, Video, VideoOff } from 'lucide-react';
 
 const VideoRoom: React.FC = () => {
+  const API_URL = import.meta.env.VITE_API_URL;
+const token = localStorage.getItem('token');
   const { roomId } = useParams<{ roomId: string }>();
   const { currentUser } = useAuth();
   const [room, setRoom] = useState<Room | null>(null);
@@ -17,62 +19,84 @@ const VideoRoom: React.FC = () => {
 
   useEffect(() => {
     const fetchRoom = async () => {
-      if (!roomId || !currentUser) return;
+  if (!roomId || !currentUser) return;
 
-      try {
-        const { data, error: fetchError } = await supabase
-          .from('rooms')
-          .select('*')
-          .eq('id', roomId)
-          .single();
+  setLoading(true);
+  setError(null);
 
-        if (fetchError || !data) {
-          setError('La sala no existe');
-          setLoading(false);
-          return;
-        }
+  try {
+    const response = await fetch(`${API_URL}/auth/rooms?user_id=${currentUser.id}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,// asegúrate que currentUser tenga el token
+      },
+    });
 
-        const room: Room = {
-          ...data,
-          startTime: new Date(data.start_time),
-          endTime: new Date(data.end_time)
-        };
+    if (!response.ok) {
+      setError('No se pudo obtener la sala o no tienes permiso');
+      setLoading(false);
+      return;
+    }
 
-        const canJoin =
-          currentUser.role_description === 'Admin' ||
-          room.teacher_id === currentUser.id ||
-          room.participants?.includes(currentUser.id);
+    const rooms: Room[] = await response.json();
+    const roomData = rooms.find(r => r.id === roomId);
 
-        if (!canJoin) {
-          setError('No tienes permiso para entrar a esta sala');
-          setLoading(false);
-          return;
-        }
+    if (!roomData) {
+      setError('Sala no encontrada o no tienes permiso');
+      setLoading(false);
+      return;
+    }
 
-        setRoom(room);
-        setIsTeacher(currentUser.role_description === 'teacher' || currentUser.role_description === 'Admin');
-        setIsRecording(room.is_recording);
-
-        // Agregar historial de participación
-        await supabase
-          .from('rooms')
-          .update({
-            participant_history: [...(room.participant_history || []), {
-              userId: currentUser.id,
-              displayName: currentUser.display_name,
-              joinTime: new Date().toISOString(),
-              role: currentUser.role
-            }]
-          })
-          .eq('id', roomId);
-
-      } catch (err) {
-        console.error('Error fetching room:', err);
-        setError('Error al cargar la sala');
-      } finally {
-        setLoading(false);
-      }
+    const room: Room = {
+      ...roomData,
+      startTime: new Date(roomData.start_time),
+      endTime: new Date(roomData.end_time),
     };
+
+    const canJoin =
+      currentUser.role_description === 'Admin' ||
+      room.teacher_id === currentUser.id ||
+      room.participants?.includes(currentUser.id);
+
+    if (!canJoin) {
+      setError('No tienes permiso para entrar a esta sala');
+      setLoading(false);
+      return;
+    }
+
+    setRoom(room);
+    setIsTeacher(currentUser.role_description === 'teacher' || currentUser.role_description === 'Admin');
+    setIsRecording(room.is_recording);
+
+    // Si quieres agregar historial de participación, deberías hacer otra llamada POST o PUT
+    // Aquí depende de cómo tu backend soporte esa actualización.
+    // Ejemplo (si tu backend tiene endpoint para eso):
+
+    /*
+    await fetch(`${API_URL}/auth/rooms/${roomId}/participant-history`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentUser.token}`,
+      },
+      body: JSON.stringify({
+        userId: currentUser.id,
+        displayName: currentUser.display_name,
+        joinTime: new Date().toISOString(),
+        role: currentUser.role,
+      }),
+    });
+    */
+
+  } catch (err) {
+    console.error('Error fetching room:', err);
+    setError('Error al cargar la sala');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
     fetchRoom();
   }, [roomId, currentUser]);

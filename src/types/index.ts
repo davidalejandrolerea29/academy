@@ -24,10 +24,10 @@ export interface User {
 
 
 export interface Room {
-  id: string;
+  id: number;
   name: string;
   description: string;
-  teacher_id: string;
+  teacher_id: number;
   start_time: Date;
   end_time: Date;
   is_active: boolean;

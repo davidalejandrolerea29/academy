@@ -19,7 +19,7 @@ const API_URL = import.meta.env.VITE_API_URL;
 const RoomList: React.FC = () => {
   const { currentUser } = useAuth();
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [teachers, setTeachers] = useState<Record<string, User>>({});
+
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming');
 
@@ -28,9 +28,9 @@ const RoomList: React.FC = () => {
 
   const fetchRooms = async () => {
     setLoading(true);
-
     try {
-      const userId = localStorage.getItem('user_id');
+      const userId = 3
+      //currentUser?.id;
       const token = localStorage.getItem('token');
 
       const response = await fetch(`${API_URL}/auth/rooms?user_id=${userId}`, {
@@ -41,9 +41,7 @@ const RoomList: React.FC = () => {
         },
       });
 
-      if (!response.ok) {
-        throw new Error('Error al obtener las salas');
-      }
+      if (!response.ok) throw new Error('Error al obtener las salas');
 
       const data = await response.json();
 
@@ -54,54 +52,27 @@ const RoomList: React.FC = () => {
       }));
 
       setRooms(mappedRooms);
-      setLoading(false);
-
-      const teacherIds = [...new Set(mappedRooms.map((r) => r.teacher_id))];
-      fetchTeachers(teacherIds);
-
     } catch (error) {
       console.error('Error fetching rooms:', error);
+    } finally {
       setLoading(false);
     }
   };
 
-
   fetchRooms();
-
-  // puedes mantener el canal de Supabase si sigues usándolo para otras partes
+  console.log('los rooms', fetchRooms())
 }, [currentUser]);
 
 
-  const fetchTeachers = async (ids: string[]) => {
-    if (ids.length === 0) return;
 
-    const { data, error } = await supabase
-      .from('user')
-      .select('id, display_name, email, role, photo_url')
-      .in('id', ids);
-
-    if (error) {
-      console.error('Error fetching teachers:', error);
-      return;
-    }
-
-    const result: Record<string, User> = {};
-data.forEach((u) => {
-  result[u.id] = {
-    id: u.id,
-    display_name: u.display_name, // corregido aquí
-    email: u.email,
-    role: u.role,
-    photo_url: u.photo_url,
-  };
-});
+ 
 
 
-    setTeachers(result);
-  };
+   
+  
 
   const toggleRoomActive = async (roomId: string, currentStatus: boolean) => {
-    if (currentUser?.role !== 'admin' && currentUser?.role !== 'teacher') return;
+    if (currentUser?.role.description !== 'Admin' && currentUser?.role.description !== 'Teacher') return;
 
     const { error } = await supabase
       .from('rooms')
@@ -200,7 +171,7 @@ data.forEach((u) => {
             const StatusIcon = status.icon;
             const now = new Date();
             const isLive = room.start_time <= now && room.end_time >= now && room.is_active;
-            const teacher = teachers[room.teacher_id];
+           // const teacher = teachers[room.teacher_id];
             
             return (
               <div key={room.id} className="bg-white rounded-lg shadow overflow-hidden">
@@ -226,12 +197,15 @@ data.forEach((u) => {
                       <Clock className="w-4 h-4 mr-2" />
                       {formatTime(room.start_time)} - {formatTime(room.end_time)}
                     </div>
-                    {teacher && (
-                      <div className="flex items-center text-sm text-gray-500">
-                        <UserIcon className="w-4 h-4 mr-2" />
-                        {teacher.display_name}
-                      </div>
-                    )}
+                {room.teacher && (
+  <div className="flex items-center text-sm text-gray-500">
+    <UserIcon className="w-4 h-4 mr-2" />
+    {room.teacher.name}
+  </div>
+)}
+
+
+
                     <div className="flex items-center text-sm text-gray-500">
                       <UserIcon className="w-4 h-4 mr-2" />
                       {room.participants.length} participantes
