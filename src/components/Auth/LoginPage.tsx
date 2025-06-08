@@ -15,22 +15,22 @@ const LoginPage: React.FC = () => {
 
   // Redirigir cuando el usuario ya esté cargado y logueado
 useEffect(() => {
-  console.log('currentUser actualizado:', currentUser);
-  if (currentUser) {
-    switch(currentUser.role) {
-      case 'admin':
-        navigate('/admin');
-        break;
-      case 'teacher':
-      case 'alumno':
-        navigate('/rooms');
-        break;
-      default:
-        navigate('/');
-    }
+  if (!currentUser || !currentUser.role) return;
+
+  const role = currentUser.role.description;
+
+  switch (role) {
+    case 'Admin':
+      navigate('/admin');
+      break;
+    case 'Teacher':
+    case 'Student':
+      navigate('/rooms');
+      break;
+    default:
+      navigate('/');
   }
 }, [currentUser, navigate]);
-
 
 
   const handleSubmit = async (e: React.FormEvent) => {

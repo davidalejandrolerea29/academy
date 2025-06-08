@@ -10,7 +10,7 @@ import {
   Check,
   X,
 } from 'lucide-react';
-import { User, UserRole } from '../../types';
+import { User, UserRole, Role } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -21,15 +21,16 @@ const UserManagement: React.FC = () => {
   const [roleFilter, setRoleFilter] = useState<string | 'all'>('all');
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [editRole, setEditRole] = useState<UserRole>('alumno');
+  const [editRole, setEditRole] = useState<UserRole>('Teacher');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newUser, setNewUser] = useState({
-    email: '',
-    password: '',
-    name: '',
-    role_description: 'alumno' as UserRole,
-    role_id: 3
-  });
+  email: '',
+  password: '',
+  name: '',
+  role: 'Admin' as UserRole,
+  role_id: 1,
+});
+
   const [createError, setCreateError] = useState<string | null>(null);
   const token = localStorage.getItem('token');
   const fetchUsers = async () => {
@@ -69,10 +70,13 @@ const UserManagement: React.FC = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body:JSON.stringify({
-  ...newUser,
-  role_id: getRoleIdFromDescription(newUser.role_description),
+        body: JSON.stringify({
+  email: newUser.email,
+  password: newUser.password,
+  name: newUser.name,
+  role_id: newUser.role_id,
 }),
+
       });
 
       if (!response.ok) {
@@ -86,7 +90,7 @@ const UserManagement: React.FC = () => {
       }
 
       await fetchUsers();
-      setNewUser({ email: '', password: '', name: '', role_description: 'alumno' });
+      setNewUser({ email: '', password: '', name: '', role: 'Teacher', role_id: 3 });
       setShowCreateForm(false);
     } catch (error) {
       console.error('Error creating user:', error);
@@ -98,22 +102,33 @@ const UserManagement: React.FC = () => {
 
   const handleRoleChange = async (userId: number, newRole: UserRole) => {
     try {
-      const response = await fetch(`${API_URL}/users/${userId}`, {
+      const response = await fetch(`${API_URL}/auth/users/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ role: newRole }),
+       body: JSON.stringify({ role_id: getRoleIdFromDescription(newRole) }),
+
+
       });
 
       if (!response.ok) throw new Error('Error actualizando el rol');
 
-      setUsers((prevUsers) =>
-        prevUsers.map((user) =>
-          user.id === userId ? { ...user, role_description: newRole } : user
-        )
-      );
+    setUsers((prevUsers) =>
+  prevUsers.map((user) =>
+    user.id === userId
+      ? {
+          ...user,
+          role: {
+            ...user.role,
+            description: newRole,
+          },
+        }
+      : user
+  )
+);
+
       setEditingUser(null);
     } catch (error) {
       console.error('Error updating user role:', error);
@@ -124,7 +139,7 @@ const UserManagement: React.FC = () => {
     if (!confirm('¿Estás seguro de que deseas eliminar este usuario?')) return;
 
     try {
-      const response = await fetch(`${API_URL}/users/${userId}`, { method: 'DELETE',         
+      const response = await fetch(`${API_URL}/auth/users/${userId}`, { method: 'DELETE',         
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -137,25 +152,27 @@ const UserManagement: React.FC = () => {
     }
   };
 
-const getRoleLabel = (role: string) => {
+function getRoleLabel(role: string) {
   switch (role) {
-    case 'Teacher':
-      return 'Profesor';
-    case 'Alumno':
-      return 'Alumno';
     case 'Admin':
       return 'Administrador';
+    case 'Teacher':
+      return 'Profesor';
+    case 'Student':
+      return 'Alumno';
     default:
-      return role;
+      return role; // en caso de rol desconocido
   }
-};
+}
+
+
 const getRoleIdFromDescription = (role: UserRole): number => {
   switch (role) {
     case 'Admin':
       return 1;
-    case 'teacher':
+    case 'Teacher':
       return 2;
-    case 'alumno':
+    case 'Student':
       return 3;
     default:
       return 3;
@@ -170,7 +187,8 @@ const getRoleIdFromDescription = (role: UserRole): number => {
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesRole =
-      roleFilter === 'all' || user.role_description === roleFilter || roleFilter === 'all'
+  roleFilter === 'all' || user.role.description === roleFilter;
+
 
 
     return matchesSearch && matchesRole;
@@ -267,16 +285,18 @@ const getRoleIdFromDescription = (role: UserRole): number => {
             </button>
           )}
         </div>
-      <select
+     <select
   value={roleFilter}
-  onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
-  className="border px-3 py-2 rounded"
+  onChange={(e) => setRoleFilter(e.target.value)}
+  className="border rounded px-2 py-1"
 >
-  <option value="all">Todos los roles</option>
-  <option value="Alumno">Alumno</option>
-  <option value="Teacher">Profesor</option>
+  <option value="all">Todos</option>
   <option value="Admin">Administrador</option>
+  <option value="Teacher">Profesor</option>
+  <option value="Student">Alumno</option>
 </select>
+
+
 
       </div>
 
@@ -305,21 +325,24 @@ const getRoleIdFromDescription = (role: UserRole): number => {
                   <span>{user.name}</span>
                 </td>
                 <td className="py-3 px-4">{user.email}</td>
-                <td className="py-3 px-4">
-                  {editingUser?.id === user.id ? (
-                    <select
-                      value={editRole}
-                      onChange={(e) => setEditRole(e.target.value as UserRole)}
-                      className="border rounded px-2 py-1"
-                    >
-                      <option value="alumno">Alumno</option>
-                      <option value="teacher">Profesor</option>
-                      <option value="admin">Administrador</option>
-                    </select>
-                  ) : (
-                    getRoleLabel(roleFilter === 'all' ? user.role_description : roleFilter)
-                  )}
-                </td>
+               <td className="py-3 px-4">
+  {editingUser?.id === user.id ? (
+    <select
+      value={editRole}
+      onChange={(e) => setEditRole(e.target.value as UserRole)}
+      className="border rounded px-2 py-1"
+    >
+      <option value="Student">Alumno</option>
+      <option value="Teacher">Profesor</option>
+      <option value="Admin">Administrador</option>
+    </select>
+  ) : (
+  <span>{user.role ? getRoleLabel(user.role.description) : 'Sin rol'}</span>
+
+    
+  )}
+</td>
+
                 <td className="py-3 px-4 text-center space-x-2">
                   {editingUser?.id === user.id ? (
                     <>
@@ -341,7 +364,8 @@ const getRoleIdFromDescription = (role: UserRole): number => {
                       <button
                         onClick={() => {
                           setEditingUser(user);
-                          setEditRole(user.role_description);
+                         setEditRole(user.role.description as UserRole);
+
                         }}
                         className="text-blue-600 hover:text-blue-800"
                       >

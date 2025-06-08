@@ -30,9 +30,14 @@ const ProtectedRoute: React.FC<{
     return <Navigate to="/login" replace />;
   }
   
-  if (allowedRoles && !allowedRoles.includes(currentUser.role_description)) {
-    return <Navigate to="/rooms\" replace />;
+if (allowedRoles) {
+  const userRole = currentUser.role?.description?.toLowerCase();
+  if (!userRole || !allowedRoles.map(r => r.toLowerCase()).includes(userRole)) {
+    return <Navigate to="/rooms" replace />;
   }
+}
+
+
   
   return <>{children}</>;
 };
@@ -54,7 +59,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="/rooms\" replace />} />
+           <Route index element={<Navigate to="/rooms" replace />} />
             
             <Route 
               path="rooms" 
@@ -81,7 +86,7 @@ function App() {
             />
           </Route>
           
-          <Route path="*" element={<Navigate to="/rooms\" replace />} />
+          <Route path="*" element={<Navigate to="/rooms" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

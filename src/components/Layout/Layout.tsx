@@ -85,14 +85,14 @@ const Layout: React.FC = () => {
                   {currentUser.photo_url ? (
                     <img 
                       src={currentUser.photo_url} 
-                      alt={currentUser.display_name}
+                      alt={currentUser.name}
                       className="w-10 h-10 rounded-full mr-3"
                     />
                   ) : (
                     <UserCircle className="w-10 h-10 text-gray-400 mr-3" />
                   )}
                   <div>
-                    <div className="font-medium text-gray-800">{currentUser.display_name}</div>
+                    <div className="font-medium text-gray-800">{currentUser.name}</div>
                     <div className="text-sm text-gray-500">{getRoleLabel()}</div>
                   </div>
                 </div>

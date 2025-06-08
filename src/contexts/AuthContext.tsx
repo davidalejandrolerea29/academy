@@ -53,13 +53,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { access_token, user } = data;
       localStorage.setItem('token', access_token);
 
-     setCurrentUser({
+  setCurrentUser({
   id: user.id,
   email: user.email,
   name: user.name ?? '',
   role_id: user.role_id,
-  role_description: user.role_description, // Sin fallback
- // photo_url: user.photo_url ?? undefined,
+  role: {
+    id: user.role_id,
+    description: user.role_description as UserRole,
+    created_at: user.role_created_at ?? '',
+    updated_at: user.role_updated_at ?? ''
+  },
+  role_description: user.role_description,
 });
 
     } catch (err: any) {
@@ -95,11 +100,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   id: user.id,
   email: user.email,
   name: user.name ?? '',
-  role_description: user.role_description,
   role_id: user.role_id,
-  
- // photo_url: user.photo_url ?? undefined,
+  role: {
+    id: user.role_id,
+    description: user.role_description,
+    created_at: '', // o '2024-01-01' si querés evitar problemas
+    updated_at: '',
+  },
+  role_description: user.role_description,
 });
+
+
 
     } catch (err: any) {
       setError(err.message || 'Error al iniciar sesión');
@@ -147,14 +158,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error(data.message || 'Sesión inválida');
       }
 
-      setCurrentUser({
-        id: data.id,
-        email: data.email,
-        name: data.name ?? '',
-        role_description: data.role ?? 'Admin',
-        role_id: data.role_id ?? 1,
-        //photo_url: data.photo_url ?? undefined,
-      });
+ setCurrentUser({
+  id: data.id,
+  email: data.email,
+  name: data.name ?? '',
+  role_id: data.role_id,
+  role: {
+    id: data.role_id,
+    description: data.role_description as UserRole,
+    created_at: data.role_created_at ?? '',
+    updated_at: data.role_updated_at ?? ''
+  },
+  role_description: data.role_description,
+});
+
     } catch (e) {
       localStorage.removeItem('token');
       setCurrentUser(null);

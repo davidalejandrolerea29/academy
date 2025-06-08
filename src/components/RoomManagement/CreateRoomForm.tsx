@@ -248,7 +248,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                     htmlFor={`student-${student.id}`}
                     className="ml-2 block text-sm text-gray-700 cursor-pointer"
                   >
-                    {student.display_name} ({student.email})
+                    {student.name}
                   </label>
                 </div>
               ))
