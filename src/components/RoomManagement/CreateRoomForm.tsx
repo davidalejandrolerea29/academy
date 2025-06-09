@@ -54,7 +54,8 @@ useEffect(() => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
+    const token = localStorage.getItem('token');
+   console.log('se ejecuta esta wea')
    if (!currentUser || (currentUser.role.description !== 'Admin' && currentUser.role.description !== 'Teacher')) {
 
       setError('No tienes permisos para crear salas');
@@ -101,6 +102,8 @@ useEffect(() => {
           created_at: new Date().toISOString(),
         }),
       });
+
+
 
       const result = await response.json();
 

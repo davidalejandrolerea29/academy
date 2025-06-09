@@ -95,7 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const { access_token, user } = data;
       localStorage.setItem('token', access_token);
-      console.log('respuesta de la api', response)
+      
       setCurrentUser({
   id: user.id,
   email: user.email,
@@ -111,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 });
 
 
-
+console.log('respuesta de la api', data)
     } catch (err: any) {
       setError(err.message || 'Error al iniciar sesión');
       setCurrentUser(null);

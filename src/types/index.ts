@@ -46,7 +46,7 @@ export interface Message {
 }
 
 export interface RoomParticipant {
-  userId: string;
+  userId: number;
   displayName: string;
   role: UserRole;
   joinTime: Date;

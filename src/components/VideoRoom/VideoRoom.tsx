@@ -40,7 +40,8 @@ const token = localStorage.getItem('token');
     }
 
     const rooms: Room[] = await response.json();
-    const roomData = rooms.find(r => r.id === roomId);
+   const roomData = rooms.find(r => r.id === Number(roomId));
+
 
     if (!roomData) {
       setError('Sala no encontrada o no tienes permiso');
@@ -50,14 +51,15 @@ const token = localStorage.getItem('token');
 
     const room: Room = {
       ...roomData,
-      startTime: new Date(roomData.start_time),
-      endTime: new Date(roomData.end_time),
+      start_time: new Date(roomData.start_time),
+      end_time: new Date(roomData.end_time),
     };
 
     const canJoin =
       currentUser.role_description === 'Admin' ||
       room.teacher_id === currentUser.id ||
-      room.participants?.includes(currentUser.id);
+     room.participants?.includes(currentUser.id.toString());
+
 
     if (!canJoin) {
       setError('No tienes permiso para entrar a esta sala');
@@ -199,7 +201,7 @@ const token = localStorage.getItem('token');
           }}
         userInfo={{
     email: currentUser?.email || '',
-  displayName: currentUser?.display_name || 'Invitado'
+  displayName: currentUser?.name || 'Invitado'
 }}
 
           getIFrameRef={(iframeRef) => { iframeRef.style.height = '100%'; }}

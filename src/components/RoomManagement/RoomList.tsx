@@ -29,10 +29,9 @@ const RoomList: React.FC = () => {
   const fetchRooms = async () => {
     setLoading(true);
     try {
-      const userId = 3
-      //currentUser?.id;
+      const userId = currentUser.id;
       const token = localStorage.getItem('token');
-
+     console.log('estoviene en user id', userId)
       const response = await fetch(`${API_URL}/auth/rooms?user_id=${userId}`, {
         method: 'GET',
         headers: {
@@ -50,40 +49,51 @@ const RoomList: React.FC = () => {
         start_time: new Date(room.start_time),
         end_time: new Date(room.end_time),
       }));
-
+      console.log('mappedRooms', mappedRooms);
       setRooms(mappedRooms);
     } catch (error) {
       console.error('Error fetching rooms:', error);
     } finally {
       setLoading(false);
     }
+   
+
   };
 
   fetchRooms();
-  console.log('los rooms', fetchRooms())
+ 
 }, [currentUser]);
 
 
+const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
+  if (currentUser?.role.description !== 'Admin' && currentUser?.role.description !== 'Teacher') return;
 
- 
+  const token = localStorage.getItem('token');
 
-
-   
-  
-
-  const toggleRoomActive = async (roomId: string, currentStatus: boolean) => {
-    if (currentUser?.role.description !== 'Admin' && currentUser?.role.description !== 'Teacher') return;
-
-    const { error } = await supabase
-      .from('rooms')
-      .update({
+  try {
+    const response = await fetch(`${API_URL}/auth/rooms/${roomId}/toggle`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
         is_active: !currentStatus,
-        lastUpdated: new Date()
-      })
-      .eq('id', roomId);
+      }),
+    });
 
-    if (error) console.error('Error updating room:', error);
-  };
+    if (!response.ok) {
+      throw new Error('Error al actualizar la sala');
+    }
+
+    console.log(`Sala ${roomId} actualizada con éxito.`);
+    // Si querés refrescar las salas después de esto:
+ //   fetchRooms(); // Asegurate de que esta función esté accesible en el contexto
+  } catch (error) {
+    console.error('Error actualizando la sala:', error);
+  }
+};
+
 
   const formatDate = (date: Date) =>
     date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -197,10 +207,10 @@ const RoomList: React.FC = () => {
                       <Clock className="w-4 h-4 mr-2" />
                       {formatTime(room.start_time)} - {formatTime(room.end_time)}
                     </div>
-                {room.teacher && (
+                {room.teacher_id && (
   <div className="flex items-center text-sm text-gray-500">
     <UserIcon className="w-4 h-4 mr-2" />
-    {room.teacher.name}
+    {room.teacher_id}
   </div>
 )}
 
