@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { JitsiMeeting } from '@jitsi/react-sdk';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -17,91 +17,47 @@ const token = localStorage.getItem('token');
   const [isTeacher, setIsTeacher] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
 
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+
+
   useEffect(() => {
-    const fetchRoom = async () => {
-  if (!roomId || !currentUser) return;
+    if (!roomId || !currentUser) return;
 
-  setLoading(true);
-  setError(null);
+    const channel = window.Echo.join(`video-room.${roomId}`);
 
-  try {
-    const response = await fetch(`${API_URL}/auth/rooms?user_id=${currentUser.id}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,// asegúrate que currentUser tenga el token
-      },
+    channel.listen('.signal', async ({ from, data }) => {
+      if (from === currentUser.id) return;
+
+      console.log('Signal received:', data);
+
+      if (data.type === 'offer') {
+        await handleOffer(data);
+      } else if (data.type === 'answer') {
+        await handleAnswer(data);
+      } else if (data.type === 'candidate') {
+        await handleCandidate(data);
+      }
     });
 
-    if (!response.ok) {
-      setError('No se pudo obtener la sala o no tienes permiso');
-      setLoading(false);
-      return;
-    }
-
-    const rooms: Room[] = await response.json();
-   const roomData = rooms.find(r => r.id === Number(roomId));
-
-
-    if (!roomData) {
-      setError('Sala no encontrada o no tienes permiso');
-      setLoading(false);
-      return;
-    }
-
-    const room: Room = {
-      ...roomData,
-      start_time: new Date(roomData.start_time),
-      end_time: new Date(roomData.end_time),
+    return () => {
+      window.Echo.leave(`video-room.${roomId}`);
+    };
+  }, [roomId, currentUser]);
+  useEffect(() => {
+    const startMedia = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      setLocalStream(stream);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
     };
 
-    const canJoin =
-      currentUser.role_description === 'Admin' ||
-      room.teacher_id === currentUser.id ||
-     room.participants?.includes(currentUser.id.toString());
+    startMedia();
+  }, []);
 
-
-    if (!canJoin) {
-      setError('No tienes permiso para entrar a esta sala');
-      setLoading(false);
-      return;
-    }
-
-    setRoom(room);
-    setIsTeacher(currentUser.role_description === 'teacher' || currentUser.role_description === 'Admin');
-    setIsRecording(room.is_recording);
-
-    // Si quieres agregar historial de participación, deberías hacer otra llamada POST o PUT
-    // Aquí depende de cómo tu backend soporte esa actualización.
-    // Ejemplo (si tu backend tiene endpoint para eso):
-
-    /*
-    await fetch(`${API_URL}/auth/rooms/${roomId}/participant-history`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentUser.token}`,
-      },
-      body: JSON.stringify({
-        userId: currentUser.id,
-        displayName: currentUser.display_name,
-        joinTime: new Date().toISOString(),
-        role: currentUser.role,
-      }),
-    });
-    */
-
-  } catch (err) {
-    console.error('Error fetching room:', err);
-    setError('Error al cargar la sala');
-  } finally {
-    setLoading(false);
-  }
-};
-
-
-    fetchRoom();
-  }, [roomId, currentUser]);
 
   const toggleRecording = async () => {
     if (!room || !isTeacher) return;
@@ -119,6 +75,75 @@ const token = localStorage.getItem('token');
       console.error('Error toggling recording:', err);
     }
   };
+
+  const createConnection = async () => {
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  });
+
+  localStream?.getTracks().forEach((track) => pc.addTrack(track, localStream));
+
+  pc.ontrack = (event) => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = event.streams[0];
+    }
+  };
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendSignal({
+        type: 'candidate',
+        candidate: event.candidate,
+      });
+    }
+  };
+
+  setPeerConnection(pc);
+  return pc;
+};
+
+const sendSignal = (data: any) => {
+  window.Echo.connector.pusher.send_event(
+    'signal',
+    {
+      from: currentUser.id,
+      data,
+    },
+    `presence-video-room.${roomId}`
+  );
+};
+
+const startCall = async () => {
+  const pc = await createConnection();
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  sendSignal({ type: 'offer', sdp: offer.sdp });
+};
+
+const handleOffer = async (data: any) => {
+  const pc = await createConnection();
+  await pc.setRemoteDescription(new RTCSessionDescription(data));
+
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  sendSignal({ type: 'answer', sdp: answer.sdp });
+};
+
+const handleAnswer = async (data: any) => {
+  if (peerConnection) {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+  }
+};
+
+const handleCandidate = async (data: any) => {
+  if (peerConnection) {
+    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+  }
+};
+
 
   if (loading) {
     return (
@@ -147,67 +172,27 @@ const token = localStorage.getItem('token');
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      <div className="bg-white shadow-sm p-4 flex justify-between items-center">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-800">{room.name}</h1>
-          <p className="text-sm text-gray-500">{room.description}</p>
+    <div>
+      <div className="flex gap-4 p-4">
+        <div className="w-1/2">
+          <h2 className="text-lg font-bold">Tu cámara</h2>
+          <video ref={localVideoRef} autoPlay muted className="w-full rounded-lg" />
         </div>
-        {isTeacher && (
-          <button
-            onClick={toggleRecording}
-            className={`flex items-center px-4 py-2 rounded-md text-white ${
-              isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'
-            }`}
-          >
-            {isRecording ? (
-              <>
-                <VideoOff className="w-5 h-5 mr-2" />
-                Detener Grabación
-              </>
-            ) : (
-              <>
-                <Video className="w-5 h-5 mr-2" />
-                Iniciar Grabación
-              </>
-            )}
-          </button>
-        )}
+        <div className="w-1/2">
+          <h2 className="text-lg font-bold">Remoto</h2>
+          <video ref={remoteVideoRef} autoPlay className="w-full rounded-lg" />
+        </div>
       </div>
 
-      <div className="flex-1">
-        <JitsiMeeting
-          domain="meet.jit.si"
-          roomName={`secure-${room.id}`}
-      configOverwrite={{
-  startWithAudioMuted: true,
-  startWithVideoMuted: true,
-  prejoinPageEnabled: false,
-  disableInviteFunctions: true,
-  enableWelcomePage: false,
-  requireDisplayName: false,
-  disableDeepLinking: true,
-  enableAuthentication: false,
-  enableUserRolesBasedOnToken: false,
-}}
-
-          interfaceConfigOverwrite={{
-            TOOLBAR_BUTTONS: [
-    'microphone', 'camera', 'raisehand', 'hangup', 'tileview'
-  ],
-            SETTINGS_SECTIONS: ['devices', 'language', 'moderator'],
-            SHOW_JITSI_WATERMARK: false,
-            DEFAULT_LANGUAGE: 'es'
-          }}
-        userInfo={{
-    email: currentUser?.email || '',
-  displayName: currentUser?.name || 'Invitado'
-}}
-
-          getIFrameRef={(iframeRef) => { iframeRef.style.height = '100%'; }}
-        />
+      <div className="flex justify-center mt-4">
+        <button
+          onClick={startCall}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        >
+          Iniciar llamada
+        </button>
       </div>
-    </div>
+  </div>
   );
 };
 
