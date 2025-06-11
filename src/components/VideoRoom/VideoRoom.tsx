@@ -74,31 +74,7 @@ const VideoRoom: React.FC = () => {
         setIsTeacher(currentUser.role_description === 'teacher' || currentUser.role_description === 'Admin');
         setIsRecording(parsedRoom.is_recording);
 
-        // ✅ Generar JWT para JaaS
-        // Obtener JWT desde el servidor
-const jwtResponse = await fetch(`${API_URL}/auth/jitsi/token`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
-  },
-  body: JSON.stringify({
-    roomId: parsedRoom.name,
-    name: currentUser.name,
-    user_id: currentUser.id,
-    email: currentUser.email,
-  }),
-});
-
-if (!jwtResponse.ok) {
-  setError('Error al obtener el token de Jitsi');
-  setLoading(false);
-  return;
-}
-console.log('la respuesta', jwtResponse)
-
-const { token: serverJwtToken } = await jwtResponse.json();
-setJwtToken(serverJwtToken);
+      
 
 
       } catch (err) {
@@ -186,36 +162,34 @@ setJwtToken(serverJwtToken);
 
       <div className="flex-1">
         <JitsiMeeting
-          domain="8x8.vc"
-     roomName={`${import.meta.env.VITE_JAA_APP_ID}/${room.name}`}
+  domain="meet-engish.duckdns.org"
+  roomName={room.name}
+  configOverwrite={{
+    startWithAudioMuted: true,
+    startWithVideoMuted: true,
+    prejoinPageEnabled: false,
+    disableInviteFunctions: true,
+    enableWelcomePage: false,
+    requireDisplayName: false,
+    disableDeepLinking: true,
+    enableAuthentication: false,
+    enableUserRolesBasedOnToken: false, // si no usas JWT, esto va en false
+  }}
+  interfaceConfigOverwrite={{
+    TOOLBAR_BUTTONS: ['microphone', 'camera', 'raisehand', 'hangup', 'tileview'],
+    SETTINGS_SECTIONS: ['devices', 'language', 'moderator'],
+    SHOW_JITSI_WATERMARK: false,
+    DEFAULT_LANGUAGE: 'es',
+  }}
+  userInfo={{
+    email: currentUser?.email || '',
+    displayName: currentUser?.name || 'Invitado'
+  }}
+  getIFrameRef={(iframeRef) => {
+    iframeRef.style.height = '100%';
+  }}
+/>
 
-
-          jwt={jwtToken}
-          configOverwrite={{
-            startWithAudioMuted: true,
-            startWithVideoMuted: true,
-            prejoinPageEnabled: false,
-            disableInviteFunctions: true,
-            enableWelcomePage: false,
-            requireDisplayName: false,
-            disableDeepLinking: true,
-            enableAuthentication: false,
-            enableUserRolesBasedOnToken: true,
-          }}
-          interfaceConfigOverwrite={{
-            TOOLBAR_BUTTONS: ['microphone', 'camera', 'raisehand', 'hangup', 'tileview'],
-            SETTINGS_SECTIONS: ['devices', 'language', 'moderator'],
-            SHOW_JITSI_WATERMARK: false,
-            DEFAULT_LANGUAGE: 'es',
-          }}
-          userInfo={{
-            email: currentUser?.email || '',
-            displayName: currentUser?.name || 'Invitado'
-          }}
-          getIFrameRef={(iframeRef) => {
-            iframeRef.style.height = '100%';
-          }}
-        />
       </div>
     </div>
   );
