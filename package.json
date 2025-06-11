@@ -16,6 +16,7 @@
     "@supabase/supabase-js": "^2.49.8",
     "firebase": "^10.7.2",
     "i18next": "^23.8.2",
+    "jsonwebtoken": "^9.0.2",
     "laravel-echo": "^2.1.5",
     "lucide-react": "^0.344.0",
     "pusher-js": "^8.4.0",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
+    "@types/jsonwebtoken": "^9.0.9",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

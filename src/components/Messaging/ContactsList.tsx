@@ -1,47 +1,62 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase'; // Asegúrate de que esté bien importado
 import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types';
 import { Search, UserCircle } from 'lucide-react';
+import logo from '../../assets/logo.png';
 
 interface ContactsListProps {
-  onSelectContact: (userId: string, userData: User) => void;
-  selectedContactId: string | null;
+  onSelectContact: (userId: number, userData: User) => void;
+  selectedContactId: number | null;
 }
+
+const API_URL = import.meta.env.VITE_API_URL; // Cambia esta URL por la de tu backend
 
 const ContactsList: React.FC<ContactsListProps> = ({
   onSelectContact,
   selectedContactId,
 }) => {
-  const { currentUser } = useAuth();
+  const { currentUser } = useAuth(); // Asumo que token está disponible aquí
   const [contacts, setContacts] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const token = localStorage.getItem('token');
 
   useEffect(() => {
     const fetchContacts = async () => {
-      if (!currentUser) return;
+      if (!token) return;
 
-      const { data, error } = await supabase
-        .from('usuarios')
-        .select('*')
-        .neq('id', currentUser.id);
+      try {
+        const response = await fetch(`${API_URL}/auth/users`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        });
 
-      if (error) {
+        if (!response.ok) {
+          throw new Error('Error fetching contacts');
+        }
+
+        const data: User[] = await response.json();
+
+        // Filtrar para no incluir al usuario actual (si quieres)
+        const filteredData = data.filter((user) => user.id !== currentUser?.id);
+
+        setContacts(filteredData);
+      } catch (error) {
         console.error('Error fetching contacts:', error);
-      } else {
-        setContacts(data || []);
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     };
 
     fetchContacts();
-  }, [currentUser]);
+  }, [token, currentUser]);
 
   const filteredContacts = contacts.filter((contact) =>
-    contact.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    contact.email.toLowerCase().includes(searchTerm.toLowerCase())
+    contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    contact.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getRoleLabel = (role: string) => {
@@ -90,7 +105,8 @@ const ContactsList: React.FC<ContactsListProps> = ({
             {filteredContacts.map((contact) => (
               <li
                 key={contact.id}
-                onClick={() => onSelectContact(contact.id, contact)}
+               onClick={() => onSelectContact(contact.id, contact)}
+
                 className={`
                   p-4 border-b cursor-pointer transition-colors
                   hover:bg-gray-50
@@ -98,19 +114,19 @@ const ContactsList: React.FC<ContactsListProps> = ({
                 `}
               >
                 <div className="flex items-center">
-                  {contact.photo_url ? (
+                  {contact.name ? (
                     <img
-                      src={contact.photo_url}
-                      alt={contact.display_name}
-                      className="w-10 h-10 rounded-full mr-3"
-                    />
+    src={logo}
+    alt="Logo"
+    className="w-10 h-10 rounded-full mr-3"
+  />
                   ) : (
                     <UserCircle className="w-10 h-10 text-gray-400 mr-3" />
                   )}
                   <div>
-                    <h3 className="font-medium text-gray-800">{contact.display_name}</h3>
+                    <h3 className="font-medium text-gray-800">{contact.name}</h3>
                     <div className="flex space-x-2 text-sm text-gray-500">
-                      <span>{getRoleLabel(contact.role)}</span>
+                      <span>{getRoleLabel(contact.role_description)}</span>
                     </div>
                   </div>
                 </div>
