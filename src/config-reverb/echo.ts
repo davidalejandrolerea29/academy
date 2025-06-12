@@ -16,11 +16,11 @@ const echo = new Echo({
   broadcaster: 'reverb',
   key: 'sfnheugrsf0hhvj0k6oo',
   wsHost: 'english-meet.duckdns.org',
-  wsPort: 6001, // <- el puerto que estás utilizando en el backend
-  forceTLS: false, // <- false si NO estás bajo HTTPS
-  encrypted: false, // <- false si NO estás bajo HTTPS
+  wsPort: 443, // porque ya lo estás proxyando por Apache
+  forceTLS: true,
+  encrypted: true,
   disableStats: true,
-  enabledTransports: ['ws'], // <- que use ws
+  enabledTransports: ['wss'],
   authEndpoint: 'https://english-meet.duckdns.org/broadcasting/auth',
   auth: {
     headers: {
@@ -28,6 +28,7 @@ const echo = new Echo({
     }
   }
 });
+
 
 // Exportamos para usar en otras partes de la aplicación
 export default echo;
