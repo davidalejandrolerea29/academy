@@ -1,5 +1,6 @@
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
+
 const isSecure = window.location.protocol === 'https:';
 
 window.Pusher = Pusher;
@@ -11,18 +12,16 @@ if (!token) {
   console.warn('⚠️ No se encontró token en localStorage.');
 }
 
-// const token = rawToken.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
-const echo = new Echo({
+const echo = new Echo({ 
   broadcaster: 'reverb',
   key: 'sfnheugrsf0hhvj0k6oo',
-  wsHost: 'chocolate-loris-764280.hostingersite.com', // 👈 clave
-  wsPort: 8080,
-  wssPort: 8080,
-  forceTLS: true,      // 👈 activo si usas HTTPS
-  encrypted: true,     // 👈 igual
+  wsHost: 'english-meet.duckdns.org',
+  wsPort: 6001, // <- el puerto que estás utilizando en el backend
+  forceTLS: false, // <- false si NO estás bajo HTTPS
+  encrypted: false, // <- false si NO estás bajo HTTPS
   disableStats: true,
-  enabledTransports: ['wss'], // no uses wss si no hay SSL
-  authEndpoint: 'https://chocolate-loris-764280.hostingersite.com/broadcasting/auth',
+  enabledTransports: ['ws'], // <- que use ws
+  authEndpoint: 'https://english-meet.duckdns.org/broadcasting/auth',
   auth: {
     headers: {
       Authorization: `Bearer ${token}`
@@ -30,6 +29,6 @@ const echo = new Echo({
   }
 });
 
-
-
+// Exportamos para usar en otras partes de la aplicación
 export default echo;
+
