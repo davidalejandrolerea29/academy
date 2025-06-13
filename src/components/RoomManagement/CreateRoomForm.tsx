@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase'; // Asegúrate de tener esto configurado
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../contexts/AuthContext'; // Asumo que aquí tienes user y role
 import { User } from '../../types';
 import { Calendar, Clock, Users, Info } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL;
-const token = localStorage.getItem('token');
+
 const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated }) => {
-  const { currentUser } = useAuth();
+  const { currentUser } = useAuth(); // user con role, id, etc.
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState('');
@@ -18,46 +17,44 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-useEffect(() => {
-  const fetchStudents = async () => {
-    try {
-      const token = localStorage.getItem('token'); // o como manejes tu token
 
-      const response = await fetch(`${API_URL}/auth/users`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+  // Fetch estudiantes al montar componente
+  useEffect(() => {
+    const fetchStudents = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('No token available');
 
-      if (!response.ok) {
-        throw new Error('Error al obtener los usuarios');
+        const response = await fetch(`${API_URL}/auth/users`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Error al obtener los usuarios');
+        }
+
+        const users = await response.json();
+
+        // Filtrar solo estudiantes con rol 'Student'
+        const students = users.filter((user: any) => user.role?.description === 'Student');
+        setAllStudents(students);
+      } catch (error: any) {
+        console.error('Error fetching students:', error.message);
+        setError('Error al cargar los estudiantes');
       }
+    };
 
-      const users = await response.json();
-
-      // Filtrar solo los alumnos
-      const students = users.filter((user: any) => user.role?.description === 'Student');
-
-
-      setAllStudents(students);
-    } catch (error: any) {
-      console.error('Error fetching students:', error.message);
-      setError('Error al cargar los estudiantes');
-    }
-  };
-
-  fetchStudents();
-}, []);
-
+    fetchStudents();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
-   console.log('se ejecuta esta wea')
-   if (!currentUser || (currentUser.role.description !== 'Admin' && currentUser.role.description !== 'Teacher')) {
 
+    if (!currentUser || !['Admin', 'Teacher'].includes(currentUser.role.description)) {
       setError('No tienes permisos para crear salas');
       return;
     }
@@ -84,11 +81,14 @@ useEffect(() => {
       setLoading(true);
       setError(null);
 
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No token available');
+
       const response = await fetch(`${API_URL}/auth/rooms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           name,
@@ -98,17 +98,14 @@ useEffect(() => {
           end_time: endDateTime.toISOString(),
           is_active: true,
           is_recording: false,
-         participants: selectedStudents,
+          participants: selectedStudents,
           created_at: new Date().toISOString(),
         }),
       });
 
-
-
       const result = await response.json();
 
       if (!response.ok) {
-        console.error('Error al crear sala:', result);
         setError(result.message || 'Error al crear la sala');
         return;
       }
@@ -133,14 +130,13 @@ useEffect(() => {
     }
   };
 
-const handleStudentToggle = (studentId: number) => {
-  setSelectedStudents((prev) =>
-    prev.includes(studentId)
-      ? prev.filter((id) => id !== studentId)
-      : [...prev, studentId]
-  );
-};
-
+  const handleStudentToggle = (studentId: number) => {
+    setSelectedStudents((prev) =>
+      prev.includes(studentId)
+        ? prev.filter((id) => id !== studentId)
+        : [...prev, studentId]
+    );
+  };
 
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-6">
@@ -264,14 +260,12 @@ const handleStudentToggle = (studentId: number) => {
                     onChange={() => handleStudentToggle(student.id)}
                     className="h-4 w-4 text-blue-600"
                   />
-                 <label
-  htmlFor={`student-${student.id}`}
-  className="ml-2 block text-sm text-gray-700 cursor-pointer"
->
-  {student.name || 'Alumno sin nombre'}
-</label>
-
-
+                  <label
+                    htmlFor={`student-${student.id}`}
+                    className="ml-2 block text-sm text-gray-700 cursor-pointer"
+                  >
+                    {student.name || 'Alumno sin nombre'}
+                  </label>
                 </div>
               ))
             )}

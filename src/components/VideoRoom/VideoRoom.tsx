@@ -1,11 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { JitsiMeeting } from '@jitsi/react-sdk';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Room } from '../../types';
 import { Shield, Video, VideoOff } from 'lucide-react';
-
 
 const VideoRoom: React.FC = () => {
   const API_URL = import.meta.env.VITE_API_URL;
@@ -17,10 +15,7 @@ const VideoRoom: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isTeacher, setIsTeacher] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [jwtToken, setJwtToken] = useState<string | null>(null); // 👈 token para JaaS
-
-  const JAA_APP_ID = import.meta.env.VITE_JAA_APP_ID;
-  const JAA_APP_SECRET = import.meta.env.VITE_JAA_APP_SECRET;
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     const fetchRoom = async () => {
@@ -40,7 +35,6 @@ const VideoRoom: React.FC = () => {
 
         if (!response.ok) {
           setError('No se pudo obtener la sala o no tienes permiso');
-          setLoading(false);
           return;
         }
 
@@ -49,7 +43,6 @@ const VideoRoom: React.FC = () => {
 
         if (!roomData) {
           setError('Sala no encontrada o no tienes permiso');
-          setLoading(false);
           return;
         }
 
@@ -66,17 +59,12 @@ const VideoRoom: React.FC = () => {
 
         if (!canJoin) {
           setError('No tienes permiso para entrar a esta sala');
-          setLoading(false);
           return;
         }
 
         setRoom(parsedRoom);
         setIsTeacher(currentUser.role_description === 'teacher' || currentUser.role_description === 'Admin');
         setIsRecording(parsedRoom.is_recording);
-
-      
-
-
       } catch (err) {
         console.error('Error fetching room:', err);
         setError('Error al cargar la sala');
@@ -105,7 +93,7 @@ const VideoRoom: React.FC = () => {
     }
   };
 
-  if (loading || !jwtToken) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
@@ -161,35 +149,13 @@ const VideoRoom: React.FC = () => {
       </div>
 
       <div className="flex-1">
-        <JitsiMeeting
-  domain="meet-engish.duckdns.org"
-  roomName={room.name}
-  configOverwrite={{
-    startWithAudioMuted: true,
-    startWithVideoMuted: true,
-    prejoinPageEnabled: false,
-    disableInviteFunctions: true,
-    enableWelcomePage: false,
-    requireDisplayName: false,
-    disableDeepLinking: true,
-    enableAuthentication: false,
-    enableUserRolesBasedOnToken: false, // si no usas JWT, esto va en false
-  }}
-  interfaceConfigOverwrite={{
-    TOOLBAR_BUTTONS: ['microphone', 'camera', 'raisehand', 'hangup', 'tileview'],
-    SETTINGS_SECTIONS: ['devices', 'language', 'moderator'],
-    SHOW_JITSI_WATERMARK: false,
-    DEFAULT_LANGUAGE: 'es',
-  }}
-  userInfo={{
-    email: currentUser?.email || '',
-    displayName: currentUser?.name || 'Invitado'
-  }}
-  getIFrameRef={(iframeRef) => {
-    iframeRef.style.height = '100%';
-  }}
-/>
-
+        <iframe
+          ref={iframeRef}
+          src={`https://meet-english.daily.co/${room.name}?user_name=${encodeURIComponent(currentUser?.name || 'Invitado')}`}
+          allow="camera; microphone; fullscreen; speaker; display-capture"
+          style={{ width: '100%', height: '100%', border: '0' }}
+          title="Daily Video Call"
+        />
       </div>
     </div>
   );
