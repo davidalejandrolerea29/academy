@@ -5,11 +5,14 @@ import { useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Room } from '../../types';
-import { Shield, Video, VideoOff } from 'lucide-react';
+import { useMicVolume } from '../../hooks/useMicVolume'; // Ajustá el path según tu estructura
+
+import { Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle, MessageSquare, PhoneOff } from 'lucide-react';
 
 const VideoRoom: React.FC = () => {
   const API_URL = import.meta.env.VITE_API_URL;
 const token = localStorage.getItem('token');
+ 
   const { roomId } = useParams<{ roomId: string }>();
   const { currentUser } = useAuth();
   const [room, setRoom] = useState<Room | null>(null);
@@ -17,7 +20,8 @@ const token = localStorage.getItem('token');
   const [error, setError] = useState<string | null>(null);
   const [isTeacher, setIsTeacher] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-
+const [messages, setMessages] = useState<{ sender: string; text: string }[]>([]);
+const [chatInput, setChatInput] = useState('');
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 const [peerConnections, setPeerConnections] = useState<Record<string, RTCPeerConnection>>({});
@@ -28,6 +32,7 @@ const [participants, setParticipants] = useState<Record<string, { name: string }
 const [micEnabled, setMicEnabled] = useState(true);
 const [volume, setVolume] = useState(0);
 const [videoEnabled, setVideoEnabled] = useState(true);
+const volume2 = useMicVolume(localStream); // Usa tu referencia real del stream local
 
 const toggleVideo = () => {
   if (!localStream) return;
@@ -49,6 +54,56 @@ const toggleMic = () => {
   setMicEnabled(audioTrack.enabled);
 };
 
+const toggleScreenShare = async () => {
+  if (!localStream) return;
+
+  const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+
+  const screenTrack = screenStream.getVideoTracks()[0];
+  const sender = peerConnections[currentUser.id]?.getSenders().find(s => s.track?.kind === 'video');
+  sender?.replaceTrack(screenTrack);
+
+  screenTrack.onended = () => {
+    // Volver a cámara al terminar compartir
+    const videoTrack = localStream.getVideoTracks()[0];
+    sender?.replaceTrack(videoTrack);
+  };
+};
+const handleSendMessage = (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!chatInput.trim()) return;
+
+  const msg = { sender: currentUser.name, text: chatInput };
+  setMessages(prev => [...prev, msg]);
+  setChatInput('');
+
+  channel?.whisper('chat-message', msg);
+};
+
+useEffect(() => {
+  channel?.listenForWhisper('chat-message', (msg) => {
+    setMessages(prev => [...prev, msg]);
+  });
+}, [channel]);
+
+const endCall = () => {
+ 
+  localStream?.getTracks().forEach(track => track.stop());
+
+ 
+  Object.values(peerConnections).forEach(pc => pc.close());
+
+
+  setParticipants({});
+  setMessages([]);
+  setIsRecording(false);
+
+  
+  channel?.leave();
+
+
+  navigate('/rooms'); 
+};
 
 useEffect(() => {
   if (!localStream) return;
@@ -342,70 +397,123 @@ const handleCandidate = async (data: any) => {
   // }
 
   return (
-    <div>
-      <div className="flex gap-4 p-4">
-        <div className="w-1/2">
-          <h2 className="text-lg font-bold">Tu cámara</h2>
-          <video ref={localVideoRef} autoPlay muted className="w-full rounded-lg" />
-        </div>
-        <div className="w-1/2">
-          <h2 className="text-lg font-bold">Remoto</h2>
-          <video ref={remoteVideoRef} autoPlay className="w-full rounded-lg" />
-        </div>
+    <div className="flex h-screen bg-black text-white">
+      {/* Videollamada principal */}
+      <div className="flex flex-col flex-1 relative">
+
+        {/* Grid de videos */}
+       <div className="flex-1 flex items-center justify-center bg-gray-950">
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-6xl p-4">
+    
+    {/* Video local */}
+    <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
+      <video ref={localVideoRef} autoPlay muted className="w-full h-full object-cover" />
+      <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
+        Tú
       </div>
-
-      <div className="flex justify-center mt-4">
-        <button
-          onClick={startCall}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-        >
-          Iniciar llamada
-        </button>
-      </div>
-
-      <button
-        onClick={toggleMic}
-        className={`px-4 py-2 rounded ${
-          micEnabled ? 'bg-green-600' : 'bg-red-600'
-        } text-white`}
-      >
-        {micEnabled ? 'Mic ON' : 'Mic OFF'}
-      </button>
-      <button
-        onClick={toggleVideo}
-        className={`px-4 py-2 rounded ${
-          videoEnabled ? 'bg-green-600' : 'bg-red-600'
-        } text-white ml-2`}
-      >
-        {videoEnabled ? <Video size={16} /> : <VideoOff size={16} />} {/* iconos de lucide-react */}
-        {' '}
-        {videoEnabled ? 'Video ON' : 'Video OFF'}
-      </button>
-
-      <div className="volume-indicator" style={{ width: '100%', background: '#ddd', height: '10px', borderRadius: '5px' }}>
+       {micEnabled && (
+   <div className="absolute top-2 right-2 flex gap-[2px] items-end h-6">
+    {Array.from({ length: 5 }).map((_, i) => {
+      const level = (volume2 / 255) * 5;
+      const barHeight = i < level ? (i + 1) * 4 : 2;
+      return (
         <div
-          style={{
-            width: `${(volume / 255) * 100}%`,
-            height: '10px',
-            background: 'limegreen',
-            borderRadius: '5px',
-            transition: 'width 0.1s',
-          }}
-        />
-      </div>
+  key={i}
+  className="w-1 bg-white transition-all duration-100"
+  style={{ height: `${barHeight}px` }}
+/>
 
-      <div className="p-4">
-        <h2 className="font-bold">Participantes:</h2>
-        <ul className="list-disc ml-5">
-          {Object.entries(participants).map(([id, { name }]) => (
-            <li key={id}>{name}</li>
-          ))}
-        </ul>
-      </div>
-
-
+      );
+    })}
   </div>
+)}
+    </div>
+ 
+
+    {/* Videos remotos */}
+    {Object.entries(participants).map(([id, { name }]) => (
+      <div key={id} className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
+        <video autoPlay className="w-full h-full object-cover" />
+        <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
+          {name}
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
+
+        {/* Controles */}
+        <div className="flex justify-center gap-4 p-4 border-t border-gray-700 bg-black bg-opacity-80">
+          <button
+            onClick={toggleMic}
+            className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+          >
+            {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+          </button>
+
+          <button
+            onClick={toggleVideo}
+            className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+          >
+            {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
+          </button>
+
+          <button
+            onClick={toggleScreenShare}
+            className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+          >
+            <ScreenShare size={20} />
+          </button>
+
+          {isTeacher && (
+            <button
+              onClick={toggleRecording}
+              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+            >
+              <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
+            </button>
+          )}
+
+          <button
+            onClick={endCall}
+            className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+          >
+            <PhoneOff size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* Chat lateral */}
+      <div className="w-80 border-l border-gray-700 bg-gray-900 flex flex-col">
+        <div className="p-4 border-b border-gray-700 text-lg font-semibold flex items-center gap-2">
+          <MessageSquare size={20} /> Chat
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {messages.map((msg, idx) => (
+            <div key={idx} className="bg-gray-800 p-2 rounded">
+              <div className="text-xs text-gray-400">{msg.sender}</div>
+              <div className="text-sm">{msg.text}</div>
+            </div>
+          ))}
+        </div>
+        <form
+          onSubmit={handleSendMessage}
+          className="p-4 border-t border-gray-700 flex gap-2"
+        >
+          <input
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            className="flex-1 p-2 rounded bg-gray-800 text-white"
+            placeholder="Escribe un mensaje..."
+          />
+          <button type="submit" className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700">
+            Enviar
+          </button>
+        </form>
+      </div>
+    </div>
   );
 };
+
 
 export default VideoRoom;
