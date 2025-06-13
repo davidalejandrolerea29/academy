@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import echo from '../../config-reverb/echo'; // ruta a tu echo.js
+import { createEcho } from '../../config-reverb/echo'; // ruta correcta
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Message, User } from '../../types';
@@ -23,7 +23,8 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   useEffect(() => {
     if (!currentUser?.id || !recipientId) return;
 
-    // Cargar mensajes iniciales con Supabase
+    const echo = createEcho(currentUser.token); // ⚠️ Asegurate de tener el token en currentUser
+
     const fetchMessages = async () => {
       const { data, error } = await supabase
         .from('messages')
@@ -39,7 +40,6 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
       setMessages(data || []);
       setLoading(false);
 
-      // Marcar como leídos
       const unread = (data || []).filter(
         (msg) => msg.receiver_id === currentUser.id && !msg.read
       );
@@ -50,7 +50,6 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
 
     fetchMessages();
 
-    // SUSCRIPCIÓN Supabase para cambios en DB (opcional, si querés mantener)
     const supabaseChannel = supabase
       .channel('chat')
       .on(
@@ -71,25 +70,15 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
       )
       .subscribe();
 
-    // SUSCRIPCIÓN Laravel Echo a canal privado room.{roomId}
     if (roomId) {
-       console.log("probandooo");
-      const channel = echo.private(`room.1`)
+      const channel = echo
+        .private(`room.${roomId}`)
         .subscribed(() => {
-          console.log("✅ Suscrito correctamente al canal privado room." + 1);
+          console.log(`✅ Suscrito correctamente a room.${roomId}`);
         })
         .listen('.messagecreated', (data: any) => {
-          console.log("🎯 Evento con .messagecreated:", data);
-        })
-        .listen('*', (eventName: any, data: any) => {
-          console.log("👀 Evento recibido con listen('*'):", eventName, data);
-        })
-        .listen('.messagecreated', (data: any) => {
-          console.log("sin datos solo lectura")
           console.log('🔔 Mensaje recibido por Echo:', data);
-
-          // Solo agregar si el mensaje pertenece a esta conversación
-          const msg = data.message; // depende de cómo enviás el evento en backend
+          const msg = data.message;
           if (
             (msg.sender_id === currentUser.id && msg.receiver_id === recipientId) ||
             (msg.sender_id === recipientId && msg.receiver_id === currentUser.id)
@@ -98,7 +87,6 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
           }
         });
 
-      // Cleanup suscripción Echo
       return () => {
         channel.stopListening('.messagecreated');
         echo.leave(`room.${roomId}`);
@@ -106,11 +94,11 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
       };
     }
 
-    // Cleanup si no hay roomId
     return () => {
       supabase.removeChannel(supabaseChannel);
     };
   }, [currentUser, recipientId, roomId]);
+
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

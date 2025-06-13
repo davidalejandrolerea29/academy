@@ -16,6 +16,7 @@ export interface User {
   role_id: number;
   role: Role;
   role_description: string,
+  token: string;
  // photo_url?: string | null;
  // email_verified_at?: string | null;
   //created_at: string;

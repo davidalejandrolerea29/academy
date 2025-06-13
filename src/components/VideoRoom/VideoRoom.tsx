@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Echo from '../../config-reverb/echo'; // ruta a tu echo.js
+import { createEcho } from '../../config-reverb/echo'; // ruta correcta
 import { JitsiMeeting } from '@jitsi/react-sdk';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -89,7 +89,8 @@ useEffect(() => {
   console.log("current user", currentUser)
   if (!roomId || !currentUser) return;
 
-  const ch = Echo.join(`video-room.${roomId}`);
+ const echo = createEcho(currentUser.token); // o el token donde lo tengas guardado
+const ch = echo.join(`video-room.${roomId}`);
 console.log("canal ", ch)
   setChannel(ch);
  console.log("luego de asignar")
