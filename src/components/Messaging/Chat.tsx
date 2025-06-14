@@ -1,5 +1,8 @@
+// src/components/Messaging/Chat.tsx
+
 import React, { useState, useEffect, useRef } from 'react';
-import { createEcho } from '../../config-reverb/echo'; // ruta correcta
+import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService'; // ¡RUTA CORREGIDA!
+
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Message, User } from '../../types';
@@ -20,10 +23,10 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   // Calculamos roomId para el canal Laravel Echo (por ejemplo con ambos IDs ordenados)
   const roomId = currentUser && recipientId ? [currentUser.id, recipientId].sort().join('-') : null;
 
-  useEffect(() => {
+ useEffect(() => {
     if (!currentUser?.id || !recipientId) return;
 
-    const echo = createEcho(currentUser.token); // ⚠️ Asegurate de tener el token en currentUser
+    const reverbService = createReverbWebSocketService(currentUser.token); // Usa el nuevo servicio
 
     const fetchMessages = async () => {
       const { data, error } = await supabase
@@ -70,26 +73,46 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
       )
       .subscribe();
 
+    let channel: EchoChannel | null = null; // Declara el canal
+
     if (roomId) {
-      const channel = echo
-        .private(`room.${roomId}`)
-        .subscribed(() => {
-          console.log(`✅ Suscrito correctamente a room.${roomId}`);
+      // --- REEMPLAZO DE Echo POR ReverbWebSocketService ---
+      reverbService.private(`room.${roomId}`) // Usamos .private para canales privados
+        .then((chann: EchoChannel) => {
+          channel = chann; // Asigna el canal
+          console.log("Canal de chat obtenido:", channel);
+
+          channel.subscribed(() => {
+            console.log(`✅ Suscrito correctamente a room.${roomId}`);
+          });
+
+          channel.listen('.messagecreated', (data: any) => {
+            console.log('🔔 Mensaje recibido por ReverbWebSocketService:', data);
+            const msg = data.message; // Asumo que el payload es { message: { ... } }
+            if (
+              (msg.sender_id === currentUser.id && msg.receiver_id === recipientId) ||
+              (msg.sender_id === recipientId && msg.receiver_id === currentUser.id)
+            ) {
+              setMessages((prev) => [...prev, msg]);
+            }
+          });
+
+          channel.error((err: any) => {
+            console.error("❌ Error en canal de chat:", err);
+          });
         })
-        .listen('.messagecreated', (data: any) => {
-          console.log('🔔 Mensaje recibido por Echo:', data);
-          const msg = data.message;
-          if (
-            (msg.sender_id === currentUser.id && msg.receiver_id === recipientId) ||
-            (msg.sender_id === recipientId && msg.receiver_id === currentUser.id)
-          ) {
-            setMessages((prev) => [...prev, msg]);
-          }
+        .catch(error => {
+          console.error("❌ Error al unirse al canal de chat:", error);
+          channel = null; // Asegúrate de que el canal se limpie en caso de error
         });
+      // --- FIN DEL REEMPLAZO ---
 
       return () => {
-        channel.stopListening('.messagecreated');
-        echo.leave(`room.${roomId}`);
+        // Asegúrate de que `channel` esté definido antes de llamar a `stopListening` o `leave`
+        if (channel) {
+          channel.leave(); // Esto ahora desuscribirá del canal
+          // channel.stopListening('.messagecreated'); // Ya no es necesario con el `leave`
+        }
         supabase.removeChannel(supabaseChannel);
       };
     }
@@ -97,7 +120,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
     return () => {
       supabase.removeChannel(supabaseChannel);
     };
-  }, [currentUser, recipientId, roomId]);
+  }, [currentUser, recipientId, roomId]); // Dependencias del useEffect
 
 
   useEffect(() => {
