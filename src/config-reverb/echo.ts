@@ -16,9 +16,9 @@ export const createEcho = (token: string) => {
     key: 'sfnheugrsf0hhvj0k6oo',
     wsHost: 'english-meet.duckdns.org',
     wsPort: 6001,
-    forceTLS: true,
-    enabledTransports: ['wss'],
-    authEndpoint: 'https://english-meet.duckdns.org/broadcasting/auth',
+    forceTLS: false,
+    enabledTransports: ['ws'],
+    authEndpoint: 'http://127.0.0.1:6001/broadcasting/auth',
     auth: {
       headers: {
         Authorization: `Bearer ${token}`,
