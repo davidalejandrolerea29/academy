@@ -245,21 +245,24 @@ const VideoRoom: React.FC = () => {
 
   // `sendSignal` necesita acceder al `channel` para susurrar.
   // Ahora usará `channelRef.current`.
-  const sendSignal = useCallback((toId: string, data: any) => {
-    if (!channelRef.current) { // Usa channelRef.current
-      console.warn("Cannot send signal: channel is not ready.");
-      return;
-    }
-    channelRef.current.whisper('Signal', { // Usa channelRef.current
-      to: toId,
-      from: currentUser?.id,
-      data,
-    });
-  }, [currentUser?.id]); // `channelRef` no es una dependencia porque su `.current` no cambia la referencia del ref.
+  // ... (resto del código)
 
+// sendSignal - No deberíamos cambiarlo, parece bien
+const sendSignal = useCallback((toId: string, data: any) => {
+  if (!channelRef.current) {
+    console.warn("Cannot send signal: channel is not ready.");
+    return;
+  }
+  console.log(`[SIGNAL OUT] Sending ${data.type} to ${toId} from ${currentUser?.id}`);
+  channelRef.current.whisper('Signal', {
+    to: toId,
+    from: currentUser?.id,
+    data,
+  });
+}, [currentUser?.id]);
 
-  // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
-  useEffect(() => {
+// --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
+useEffect(() => {
     console.log("current user", currentUser);
     if (!roomId || !currentUser) {
         console.log("Faltan roomId o currentUser para unirse al canal.");
@@ -269,20 +272,19 @@ const VideoRoom: React.FC = () => {
         console.log("Esperando localStream para unirse al canal.");
         return;
     }
-    // ¡CLAVE! Ahora verificamos channelRef.current
     if (channelRef.current) {
         console.log("Ya existe un canal (en el ref), no se unirá de nuevo.");
         return;
     }
 
     const reverbService = createReverbWebSocketService(currentUser.token);
-    let currentChannelInstance: EchoChannel | null = null; // Para la limpieza
+    let currentChannelInstance: EchoChannel | null = null;
 
-    console.log("Intentando unirse al canal", `video-room.${roomId}`);
+    console.log(`Intentando unirse al canal video-room.${roomId}`);
     reverbService.join(`video-room.${roomId}`)
       .then((joinedChannel: EchoChannel) => {
         currentChannelInstance = joinedChannel;
-        channelRef.current = joinedChannel; // Asignamos el canal al ref
+        channelRef.current = joinedChannel;
 
         console.log("Canal obtenido y asignado a ref:", joinedChannel);
 
@@ -298,11 +300,12 @@ const VideoRoom: React.FC = () => {
 
         joinedChannel.error((err: any) => {
           console.error("❌ Error en canal de video-room:", err);
-          channelRef.current = null; // Limpiar el ref en caso de error
+          channelRef.current = null;
         });
 
+        // Handler for user-joined whispers
         joinedChannel.listenForWhisper('user-joined', async ({ id, name, videoEnabled: remoteVideoEnabled, micEnabled: remoteMicEnabled }: { id: string; name: string; videoEnabled?: boolean; micEnabled?: boolean }) => {
-          console.log('[user-joined] recibido:', { id, name });
+          console.log(`[user-joined] recibido de ${id} (mi ID: ${currentUser.id})`);
           if (id === currentUser.id) {
             console.log("Ignorando user-joined para el usuario actual.");
             return;
@@ -314,42 +317,51 @@ const VideoRoom: React.FC = () => {
               return prev;
             }
             const updated = { ...prev, [id]: { name, videoEnabled: remoteVideoEnabled, micEnabled: remoteMicEnabled } };
-            console.log('[user-joined] Añadiendo nuevo participante:', updated);
+            console.log(`[user-joined] Añadiendo nuevo participante ${name} (${id})`);
             return updated;
           });
 
-          // Usamos peerConnectionsRef.current para acceder y modificar
+          // Obtener o crear PeerConnection para este ID
           let pc = peerConnectionsRef.current[id];
           if (!pc) {
-              console.log(`Creando nueva PeerConnection para ${id}.`);
+              console.log(`[user-joined] Creando nueva PeerConnection para ${id}.`);
               pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-              peerConnectionsRef.current = { ...peerConnectionsRef.current, [id]: pc }; // Actualiza el ref
+              peerConnectionsRef.current = { ...peerConnectionsRef.current, [id]: pc };
           } else {
-              console.log(`PeerConnection con ${id} ya existe.`);
+              console.log(`[user-joined] PeerConnection con ${id} ya existe.`);
           }
 
+          // Añadir pistas locales al PeerConnection ANTES de crear ofertas/respuestas
           if (localStream) {
+            console.log(`[user-joined] Agregando tracks locales a PC de ${id}`);
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+          } else {
+              console.warn(`[user-joined] No localStream disponible para agregar tracks a PC de ${id}.`);
           }
 
+          // Configurar onicecandidate
           pc.onicecandidate = (event) => {
             if (event.candidate) {
+              console.log(`[ICE Candidate] Generado candidato para ${id}:`, event.candidate);
               sendSignal(id, { type: 'candidate', candidate: event.candidate });
             }
           };
 
+          // Configurar ontrack
           pc.ontrack = (event) => {
-            console.log(`[ontrack] Recibiendo stream de ${id}`, event.streams[0]);
+            console.log(`[ontrack] Recibiendo stream de ${id}, tracks:`, event.streams[0].getTracks().map(t => t.kind));
             setRemoteStreams(prev => ({ ...prev, [id]: event.streams[0] }));
           };
 
+          // Configurar onconnectionstatechange
           pc.onconnectionstatechange = () => {
+            console.log(`PeerConnection con ${id} estado: ${pc.connectionState}`);
             if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
               console.log(`RTC PeerConnection for ${id} disconnected or failed.`);
               pc.close();
               const newPeerConnections = { ...peerConnectionsRef.current };
               delete newPeerConnections[id];
-              peerConnectionsRef.current = newPeerConnections; // Actualiza el ref
+              peerConnectionsRef.current = newPeerConnections;
 
               setParticipants(prev => {
                 const copy = { ...prev };
@@ -365,6 +377,10 @@ const VideoRoom: React.FC = () => {
           };
 
           // Estrategia de SDP Offer/Answer: el que tenga el ID más bajo inicia la oferta
+          // U1 (ID 1) se une, luego U2 (ID 2) se une.
+          // Cuando U1 recibe user-joined de U2: 1 < 2 es TRUE, U1 envía oferta a U2.
+          // Cuando U2 recibe user-joined de U1: 2 < 1 es FALSE, U2 NO envía oferta.
+          // Esto es correcto. U2 debe esperar la oferta de U1.
           if (currentUser.id < parseInt(id)) {
               console.log(`[SDP Offer] ${currentUser.id} (local) es menor que ${id} (remoto), enviando oferta.`);
               try {
@@ -377,35 +393,41 @@ const VideoRoom: React.FC = () => {
           }
         });
 
+        // Handler for Signal whispers (SDP Offer/Answer/Candidate)
         joinedChannel.listenForWhisper('Signal', async ({ to, from, data }: { to: string; from: string; data: any }) => {
-          console.log('[Signal] recibido:', { to, from, data });
-          if (to !== currentUser.id) return;
+          console.log(`[SIGNAL IN] Received ${data.type} from ${from} (for me: ${to === currentUser.id})`);
+          if (to !== currentUser.id) return; // Si la señal no es para mí, la ignoramos
 
           let pc = peerConnectionsRef.current[from];
           if (!pc) {
-            console.warn(`Creando nueva PeerConnection para ${from} (señal recibida antes de user-joined o PC no existía).`);
+            console.warn(`[SIGNAL IN] Creando nueva PeerConnection para ${from} (señal recibida antes de user-joined o PC no existía).`);
             pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-            peerConnectionsRef.current = { ...peerConnectionsRef.current, [from]: pc }; // Actualiza el ref
+            peerConnectionsRef.current = { ...peerConnectionsRef.current, [from]: pc };
 
             if (localStream) {
+              console.log(`[SIGNAL IN] Agregando tracks locales a PC de ${from}.`);
               localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            } else {
+                console.warn(`[SIGNAL IN] No localStream disponible para agregar tracks a PC de ${from}.`);
             }
 
             pc.onicecandidate = (event) => {
               if (event.candidate) {
+                console.log(`[ICE Candidate] (Tardío) Generado candidato para ${from}:`, event.candidate);
                 sendSignal(from, { type: 'candidate', candidate: event.candidate });
               }
             };
             pc.ontrack = (event) => {
-              console.log(`[ontrack] Recibiendo stream (creado tarde) de ${from}`, event.streams[0]);
+              console.log(`[ontrack] (Tardío) Recibiendo stream de ${from}, tracks:`, event.streams[0].getTracks().map(t => t.kind));
               setRemoteStreams(p => ({ ...p, [from]: event.streams[0] }));
             };
             pc.onconnectionstatechange = () => {
+              console.log(`PeerConnection con ${from} (tardío) estado: ${pc.connectionState}`);
               if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
                 pc.close();
                 const newPeerConnections = { ...peerConnectionsRef.current };
                 delete newPeerConnections[from];
-                peerConnectionsRef.current = newPeerConnections; // Actualiza el ref
+                peerConnectionsRef.current = newPeerConnections;
                 setParticipants(p => { const copy = { ...p }; delete copy[from]; return copy; });
                 setRemoteStreams(p => { const copy = { ...p }; delete copy[from]; return copy; });
               }
@@ -415,30 +437,34 @@ const VideoRoom: React.FC = () => {
           try {
             switch (data.type) {
               case 'offer':
-                console.log(`[SDP Offer] Recibida oferta de ${from}`);
+                console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
                 await pc.setRemoteDescription(new RTCSessionDescription(data));
+                console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 sendSignal(from, { type: 'answer', sdp: answer.sdp });
                 break;
               case 'answer':
-                console.log(`[SDP Answer] Recibida respuesta de ${from}`);
+                console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
                 await pc.setRemoteDescription(new RTCSessionDescription(data));
                 break;
               case 'candidate':
-                if (data.candidate && (pc.remoteDescription || data.candidate.sdpMid)) {
-                  console.log(`[ICE Candidate] Recibido candidato de ${from}`);
-                  await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ICE candidate:", e, data.candidate));
+                console.log(`[ICE Candidate] Recibido candidato de ${from}. Agregando ICE candidate.`);
+                if (data.candidate) { // Asegurarse de que el candidato no sea null/undefined
+                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ICE candidate:", e, data.candidate));
                 } else {
-                    console.warn("ICE candidate data is incomplete or remoteDescription is missing for adding candidate:", data.candidate, pc.remoteDescription);
+                    console.warn("Received null/undefined ICE candidate. Ignoring.");
                 }
                 break;
+              default:
+                console.warn(`[SIGNAL IN] Tipo de señal desconocido: ${data.type}`);
             }
           } catch (e) {
             console.error("Error processing WebRTC signal:", e);
           }
         });
 
+        // Handler for UserLeft events
         joinedChannel.listen('UserLeft', ({ id }: { id: string }) => {
           console.log('[UserLeft] Usuario salió:', id);
           setParticipants((prev) => {
@@ -453,7 +479,7 @@ const VideoRoom: React.FC = () => {
             newPeerConnections[id].close();
             delete newPeerConnections[id];
           }
-          peerConnectionsRef.current = newPeerConnections; // Actualiza el ref
+          peerConnectionsRef.current = newPeerConnections;
 
           setRemoteStreams(prev => {
             const copy = { ...prev };
@@ -465,23 +491,26 @@ const VideoRoom: React.FC = () => {
       })
       .catch(error => {
         console.error("❌ Error al unirse al canal video-room:", error);
-        channelRef.current = null; // Limpiar el ref en caso de error
+        channelRef.current = null;
         setError("No se pudo conectar a la sala de video.");
         setLoading(false);
       });
 
     return () => {
       console.log("Limpiando useEffect de conexión al canal.");
-      if (currentChannelInstance) { // Usamos la instancia local para la limpieza
+      if (currentChannelInstance) {
         currentChannelInstance.leave();
       }
-      Object.values(peerConnectionsRef.current).forEach(pc => pc.close()); // Limpia PCs en el ref
-      peerConnectionsRef.current = {}; // Reinicia el ref
-      remoteStreams.forEach(stream => stream.getTracks().forEach(track => track.stop())); // Detener tracks de streams remotos
-      setRemoteStreams({}); // Limpia el estado
-      channelRef.current = null; // Reinicia el ref
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+          if (pc.connectionState !== 'closed') pc.close();
+      });
+      peerConnectionsRef.current = {};
+      // Asegurarse de detener tracks de streams remotos
+      Object.values(remoteStreams).forEach(stream => stream.getTracks().forEach(track => track.stop()));
+      setRemoteStreams({});
+      channelRef.current = null;
     };
-  }, [roomId, currentUser, localStream, sendSignal, videoEnabled, micEnabled]);
+}, [roomId, currentUser, localStream, sendSignal, videoEnabled, micEnabled]);
 
 
   const toggleRecording = () => {
