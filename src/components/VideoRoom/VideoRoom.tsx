@@ -59,6 +59,7 @@ const VideoRoom: React.FC = () => {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [participants, setParticipants] = useState<Record<string, { name: string, videoEnabled?: boolean, micEnabled?: boolean }>>({});
   const [micEnabled, setMicEnabled] = useState(true);
+  const [volume, setVolume] = useState(0); // <--- Asegúrate de que esta línea exista y no esté comentada
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume2 = useMicVolume(localStream); // Asumo que `useMicVolume` no tiene problemas
 
