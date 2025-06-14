@@ -1,8 +1,6 @@
-// src/components/VideoRoom/VideoRoom.tsx
-
-import React, { useEffect, useRef, useState } from 'react';
-import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService'; // Ruta correcta
-import { useParams, useNavigate } from 'react-router-dom'; // Importa useNavigate
+import React, { useEffect, useRef, useState, useCallback } from 'react'; // Importa useCallback
+import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Room } from '../../types';
@@ -12,8 +10,7 @@ import { Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle, MessageSquare, P
 
 const VideoRoom: React.FC = () => {
   const API_URL = import.meta.env.VITE_API_URL;
-  const token = localStorage.getItem('token');
-  const navigate = useNavigate(); // Hook para la navegación
+  const navigate = useNavigate();
 
   const { roomId } = useParams<{ roomId: string }>();
   const { currentUser } = useAuth();
@@ -26,50 +23,125 @@ const VideoRoom: React.FC = () => {
   const [chatInput, setChatInput] = useState('');
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+
+  // peerConnections es un estado que se actualiza frecuentemente,
+  // pero el useEffect principal no debe depender directamente de sus cambios para re-ejecutarse.
+  // Lo mejor es que la lógica que usa/modifica peerConnections esté en funciones memoizadas.
   const [peerConnections, setPeerConnections] = useState<Record<string, RTCPeerConnection>>({});
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  // --- AQUI ESTABA LA DOBLE DECLARACION. MANTENEMOS ESTA Y ELIMINAMOS LA OTRA ---
-  const [channel, setChannel] = useState<EchoChannel | null>(null); // SOLO ESTA DECLARACION
-  // --- FIN DE LA CORRECCION ---
-
+  const [channel, setChannel] = useState<EchoChannel | null>(null); // Única declaración
   const [participants, setParticipants] = useState<Record<string, { name: string }>>({});
   const [micEnabled, setMicEnabled] = useState(true);
-  const [volume, setVolume] = useState(0); // Este 'volume' parece ser el que calculas manualmente
+  const [volume, setVolume] = useState(0);
   const [videoEnabled, setVideoEnabled] = useState(true);
-  const volume2 = useMicVolume(localStream); // Usa tu hook useMicVolume
+  const volume2 = useMicVolume(localStream);
 
-  // ... (Tus funciones toggleVideo, toggleMic, toggleScreenShare son correctas) ...
+  // Asegúrate de que este useEffect solo se ejecute una vez para obtener el stream
+  useEffect(() => {
+    const startMedia = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        console.log('Local stream tracks:', stream.getTracks());
+        setLocalStream(stream);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+      } catch (err) {
+        console.error("Error al acceder a los medios:", err);
+      }
+    };
+    startMedia();
+
+    // Limpieza al desmontar para parar el stream local
+    return () => {
+      localStream?.getTracks().forEach(track => track.stop());
+    };
+  }, []); // Dependencia vacía para que se ejecute solo al montar
+
+  const toggleVideo = () => {
+    if (!localStream) return;
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (!videoTrack) return;
+    videoTrack.enabled = !videoTrack.enabled;
+    setVideoEnabled(videoTrack.enabled);
+  };
+
+  const toggleMic = () => {
+    if (!localStream) return;
+    const audioTrack = localStream.getAudioTracks()[0];
+    if (!audioTrack) return;
+    audioTrack.enabled = !audioTrack.enabled;
+    setMicEnabled(audioTrack.enabled);
+  };
+
+  const toggleScreenShare = async () => {
+    if (!localStream) return;
+
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const screenTrack = screenStream.getVideoTracks()[0];
+
+      // Reemplazar la pista de video en todas las conexiones existentes
+      // Debes iterar sobre las peerConnections actuales
+      Object.values(peerConnections).forEach(pc => {
+        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(screenTrack);
+        }
+      });
+
+      screenTrack.onended = () => {
+        // Volver a cámara al terminar compartir
+        const videoTrack = localStream.getVideoTracks()[0];
+        Object.values(peerConnections).forEach(pc => {
+          const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(videoTrack);
+          }
+        });
+        setVideoEnabled(true); // Asegúrate de que el estado de video se actualice
+      };
+      setVideoEnabled(false); // Indica que ahora estamos compartiendo pantalla
+    } catch (error) {
+      console.error("Error sharing screen:", error);
+      setVideoEnabled(true); // Vuelve al estado de video si hubo un error
+    }
+  };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-
     const msg = { sender: currentUser.name, text: chatInput };
     setMessages(prev => [...prev, msg]);
     setChatInput('');
-
     channel?.whisper('chat-message', msg);
   };
 
   useEffect(() => {
-    // Escucha whispers solo si el canal ya está establecido
     if (channel) {
-      channel.listenForWhisper('chat-message', (msg) => {
+      const chatListener = (msg: { sender: string; text: string }) => {
         setMessages(prev => [...prev, msg]);
-      });
+      };
+      channel.listenForWhisper('chat-message', chatListener);
+      return () => {
+        // Limpiar listener al desmontar o al cambiar el canal
+        // En Reverb/Laravel Echo, usualmente channel.leave() ya limpia todos los listeners.
+        // Pero si solo quieres remover un listener específico sin dejar el canal:
+        // channel.stopListeningForWhisper('chat-message', chatListener); // Esto no existe directamente en Echo, pero se ilustra el concepto.
+      };
     }
-  }, [channel]); // Asegúrate de que este useEffect se re-ejecute cuando 'channel' cambie
-
+  }, [channel]);
 
   const endCall = () => {
     localStream?.getTracks().forEach(track => track.stop());
     Object.values(peerConnections).forEach(pc => pc.close());
+    setPeerConnections({}); // Limpia el estado de las conexiones
     setParticipants({});
     setMessages([]);
     setIsRecording(false);
-
-    channel?.leave(); // Llama a leave si el canal existe
+    channel?.leave();
+    setChannel(null); // Asegúrate de limpiar el canal del estado
     navigate('/rooms');
   };
 
@@ -105,29 +177,43 @@ const VideoRoom: React.FC = () => {
     console.log('🔄 Lista de participantes actualizada:', participants);
   }, [participants]);
 
-  const sendSignal = (toId: string, data: any) => {
+  // --- FUNCIÓN sendSignal envuelta en useCallback ---
+  const sendSignal = useCallback((toId: string, data: any) => {
     if (!channel) {
       console.warn("Cannot send signal: channel is not ready.");
       return;
     }
     channel.whisper('Signal', {
       to: toId,
-      from: currentUser.id, // Asegúrate de que currentUser.id esté disponible aquí
+      from: currentUser?.id, // Asegúrate de que currentUser.id esté disponible aquí
       data,
     });
-  };
+  }, [channel, currentUser?.id]); // Depende del canal y del ID del usuario actual
+
 
   // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
+  // Las dependencias de este useEffect son cruciales.
+  // Solo debe re-ejecutarse si cambian roomId o currentUser.
+  // Las actualizaciones de `peerConnections` o `participants` no deben causarlo.
   useEffect(() => {
     console.log("current user", currentUser);
     if (!roomId || !currentUser) return;
 
+    // Si ya tenemos un canal, no intentemos unirnos de nuevo.
+    // Esto es CRUCIAL para evitar bucles si alguna dependencia cambia
+    // de una manera que no esperábamos que re-ejecutara el join.
+    if (channel) {
+        console.log("Ya existe un canal, no se unirá de nuevo.");
+        return;
+    }
+
     const reverbService = createReverbWebSocketService(currentUser.token);
-    let currentChannel: EchoChannel | null = null; // Usamos un nombre diferente para evitar confusiones con el estado
-    console.log("se actualizo al componente nuevo")
+    let currentChannel: EchoChannel | null = null; // Variable local para la limpieza
+
+    console.log("Intentando unirse al canal", `video-room.${roomId}`);
     reverbService.join(`video-room.${roomId}`)
       .then((joinedChannel: EchoChannel) => {
-        currentChannel = joinedChannel; // Asigna el canal a la variable local
+        currentChannel = joinedChannel;
         setChannel(joinedChannel); // Actualiza el estado del canal
         console.log("Canal obtenido y estado actualizado:", joinedChannel);
 
@@ -143,10 +229,15 @@ const VideoRoom: React.FC = () => {
           console.error("❌ Error en canal de video-room:", err);
         });
 
+        // --- Manejo de señales RTC (dentro del useEffect de conexión al canal) ---
+        // Es importante que la lógica de manejo de RTCPeerConnection esté dentro de la promesa
+        // y que use los closures para acceder a `peerConnections` y `localStream` de forma segura.
+
         joinedChannel.listenForWhisper('user-joined', async ({ id, name }: { id: string; name: string }) => {
           console.log('[user-joined] recibido:', { id, name });
           if (id === currentUser.id) return;
 
+          // Usar la forma funcional de setParticipants para evitar dependencias en 'participants'
           setParticipants((prev) => {
             if (prev[id]) {
               console.log(`[user-joined] Usuario ${id} ya está en la lista de participantes.`);
@@ -159,11 +250,14 @@ const VideoRoom: React.FC = () => {
 
           // Crear nueva conexión para este usuario remoto
           const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-          localStream?.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+          // Asegúrate de que localStream exista antes de añadir pistas
+          if (localStream) {
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+          }
 
           pc.onicecandidate = (event) => {
             if (event.candidate) {
-              // Asegúrate de que sendSignal acepte 'id' como primer argumento
               sendSignal(id, { type: 'candidate', candidate: event.candidate });
             }
           };
@@ -190,13 +284,10 @@ const VideoRoom: React.FC = () => {
               });
             }
           };
+
+          // Actualizar peerConnections de forma funcional para evitar dependencia en el array del useEffect
           setPeerConnections(prev => ({ ...prev, [id]: pc }));
 
-          // El que se une no inicia llamada, pero si soy yo el admin u originador, iniciaría oferta
-          // Esta lógica de `isTeacher` debería estar bien si controla quién inicia la oferta
-          // Ten cuidado con el `pc` aquí. Necesitas el `pc` específico para el `id` recibido.
-          // El `pc` recién creado es para la conexión con el `id` que se acaba de unir.
-          // Si `isTeacher` es quien inicia la oferta, entonces el `pc` debe ser el asociado a ese `id`.
           if (isTeacher) {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
@@ -208,59 +299,61 @@ const VideoRoom: React.FC = () => {
           console.log('[Signal] recibido:', { to, from, data });
           if (to !== currentUser.id) return;
 
-          let pc = peerConnections[from];
-          // Si el PC no existe, lo creamos (esto puede pasar si se reciben señales antes de que el 'user-joined' complete la creación del PC)
-          if (!pc) {
+          // Accede a peerConnections desde el estado actual
+          setPeerConnections(prevPeerConnections => {
+            let pc = prevPeerConnections[from];
+            if (!pc) {
+              // Si el PC no existe, lo creamos (esto puede pasar si se reciben señales antes de que el 'user-joined' complete la creación del PC)
+              console.warn(`Creating new PeerConnection for ${from} on the fly for received signal.`);
               pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-              localStream?.getTracks().forEach(track => pc.addTrack(track, localStream));
-              pc.onicecandidate = (event) => {
-                  if (event.candidate) {
-                      sendSignal(from, { type: 'candidate', candidate: event.candidate });
-                  }
-              };
-              pc.ontrack = (event) => {
-                  // Manejar remote track
-              };
-              pc.onconnectionstatechange = () => {
-                  if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-                      pc.close();
-                      setPeerConnections(prev => {
-                          const copy = { ...prev };
-                          delete copy[from];
-                          return copy;
-                      });
-                      setParticipants(prev => {
-                          const copy = { ...prev };
-                          delete copy[from];
-                          return copy;
-                      });
-                  }
-              };
-              setPeerConnections(prev => ({ ...prev, [from]: pc }));
-          }
-
-          switch (data.type) {
-            case 'offer':
-              await pc.setRemoteDescription(new RTCSessionDescription(data));
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              sendSignal(from, { type: 'answer', sdp: answer.sdp });
-              break;
-            case 'answer':
-              await pc.setRemoteDescription(new RTCSessionDescription(data));
-              break;
-            case 'candidate':
-              // Asegúrate de que data.candidate sea un objeto RTCIceCandidateInit
-              if (data.candidate && (pc.remoteDescription || data.candidate.sdpMid)) { // Solo añadir si hay remoteDescription o sdpMid/sdpMLineIndex para evitar errores
-                 await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ICE candidate:", e, data.candidate));
+              if (localStream) {
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
               }
-              break;
-          }
+
+              pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                  sendSignal(from, { type: 'candidate', candidate: event.candidate });
+                }
+              };
+              pc.ontrack = (event) => { /* Manejar remote track */ };
+              pc.onconnectionstatechange = () => {
+                if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                  pc.close();
+                  setPeerConnections(p => { const copy = { ...p }; delete copy[from]; return copy; });
+                  setParticipants(p => { const copy = { ...p }; delete copy[from]; return copy; });
+                }
+              };
+            }
+
+            // Realiza las operaciones WebRTC
+            const processSignal = async () => {
+              try {
+                switch (data.type) {
+                  case 'offer':
+                    await pc.setRemoteDescription(new RTCSessionDescription(data));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    sendSignal(from, { type: 'answer', sdp: answer.sdp });
+                    break;
+                  case 'answer':
+                    await pc.setRemoteDescription(new RTCSessionDescription(data));
+                    break;
+                  case 'candidate':
+                    if (data.candidate && (pc.remoteDescription || data.candidate.sdpMid)) {
+                      await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ICE candidate:", e, data.candidate));
+                    }
+                    break;
+                }
+              } catch (e) {
+                console.error("Error processing WebRTC signal:", e);
+              }
+            };
+            processSignal();
+
+            return { ...prevPeerConnections, [from]: pc }; // Asegúrate de devolver el nuevo estado
+          });
         });
 
-        // Asegúrate que 'UserLeft' sea un evento normal, no un whisper, si es de Laravel.
-        // Si es un whisper, debería ser listenForWhisper.
-        // Asumo que Laravel emite 'UserLeft' como un evento normal del canal.
         joinedChannel.listen('UserLeft', ({ id }: { id: string }) => {
           console.log('[UserLeft] Usuario salió:', id);
           setParticipants((prev) => {
@@ -269,14 +362,13 @@ const VideoRoom: React.FC = () => {
             console.log('[UserLeft] Participantes después de salir:', updated);
             return updated;
           });
-          // Cerrar la PeerConnection asociada si existe
           setPeerConnections(prev => {
-              const copy = { ...prev };
-              if (copy[id]) {
-                  copy[id].close();
-                  delete copy[id];
-              }
-              return copy;
+            const copy = { ...prev };
+            if (copy[id]) {
+              copy[id].close();
+              delete copy[id];
+            }
+            return copy;
           });
         });
 
@@ -284,71 +376,51 @@ const VideoRoom: React.FC = () => {
       .catch(error => {
         console.error("❌ Error al unirse al canal video-room:", error);
         setChannel(null);
+        setError("No se pudo conectar a la sala de video.");
+        setLoading(false);
       });
 
     // Función de limpieza para el useEffect
     return () => {
+      console.log("Limpiando useEffect de conexión al canal.");
       if (currentChannel) { // Usa la variable local 'currentChannel' para limpiar
         currentChannel.leave();
+        // setChannel(null) se maneja en endCall, o si el join falla.
+        // También puedes limpiar los listeners aquí si no se limpian automáticamente con leave()
       }
-      // NO LLAMES a reverbService.disconnect() aquí si hay otros componentes que lo usan.
-      // Si este es el único lugar donde se usa el servicio, y quieres que se desconecte,
-      // entonces considera tener un contexto o un manejo más global.
-      // setChannel(null); // Esto ya se hace en endCall o en el catch.
-      // setParticipants([]); // Esto ya se hace en endCall.
+      // Asegúrate de que las peer connections se cierren aquí también si el componente se desmonta
+      Object.values(peerConnections).forEach(pc => pc.close());
+      setPeerConnections({}); // Limpiar el estado de las conexiones
     };
-  }, [roomId, currentUser, localStream, peerConnections, isTeacher, sendSignal, navigate]); // Añade dependencias que faltan y son necesarias.
+  }, [roomId, currentUser]); // Dependencias MUY reducidas: solo roomId y currentUser.
+                             // localStream, peerConnections, isTeacher, sendSignal, navigate
+                             // Ya no están porque sus actualizaciones no deben disparar el join del canal.
+                             // Las funciones que usan estos estados deben usar sus valores actuales
+                             // o ser envueltas en useCallback/memo si se pasan como props.
 
-  useEffect(() => {
-    const startMedia = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        console.log('Local stream tracks:', stream.getTracks());
-        setLocalStream(stream);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-      } catch (err) {
-        console.error("Error al acceder a los medios:", err);
-      }
-    };
-    startMedia();
-  }, []); // Se ejecuta solo una vez al montar el componente.
+  // Si necesitas que `isTeacher` u otras dependencias re-evalúen alguna parte del efecto
+  // sin volver a unirse al canal, tendrías que tener `useEffect`s separados para esa lógica.
 
 
-  const toggleRecording = async () => {
-    if (!room || !isTeacher) return;
-    try {
-      const newRecordingState = !isRecording;
-      await supabase
-        .from('rooms')
-        .update({ is_recording: newRecordingState })
-        .eq('id', room.id);
-      setIsRecording(newRecordingState);
-    } catch (err) {
-      console.error('Error toggling recording:', err);
-    }
-  };
+  // ... el resto de tu componente (JSX) sin cambios ...
 
-  // Esta función `createConnection` y las funciones `handleOffer`, `handleAnswer`, `handleCandidate`
-  // parecen ser remanentes de una lógica P2P más simple.
-  // Tu lógica actual de WebRTC está en el useEffect principal, dentro de los listeners de 'user-joined' y 'Signal'.
-  // Si estas funciones no se están utilizando, podrías eliminarlas para evitar confusiones.
-  // Asumo que 'peerConnection' es un estado que ya no usas, ya que tienes 'peerConnections' (plural).
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full text-white bg-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        <p className="ml-4">Cargando sala de video...</p>
+      </div>
+    );
+  }
 
-  // const createConnection = async () => { /* ... */ };
-  // const startCall = async () => { /* ... */ };
-  // const handleOffer = async (data: any) => { /* ... */ };
-  // const handleAnswer = async (data: any) => { /* ... */ };
-  // const handleCandidate = async (data: any) => { /* ... */ };
-
-  // --- Función sendSignal (la que realmente usas en los listeners) ---
-  // Asegúrate de que esta función esté definida antes de ser utilizada en el useEffect.
-  // Lo más seguro es definirla usando `useCallback` o dentro del `useEffect` principal.
-  // Para simplificar, la dejaré como una función normal aquí, pero considera `useCallback`
-  // si esto causa problemas de re-renderizado excesivo en componentes hijos.
-
-  // ... (Tus condicionales de loading, error, room son correctas, las omití para brevedad) ...
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full text-red-500 bg-gray-900">
+        <p>Error: {error}</p>
+        <button onClick={() => navigate('/rooms')} className="ml-4 px-4 py-2 bg-blue-600 rounded">Volver a Salas</button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-black text-white">
@@ -387,8 +459,12 @@ const VideoRoom: React.FC = () => {
     {/* Videos remotos */}
     {Object.entries(participants).map(([id, { name }]) => (
       <div key={id} className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
-        {/* Deberías tener una manera de asociar el video HTML con el stream remoto de cada peerConnection */}
-        {/* Esto requeriría una ref por cada video remoto o un componente separado */}
+        {/* Aquí la clave es cómo renderizar los streams remotos. */}
+        {/* Deberías tener una manera de asociar cada 'pc' en `peerConnections`
+            con un elemento <video> y su `srcObject`.
+            Esto es más complejo y podría requerir un componente `RemoteVideo` separado
+            o un mapa de `useRef`s, actualizando el `srcObject` cuando el `ontrack` se dispara.
+            Por ahora, el `video` tag es solo un placeholder. */}
         <video autoPlay className="w-full h-full object-cover" />
         <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
           {name}
@@ -401,21 +477,21 @@ const VideoRoom: React.FC = () => {
         {/* Controles */}
         <div className="flex justify-center gap-4 p-4 border-t border-gray-700 bg-black bg-opacity-80">
           <button
-            // onClick={toggleMic}
+            onClick={toggleMic}
             className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
           >
             {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
           </button>
 
           <button
-            // onClick={toggleVideo}
+            onClick={toggleVideo}
             className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
           >
             {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
           </button>
 
           <button
-            // onClick={toggleScreenShare}
+            onClick={toggleScreenShare}
             className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
           >
             <ScreenShare size={20} />
@@ -423,7 +499,7 @@ const VideoRoom: React.FC = () => {
 
           {isTeacher && (
             <button
-              onClick={toggleRecording}
+              // onClick={toggleRecording}
               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
             >
               <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
