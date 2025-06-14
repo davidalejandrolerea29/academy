@@ -401,21 +401,21 @@ const VideoRoom: React.FC = () => {
         {/* Controles */}
         <div className="flex justify-center gap-4 p-4 border-t border-gray-700 bg-black bg-opacity-80">
           <button
-            onClick={toggleMic}
+            // onClick={toggleMic}
             className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
           >
             {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
           </button>
 
           <button
-            onClick={toggleVideo}
+            // onClick={toggleVideo}
             className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
           >
             {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
           </button>
 
           <button
-            onClick={toggleScreenShare}
+            // onClick={toggleScreenShare}
             className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
           >
             <ScreenShare size={20} />
