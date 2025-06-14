@@ -158,9 +158,10 @@ console.log("canal ", ch)
       name: currentUser.name,  // Asumo que tienes el nombre en currentUser
     });
   });
-ch.error((err) => {
-  console.error("❌ Error al suscribirse al canal:", err);
+ch.error((err: any) => {
+  console.error("❌ Error en canal: ", err);
 });
+
 
 
 ch.listenForWhisper('user-joined', async ({ id, name }) => {
@@ -261,7 +262,7 @@ ch.listenForWhisper('Signal', async ({ to, from, data }) => {
 
 
   return () => {
-    Echo.leave(`video-room.${roomId}`);
+    echo.leave(`video-room.${roomId}`);
     setChannel(null);
     setParticipants([]);
   };
