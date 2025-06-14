@@ -2,10 +2,8 @@
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 
-// Asegúrate de que Pusher esté disponible globalmente antes de que Echo lo use.
 window.Pusher = Pusher;
 
-// Declara una variable global para Echo (esto es solo para TypeScript)
 declare global {
   interface Window {
     Echo: any;
@@ -14,46 +12,46 @@ declare global {
 }
 
 export const createEcho = (token: string) => {
-  // Limpia cualquier instancia de Echo existente para forzar una nueva conexión para la depuración
-  if (window.Echo) {
-      window.Echo.disconnect();
-      window.Echo = null;
+  // Asegúrate de que Echo se inicialice solo una vez
+  if (typeof window.Echo === 'undefined' || window.Echo === null) {
+    console.log("Inicializando Laravel Echo...");
+    window.Echo = new Echo({
+      broadcaster: 'reverb',
+      key: 'sfnheugrsf0hhvj0k6oo',
+      wsHost: 'english-meet.duckdns.org',
+      wsPort: 443,
+      forceTLS: true,
+      enabledTransports: ['wss'],
+      authEndpoint: 'https://english-meet.duckdns.org/broadcasting/auth',
+      auth: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    });
+
+    Pusher.logToConsole = true; // Mantén esto para ver los logs de Pusher
+    console.log("Laravel Echo inicializado.");
+
+    // Agrega un listener para depurar el estado de la conexión
+    window.Echo.connector.pusher.connection.bind('state_change', (states: any) => {
+        console.log("Pusher connection state change:", states.current, "from", states.previous);
+        if (states.current === 'failed') {
+            console.error("Pusher connection FAILED. See stack trace below:");
+            console.trace(); // ¡Esto nos dará la traza de pila!
+        }
+    });
+    window.Echo.connector.pusher.connection.bind('error', (err: any) => {
+        console.error("Pusher connection ERROR:", err);
+        console.trace(); // También traza de pila en caso de error
+    });
+
+  } else {
+    // Si Echo ya está inicializado, simplemente asegúrate de que el token esté actualizado
+    // Esto es importante si el token puede cambiar durante la sesión
+    // window.Echo.options.auth.headers.Authorization = `Bearer ${token}`;
+    console.log("Laravel Echo ya inicializado. Estado actual:", window.Echo.connector.pusher.connection.state);
   }
 
-  console.log("Intentando crear una nueva instancia de Echo...");
-  console.log("Token recibido en createEcho:", token ? "Token provided" : "No token provided");
-
-  // Crea la instancia de Echo
-  const echoInstance = new Echo({
-    broadcaster: 'reverb',
-    key: 'sfnheugrsf0hhvj0k6oo', // CONFIRMA QUE ES EL MISMO APP_ID
-    wsHost: 'english-meet.duckdns.org',
-    wsPort: 443,
-    forceTLS: true,
-    enabledTransports: ['wss'], // Usar WebSockets Seguros
-    authEndpoint: 'https://english-meet.duckdns.org/broadcasting/auth', // Endpoint de auth público y HTTPS
-    auth: {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    },
-  });
-
-  window.Echo = echoInstance; // Asigna la instancia a window.Echo
-
-  // Configura logToConsole para Pusher después de crear la instancia
-  Pusher.logToConsole = true; 
-
-  console.log("Echo instance created. Initial state:", window.Echo.connector.pusher.connection.state);
-  console.log("Echo options:", window.Echo.options);
-
-  // Agrega listeners para depuración
-  window.Echo.connector.pusher.connection.bind('state_change', (states: any) => {
-      console.log("Pusher state change:", states.current, "from", states.previous);
-  });
-  window.Echo.connector.pusher.connection.bind('error', (err: any) => {
-      console.error("Pusher connection error:", err);
-  });
-
-  return window.Echo; // Siempre devuelve la instancia global de Echo
+  return window.Echo;
 };
