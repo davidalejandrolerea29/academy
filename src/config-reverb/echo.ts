@@ -13,12 +13,14 @@ export const createEcho = (token: string) => {
 
   return new Echo({
     broadcaster: 'reverb',
-    key: 'sfnheugrsf0hhvj0k6oo',
-    wsHost: 'english-meet.duckdns.org',
-    wsPort: 6001,
-    forceTLS: false,
-    enabledTransports: ['ws'],
-    authEndpoint: 'http://127.0.0.1:6001/broadcasting/auth',
+    key: 'sfnheugrsf0hhvj0k6oo', // Asegúrate que este sea el mismo REVERB_APP_ID en tu .env
+    wsHost: 'english-meet.duckdns.org', // El dominio público
+    wsPort: 443, // El puerto HTTPS público de tu servidor
+    forceTLS: true, // Forzar uso de TLS (HTTPS/WSS)
+    enabledTransports: ['wss'], // Usar WebSockets Seguros
+
+    // El endpoint de autenticación DEBE ser accesible públicamente vía HTTPS
+    authEndpoint: 'https://english-meet.duckdns.org/broadcasting/auth',
     auth: {
       headers: {
         Authorization: `Bearer ${token}`,
