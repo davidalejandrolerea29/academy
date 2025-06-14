@@ -262,6 +262,9 @@ const sendSignal = useCallback((toId: string, data: any) => {
 }, [currentUser?.id]);
 
 // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
+// ... (resto del código)
+
+// --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
 useEffect(() => {
     console.log("current user", currentUser);
     if (!roomId || !currentUser) {
@@ -332,9 +335,15 @@ useEffect(() => {
           }
 
           // Añadir pistas locales al PeerConnection ANTES de crear ofertas/respuestas
+          // Esto disparará onnegotiationneeded si el PC es nuevo o los tracks cambian
           if (localStream) {
             console.log(`[user-joined] Agregando tracks locales a PC de ${id}`);
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            localStream.getTracks().forEach(track => {
+                // Prevenir duplicados si se llama varias veces por alguna razón
+                if (!pc.getSenders().some(sender => sender.track === track)) {
+                    pc.addTrack(track, localStream);
+                }
+            });
           } else {
               console.warn(`[user-joined] No localStream disponible para agregar tracks a PC de ${id}.`);
           }
@@ -351,6 +360,24 @@ useEffect(() => {
           pc.ontrack = (event) => {
             console.log(`[ontrack] Recibiendo stream de ${id}, tracks:`, event.streams[0].getTracks().map(t => t.kind));
             setRemoteStreams(prev => ({ ...prev, [id]: event.streams[0] }));
+          };
+
+          // Configurar onnegotiationneeded (el que tiene el ID más bajo en el par es el OFERTANTE)
+          pc.onnegotiationneeded = async () => {
+              // Esta lógica asegura que el ID más bajo siempre inicie la oferta
+              if (currentUser.id < parseInt(id)) {
+                  console.log(`[onnegotiationneeded] ${currentUser.id} (local) es menor que ${id} (remoto), creando OFERTA.`);
+                  try {
+                      const offer = await pc.createOffer();
+                      await pc.setLocalDescription(offer);
+                      sendSignal(id, { type: 'offer', sdp: offer.sdp });
+                  } catch (e) {
+                      console.error("Error al crear/enviar oferta en onnegotiationneeded:", e);
+                  }
+              } else {
+                  console.log(`[onnegotiationneeded] ${currentUser.id} (local) es mayor que ${id} (remoto). Esperando oferta.`);
+                  // El usuario con ID más alto espera la oferta. No hace nada aquí.
+              }
           };
 
           // Configurar onconnectionstatechange
@@ -376,27 +403,14 @@ useEffect(() => {
             }
           };
 
-          // Estrategia de SDP Offer/Answer: el que tenga el ID más bajo inicia la oferta
-          // U1 (ID 1) se une, luego U2 (ID 2) se une.
-          // Cuando U1 recibe user-joined de U2: 1 < 2 es TRUE, U1 envía oferta a U2.
-          // Cuando U2 recibe user-joined de U1: 2 < 1 es FALSE, U2 NO envía oferta.
-          // Esto es correcto. U2 debe esperar la oferta de U1.
-          if (currentUser.id < parseInt(id)) {
-              console.log(`[SDP Offer] ${currentUser.id} (local) es menor que ${id} (remoto), enviando oferta.`);
-              try {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                sendSignal(id, { type: 'offer', sdp: offer.sdp });
-              } catch (e) {
-                console.error("Error al crear/enviar oferta:", e);
-              }
-          }
+          // NOTA: Eliminamos la lógica de oferta directa aquí.
+          // onnegotiationneeded se encargará de esto cuando las pistas se agreguen.
         });
 
         // Handler for Signal whispers (SDP Offer/Answer/Candidate)
         joinedChannel.listenForWhisper('Signal', async ({ to, from, data }: { to: string; from: string; data: any }) => {
           console.log(`[SIGNAL IN] Received ${data.type} from ${from} (for me: ${to === currentUser.id})`);
-          if (to !== currentUser.id) return; // Si la señal no es para mí, la ignoramos
+          if (to !== currentUser.id) return;
 
           let pc = peerConnectionsRef.current[from];
           if (!pc) {
@@ -406,7 +420,11 @@ useEffect(() => {
 
             if (localStream) {
               console.log(`[SIGNAL IN] Agregando tracks locales a PC de ${from}.`);
-              localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+              localStream.getTracks().forEach(track => {
+                 if (!pc.getSenders().some(sender => sender.track === track)) {
+                    pc.addTrack(track, localStream);
+                 }
+              });
             } else {
                 console.warn(`[SIGNAL IN] No localStream disponible para agregar tracks a PC de ${from}.`);
             }
@@ -420,6 +438,21 @@ useEffect(() => {
             pc.ontrack = (event) => {
               console.log(`[ontrack] (Tardío) Recibiendo stream de ${from}, tracks:`, event.streams[0].getTracks().map(t => t.kind));
               setRemoteStreams(p => ({ ...p, [from]: event.streams[0] }));
+            };
+            // Asegurarse de que onnegotiationneeded también esté configurado para PCs creados tarde
+            pc.onnegotiationneeded = async () => {
+              if (currentUser.id < parseInt(from)) {
+                  console.log(`[onnegotiationneeded] (Tardío) ${currentUser.id} (local) es menor que ${from} (remoto), creando OFERTA.`);
+                  try {
+                      const offer = await pc.createOffer();
+                      await pc.setLocalDescription(offer);
+                      sendSignal(from, { type: 'offer', sdp: offer.sdp });
+                  } catch (e) {
+                      console.error("Error al crear/enviar oferta en onnegotiationneeded (tardío):", e);
+                  }
+              } else {
+                  console.log(`[onnegotiationneeded] (Tardío) ${currentUser.id} (local) es mayor que ${from} (remoto). Esperando oferta.`);
+              }
             };
             pc.onconnectionstatechange = () => {
               console.log(`PeerConnection con ${from} (tardío) estado: ${pc.connectionState}`);
@@ -450,7 +483,7 @@ useEffect(() => {
                 break;
               case 'candidate':
                 console.log(`[ICE Candidate] Recibido candidato de ${from}. Agregando ICE candidate.`);
-                if (data.candidate) { // Asegurarse de que el candidato no sea null/undefined
+                if (data.candidate) {
                     await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ICE candidate:", e, data.candidate));
                 } else {
                     console.warn("Received null/undefined ICE candidate. Ignoring.");
@@ -463,6 +496,8 @@ useEffect(() => {
             console.error("Error processing WebRTC signal:", e);
           }
         });
+
+        // ... (el resto del código de listener y cleanup permanece igual)
 
         // Handler for UserLeft events
         joinedChannel.listen('UserLeft', ({ id }: { id: string }) => {
