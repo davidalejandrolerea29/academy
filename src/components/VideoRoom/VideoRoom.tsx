@@ -105,6 +105,17 @@ const VideoRoom: React.FC = () => {
     console.log('🔄 Lista de participantes actualizada:', participants);
   }, [participants]);
 
+  const sendSignal = (toId: string, data: any) => {
+    if (!channel) {
+      console.warn("Cannot send signal: channel is not ready.");
+      return;
+    }
+    channel.whisper('Signal', {
+      to: toId,
+      from: currentUser.id, // Asegúrate de que currentUser.id esté disponible aquí
+      data,
+    });
+  };
 
   // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
   useEffect(() => {
@@ -336,17 +347,6 @@ const VideoRoom: React.FC = () => {
   // Lo más seguro es definirla usando `useCallback` o dentro del `useEffect` principal.
   // Para simplificar, la dejaré como una función normal aquí, pero considera `useCallback`
   // si esto causa problemas de re-renderizado excesivo en componentes hijos.
-  const sendSignal = (toId: string, data: any) => {
-    if (!channel) {
-      console.warn("Cannot send signal: channel is not ready.");
-      return;
-    }
-    channel.whisper('Signal', {
-      to: toId,
-      from: currentUser.id, // Asegúrate de que currentUser.id esté disponible aquí
-      data,
-    });
-  };
 
   // ... (Tus condicionales de loading, error, room son correctas, las omití para brevedad) ...
 
