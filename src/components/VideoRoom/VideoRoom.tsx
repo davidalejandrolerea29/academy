@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react'; // Importa useCallback
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -7,6 +7,34 @@ import { Room } from '../../types';
 import { useMicVolume } from '../../hooks/useMicVolume';
 
 import { Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle, MessageSquare, PhoneOff } from 'lucide-react';
+
+// Componente pequeño para el video remoto
+// Esto es opcional, pero ayuda a mantener el componente principal más limpio
+interface RemoteVideoProps {
+  stream: MediaStream | null;
+  name: string;
+}
+
+const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]); // Solo actualiza si el stream cambia
+
+  return (
+    <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
+      <video ref={videoRef} autoPlay className="w-full h-full object-cover" />
+      <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
+        {name}
+      </div>
+      {/* Puedes añadir un indicador de micrófono/video deshabilitado para el remoto aquí si tienes esa información */}
+    </div>
+  );
+};
+
 
 const VideoRoom: React.FC = () => {
   const API_URL = import.meta.env.VITE_API_URL;
@@ -22,15 +50,16 @@ const VideoRoom: React.FC = () => {
   const [messages, setMessages] = useState<{ sender: string; text: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  // remoteVideoRef ya no se usará directamente para cada video, sino el nuevo estado de streams remotos
+  // const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  // peerConnections es un estado que se actualiza frecuentemente,
-  // pero el useEffect principal no debe depender directamente de sus cambios para re-ejecutarse.
-  // Lo mejor es que la lógica que usa/modifica peerConnections esté en funciones memoizadas.
   const [peerConnections, setPeerConnections] = useState<Record<string, RTCPeerConnection>>({});
+  // --- NUEVO ESTADO PARA ALMACENAR LOS STREAMS REMOTOS ---
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [channel, setChannel] = useState<EchoChannel | null>(null); // Única declaración
+  const [channel, setChannel] = useState<EchoChannel | null>(null);
   const [participants, setParticipants] = useState<Record<string, { name: string }>>({});
   const [micEnabled, setMicEnabled] = useState(true);
   const [volume, setVolume] = useState(0);
@@ -56,8 +85,11 @@ const VideoRoom: React.FC = () => {
     // Limpieza al desmontar para parar el stream local
     return () => {
       localStream?.getTracks().forEach(track => track.stop());
+      // También limpia los streams remotos al salir de la sala
+      Object.values(remoteStreams).forEach(stream => stream.getTracks().forEach(track => track.stop()));
+      setRemoteStreams({});
     };
-  }, []); // Dependencia vacía para que se ejecute solo al montar
+  }, []);
 
   const toggleVideo = () => {
     if (!localStream) return;
@@ -65,6 +97,12 @@ const VideoRoom: React.FC = () => {
     if (!videoTrack) return;
     videoTrack.enabled = !videoTrack.enabled;
     setVideoEnabled(videoTrack.enabled);
+
+    // Notificar a los demás participantes sobre el cambio de estado del video
+    channel?.whisper('toggle-video', {
+      id: currentUser?.id,
+      enabled: videoTrack.enabled,
+    });
   };
 
   const toggleMic = () => {
@@ -73,6 +111,12 @@ const VideoRoom: React.FC = () => {
     if (!audioTrack) return;
     audioTrack.enabled = !audioTrack.enabled;
     setMicEnabled(audioTrack.enabled);
+
+    // Notificar a los demás participantes sobre el cambio de estado del micrófono
+    channel?.whisper('toggle-mic', {
+      id: currentUser?.id,
+      enabled: audioTrack.enabled,
+    });
   };
 
   const toggleScreenShare = async () => {
@@ -82,8 +126,6 @@ const VideoRoom: React.FC = () => {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const screenTrack = screenStream.getVideoTracks()[0];
 
-      // Reemplazar la pista de video en todas las conexiones existentes
-      // Debes iterar sobre las peerConnections actuales
       Object.values(peerConnections).forEach(pc => {
         const sender = pc.getSenders().find(s => s.track?.kind === 'video');
         if (sender) {
@@ -92,7 +134,6 @@ const VideoRoom: React.FC = () => {
       });
 
       screenTrack.onended = () => {
-        // Volver a cámara al terminar compartir
         const videoTrack = localStream.getVideoTracks()[0];
         Object.values(peerConnections).forEach(pc => {
           const sender = pc.getSenders().find(s => s.track?.kind === 'video');
@@ -100,19 +141,19 @@ const VideoRoom: React.FC = () => {
             sender.replaceTrack(videoTrack);
           }
         });
-        setVideoEnabled(true); // Asegúrate de que el estado de video se actualice
+        setVideoEnabled(true);
       };
-      setVideoEnabled(false); // Indica que ahora estamos compartiendo pantalla
+      setVideoEnabled(false);
     } catch (error) {
       console.error("Error sharing screen:", error);
-      setVideoEnabled(true); // Vuelve al estado de video si hubo un error
+      setVideoEnabled(true);
     }
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-    const msg = { sender: currentUser.name, text: chatInput };
+    const msg = { sender: currentUser?.name || 'Invitado', text: chatInput };
     setMessages(prev => [...prev, msg]);
     setChatInput('');
     channel?.whisper('chat-message', msg);
@@ -124,30 +165,44 @@ const VideoRoom: React.FC = () => {
         setMessages(prev => [...prev, msg]);
       };
       channel.listenForWhisper('chat-message', chatListener);
+
+      // Opcional: Listeners para cambios de estado de Mic/Video de otros
+      channel.listenForWhisper('toggle-video', ({ id, enabled }: { id: string; enabled: boolean }) => {
+        setParticipants(prev => ({
+          ...prev,
+          [id]: { ...prev[id], videoEnabled: enabled }
+        }));
+      });
+      channel.listenForWhisper('toggle-mic', ({ id, enabled }: { id: string; enabled: boolean }) => {
+        setParticipants(prev => ({
+          ...prev,
+          [id]: { ...prev[id], micEnabled: enabled }
+        }));
+      });
+
       return () => {
-        // Limpiar listener al desmontar o al cambiar el canal
-        // En Reverb/Laravel Echo, usualmente channel.leave() ya limpia todos los listeners.
-        // Pero si solo quieres remover un listener específico sin dejar el canal:
-        // channel.stopListeningForWhisper('chat-message', chatListener); // Esto no existe directamente en Echo, pero se ilustra el concepto.
+        // La limpieza del canal suele manejar esto, pero si no, aquí irían
+        // channel.stopListeningForWhisper('chat-message', chatListener);
       };
     }
-  }, [channel]);
+  }, [channel, currentUser?.id]); // Añade currentUser.id como dependencia para `handleSendMessage` si no está cubierto
 
   const endCall = () => {
     localStream?.getTracks().forEach(track => track.stop());
     Object.values(peerConnections).forEach(pc => pc.close());
-    setPeerConnections({}); // Limpia el estado de las conexiones
+    setPeerConnections({});
+    setRemoteStreams({}); // Limpia los streams remotos
     setParticipants({});
     setMessages([]);
     setIsRecording(false);
     channel?.leave();
-    setChannel(null); // Asegúrate de limpiar el canal del estado
+    setChannel(null);
     navigate('/rooms');
   };
 
   useEffect(() => {
     if (!localStream) return;
-    const audioContext = new AudioContext();
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const analyser = audioContext.createAnalyser();
     const microphone = audioContext.createMediaStreamSource(localStream);
     microphone.connect(analyser);
@@ -177,7 +232,6 @@ const VideoRoom: React.FC = () => {
     console.log('🔄 Lista de participantes actualizada:', participants);
   }, [participants]);
 
-  // --- FUNCIÓN sendSignal envuelta en useCallback ---
   const sendSignal = useCallback((toId: string, data: any) => {
     if (!channel) {
       console.warn("Cannot send signal: channel is not ready.");
@@ -185,36 +239,28 @@ const VideoRoom: React.FC = () => {
     }
     channel.whisper('Signal', {
       to: toId,
-      from: currentUser?.id, // Asegúrate de que currentUser.id esté disponible aquí
+      from: currentUser?.id,
       data,
     });
-  }, [channel, currentUser?.id]); // Depende del canal y del ID del usuario actual
+  }, [channel, currentUser?.id]);
 
-
-  // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
-  // Las dependencias de este useEffect son cruciales.
-  // Solo debe re-ejecutarse si cambian roomId o currentUser.
-  // Las actualizaciones de `peerConnections` o `participants` no deben causarlo.
   useEffect(() => {
     console.log("current user", currentUser);
     if (!roomId || !currentUser) return;
 
-    // Si ya tenemos un canal, no intentemos unirnos de nuevo.
-    // Esto es CRUCIAL para evitar bucles si alguna dependencia cambia
-    // de una manera que no esperábamos que re-ejecutara el join.
     if (channel) {
         console.log("Ya existe un canal, no se unirá de nuevo.");
         return;
     }
 
     const reverbService = createReverbWebSocketService(currentUser.token);
-    let currentChannel: EchoChannel | null = null; // Variable local para la limpieza
+    let currentChannel: EchoChannel | null = null;
 
     console.log("Intentando unirse al canal", `video-room.${roomId}`);
     reverbService.join(`video-room.${roomId}`)
       .then((joinedChannel: EchoChannel) => {
         currentChannel = joinedChannel;
-        setChannel(joinedChannel); // Actualiza el estado del canal
+        setChannel(joinedChannel);
         console.log("Canal obtenido y estado actualizado:", joinedChannel);
 
         joinedChannel.subscribed(() => {
@@ -222,6 +268,9 @@ const VideoRoom: React.FC = () => {
           joinedChannel.whisper('user-joined', {
             id: currentUser.id,
             name: currentUser.name,
+            // Opcional: enviar estado inicial de mic/video
+            videoEnabled: videoEnabled,
+            micEnabled: micEnabled,
           });
         });
 
@@ -229,29 +278,22 @@ const VideoRoom: React.FC = () => {
           console.error("❌ Error en canal de video-room:", err);
         });
 
-        // --- Manejo de señales RTC (dentro del useEffect de conexión al canal) ---
-        // Es importante que la lógica de manejo de RTCPeerConnection esté dentro de la promesa
-        // y que use los closures para acceder a `peerConnections` y `localStream` de forma segura.
-
-        joinedChannel.listenForWhisper('user-joined', async ({ id, name }: { id: string; name: string }) => {
+        joinedChannel.listenForWhisper('user-joined', async ({ id, name, videoEnabled: remoteVideoEnabled, micEnabled: remoteMicEnabled }: { id: string; name: string; videoEnabled?: boolean; micEnabled?: boolean }) => {
           console.log('[user-joined] recibido:', { id, name });
           if (id === currentUser.id) return;
 
-          // Usar la forma funcional de setParticipants para evitar dependencias en 'participants'
           setParticipants((prev) => {
             if (prev[id]) {
               console.log(`[user-joined] Usuario ${id} ya está en la lista de participantes.`);
               return prev;
             }
-            const updated = { ...prev, [id]: { name } };
+            const updated = { ...prev, [id]: { name, videoEnabled: remoteVideoEnabled, micEnabled: remoteMicEnabled } };
             console.log('[user-joined] Añadiendo nuevo participante:', updated);
             return updated;
           });
 
-          // Crear nueva conexión para este usuario remoto
           const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
-          // Asegúrate de que localStream exista antes de añadir pistas
           if (localStream) {
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
           }
@@ -262,10 +304,11 @@ const VideoRoom: React.FC = () => {
             }
           };
 
+          // --- CLAVE: MANEJAR EL STREAM REMOTO EN ontrack ---
           pc.ontrack = (event) => {
-            // Aquí deberías manejar video remoto de ese participante
-            // Puedes necesitar un useRef o un mapa de refs para cada video remoto
-            // console.log("Remote stream received:", event.streams[0]);
+            console.log(`[ontrack] Recibiendo stream de ${id}`, event.streams[0]);
+            // Almacenar el stream remoto en el estado
+            setRemoteStreams(prev => ({ ...prev, [id]: event.streams[0] }));
           };
 
           pc.onconnectionstatechange = () => {
@@ -282,13 +325,18 @@ const VideoRoom: React.FC = () => {
                 delete copy[id];
                 return copy;
               });
+              // --- Eliminar el stream remoto cuando la conexión se pierde ---
+              setRemoteStreams(prev => {
+                const copy = { ...prev };
+                delete copy[id];
+                return copy;
+              });
             }
           };
 
-          // Actualizar peerConnections de forma funcional para evitar dependencia en el array del useEffect
           setPeerConnections(prev => ({ ...prev, [id]: pc }));
 
-          if (isTeacher) {
+          if (isTeacher) { // O si es el que inició la llamada/oferta
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             sendSignal(id, { type: 'offer', sdp: offer.sdp });
@@ -299,11 +347,9 @@ const VideoRoom: React.FC = () => {
           console.log('[Signal] recibido:', { to, from, data });
           if (to !== currentUser.id) return;
 
-          // Accede a peerConnections desde el estado actual
           setPeerConnections(prevPeerConnections => {
             let pc = prevPeerConnections[from];
             if (!pc) {
-              // Si el PC no existe, lo creamos (esto puede pasar si se reciben señales antes de que el 'user-joined' complete la creación del PC)
               console.warn(`Creating new PeerConnection for ${from} on the fly for received signal.`);
               pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
               if (localStream) {
@@ -315,17 +361,23 @@ const VideoRoom: React.FC = () => {
                   sendSignal(from, { type: 'candidate', candidate: event.candidate });
                 }
               };
-              pc.ontrack = (event) => { /* Manejar remote track */ };
+              // --- CLAVE: MANEJAR EL STREAM REMOTO EN ontrack (también aquí si el PC se crea tarde) ---
+              pc.ontrack = (event) => {
+                console.log(`[ontrack] Recibiendo stream (creado tarde) de ${from}`, event.streams[0]);
+                setRemoteStreams(p => ({ ...p, [from]: event.streams[0] }));
+              };
+
               pc.onconnectionstatechange = () => {
                 if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
                   pc.close();
                   setPeerConnections(p => { const copy = { ...p }; delete copy[from]; return copy; });
                   setParticipants(p => { const copy = { ...p }; delete copy[from]; return copy; });
+                  // --- Eliminar el stream remoto ---
+                  setRemoteStreams(p => { const copy = { ...p }; delete copy[from]; return copy; });
                 }
               };
             }
 
-            // Realiza las operaciones WebRTC
             const processSignal = async () => {
               try {
                 switch (data.type) {
@@ -350,7 +402,7 @@ const VideoRoom: React.FC = () => {
             };
             processSignal();
 
-            return { ...prevPeerConnections, [from]: pc }; // Asegúrate de devolver el nuevo estado
+            return { ...prevPeerConnections, [from]: pc };
           });
         });
 
@@ -370,6 +422,12 @@ const VideoRoom: React.FC = () => {
             }
             return copy;
           });
+          // --- Eliminar el stream remoto del estado cuando el usuario se va ---
+          setRemoteStreams(prev => {
+            const copy = { ...prev };
+            delete copy[id];
+            return copy;
+          });
         });
 
       })
@@ -380,29 +438,26 @@ const VideoRoom: React.FC = () => {
         setLoading(false);
       });
 
-    // Función de limpieza para el useEffect
     return () => {
       console.log("Limpiando useEffect de conexión al canal.");
-      if (currentChannel) { // Usa la variable local 'currentChannel' para limpiar
+      if (currentChannel) {
         currentChannel.leave();
-        // setChannel(null) se maneja en endCall, o si el join falla.
-        // También puedes limpiar los listeners aquí si no se limpian automáticamente con leave()
       }
-      // Asegúrate de que las peer connections se cierren aquí también si el componente se desmonta
       Object.values(peerConnections).forEach(pc => pc.close());
-      setPeerConnections({}); // Limpiar el estado de las conexiones
+      setPeerConnections({});
+      setRemoteStreams({}); // Limpia los streams remotos en la limpieza del efecto
     };
-  }, [roomId, currentUser]); // Dependencias MUY reducidas: solo roomId y currentUser.
-                             // localStream, peerConnections, isTeacher, sendSignal, navigate
-                             // Ya no están porque sus actualizaciones no deben disparar el join del canal.
-                             // Las funciones que usan estos estados deben usar sus valores actuales
-                             // o ser envueltas en useCallback/memo si se pasan como props.
-
-  // Si necesitas que `isTeacher` u otras dependencias re-evalúen alguna parte del efecto
-  // sin volver a unirse al canal, tendrías que tener `useEffect`s separados para esa lógica.
+  }, [roomId, currentUser, localStream, sendSignal]); // Agregamos `localStream` y `sendSignal` a las dependencias.
+                                                     // `localStream` es necesario porque se usa en el setup del PC.
+                                                     // `sendSignal` es una useCallback, así que su cambio es controlado.
 
 
-  // ... el resto de tu componente (JSX) sin cambios ...
+  // Aquí puedes añadir la función toggleRecording si la necesitas
+  const toggleRecording = () => {
+    console.log("Función de grabación no implementada aún.");
+    setIsRecording(prev => !prev);
+  };
+
 
   if (loading) {
     return (
@@ -456,21 +511,14 @@ const VideoRoom: React.FC = () => {
     </div>
 
 
-    {/* Videos remotos */}
-    {Object.entries(participants).map(([id, { name }]) => (
-      <div key={id} className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
-        {/* Aquí la clave es cómo renderizar los streams remotos. */}
-        {/* Deberías tener una manera de asociar cada 'pc' en `peerConnections`
-            con un elemento <video> y su `srcObject`.
-            Esto es más complejo y podría requerir un componente `RemoteVideo` separado
-            o un mapa de `useRef`s, actualizando el `srcObject` cuando el `ontrack` se dispara.
-            Por ahora, el `video` tag es solo un placeholder. */}
-        <video autoPlay className="w-full h-full object-cover" />
-        <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
-          {name}
-        </div>
-      </div>
-    ))}
+    {/* Videos remotos (ahora usando RemoteVideo y los streams del estado) */}
+    {Object.entries(participants).map(([id, participantData]) => {
+      if (id === currentUser?.id) return null; // No renderizar el video local aquí
+      const remoteStream = remoteStreams[id] || null;
+      return (
+        <RemoteVideo key={id} stream={remoteStream} name={participantData.name} />
+      );
+    })}
   </div>
 </div>
 
@@ -499,7 +547,7 @@ const VideoRoom: React.FC = () => {
 
           {isTeacher && (
             <button
-              // onClick={toggleRecording}
+              onClick={toggleRecording} // Ahora el onClick está presente
               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
             >
               <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
