@@ -113,7 +113,7 @@ const VideoRoom: React.FC = () => {
 
     const reverbService = createReverbWebSocketService(currentUser.token);
     let currentChannel: EchoChannel | null = null; // Usamos un nombre diferente para evitar confusiones con el estado
-
+    console.log("se actualizo al componente nuevo")
     reverbService.join(`video-room.${roomId}`)
       .then((joinedChannel: EchoChannel) => {
         currentChannel = joinedChannel; // Asigna el canal a la variable local
