@@ -17,14 +17,20 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
+    console.log(`[RemoteVideo] Renderizando ${name}. Stream recibido:`, stream);
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      console.log(`[RemoteVideo] Asignado srcObject para ${name}. Tracks:`, stream.getTracks().map(t => t.kind));
+      // Opcional: Asegurarse de que el video empiece a reproducirse
+      videoRef.current.play().catch(e => console.warn(`Error al intentar reproducir video de ${name}:`, e));
+    } else if (videoRef.current) {
+         videoRef.current.srcObject = null; // Limpiar si el stream se pierde
     }
-  }, [stream]);
+  }, [stream, name]); // 'name' como dependencia es bueno si cambia
 
   return (
     <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
-      <video ref={videoRef} autoPlay className="w-full h-full object-cover" />
+      <video ref={videoRef} autoPlay className="w-full h-full object-cover" /> {/* Asegúrate de que autoPlay esté ahí */}
       <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
         {name}
       </div>
