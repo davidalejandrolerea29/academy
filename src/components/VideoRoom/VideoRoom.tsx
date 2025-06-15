@@ -16,25 +16,45 @@ interface RemoteVideoProps {
 
 const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name, id }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isMuted, setIsMuted] = useState(true); // Nuevo estado para controlar el mute
 
   useEffect(() => {
-    console.log(`[RemoteVideo] Renderizando ${name}. Stream recibido:`, stream);
+    console.log(`[RemoteVideo] Renderizando ${name} (ID: ${id}). Stream recibido:`, stream);
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
-      console.log(`[RemoteVideo] Asignado srcObject para ${name}. Tracks:`, stream.getTracks().map(t => t.kind));
-      // Opcional: Asegurarse de que el video empiece a reproducirse
-      videoRef.current.play().catch(e => console.warn(`Error al intentar reproducir video de ${name}:`, e));
+      // Aplicar el estado de mute
+      videoRef.current.muted = isMuted; // <-- Aquí
+      console.log(`[RemoteVideo] Asignado srcObject para ${name} (ID: ${id}). Tracks:`, stream.getTracks().map(t => t.kind));
+      videoRef.current.play().catch(e => console.warn(`Error al intentar reproducir video de ${name} (ID: ${id}):`, e));
     } else if (videoRef.current) {
-         videoRef.current.srcObject = null; // Limpiar si el stream se pierde
+         videoRef.current.srcObject = null;
     }
-  }, [stream, name]); // 'name' como dependencia es bueno si cambia
+  }, [stream, name, id, isMuted]); // <-- isMuted como dependencia
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !videoRef.current.muted;
+      setIsMuted(videoRef.current.muted);
+      // Si estaba muteado y lo desmuteas, intenta reproducir por si acaso
+      if (!videoRef.current.muted) {
+        videoRef.current.play().catch(e => console.warn(`Error al reproducir después de desmutear:`, e));
+      }
+    }
+  };
 
   return (
     <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
-      <video ref={videoRef} autoPlay className="w-full h-full object-cover" data-remote-id={id} /> 
+      <video ref={videoRef} autoPlay muted={isMuted} className="w-full h-full object-cover" data-remote-id={id} /> {/* muted={isMuted} */}
       <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
         {name}
       </div>
+      {/* Botón para desmutear/mutear */}
+      <button
+        onClick={toggleMute}
+        className="absolute top-2 left-2 bg-gray-800 bg-opacity-70 text-white p-1 rounded-full text-xs z-10"
+      >
+        {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
+      </button>
     </div>
   );
 };
@@ -596,8 +616,6 @@ useEffect(() => {
 )}
     </div>
 
-    // Dentro de VideoRoom, podrías tener algo así para depurar:
-   // Dentro de tu VideoRoom.tsx, donde mapeas a los participantes:
   {Object.entries(participants).map(([id, participantData]) => {
     const stream = remoteStreams[id]; // Obtener el stream asociado a este id
     if (!stream) return null; // Si no hay stream, no renderizar el video (o renderizar un placeholder)
