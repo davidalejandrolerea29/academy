@@ -416,7 +416,7 @@ export class ReverbWebSocketService {
   }
 
   public presence(channelName: string): Promise<EchoChannel> {
-    return this.subscribeChannel(`presence-${channelName}`, true); // Prefijo 'presence-'
+    return this.subscribeChannel(`${channelName}`, true); // Prefijo 'presence-'
   }
 
   // Método para cerrar todas las conexiones y limpiar
