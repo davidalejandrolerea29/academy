@@ -307,7 +307,7 @@ useEffect(() => {
     let currentChannelInstance: EchoChannel | null = null;
 
     console.log(`Intentando unirse al canal de presencia: video-room.${roomId}`);
-    reverbService.presence(`video-room.${roomId}`) // <--- ¡CAMBIO AQUÍ! USAMOS .presence()
+    reverbService.presence(`presence-video-room.${roomId}`) // <--- ¡CAMBIO AQUÍ! USAMOS .presence()
       .then((joinedChannel: EchoChannel) => {
         currentChannelInstance = joinedChannel;
         channelRef.current = joinedChannel;
