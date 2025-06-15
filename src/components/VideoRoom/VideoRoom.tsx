@@ -413,6 +413,7 @@ useEffect(() => {
                         pc.addTrack(track, localStream);
                     }
                 });
+                console.log("vaaaaa el localstream", localStream)
               } else {
                   console.warn(`[user-joined] No localStream disponible para agregar tracks a PC de ${id}.`);
               }
