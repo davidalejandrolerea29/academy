@@ -209,31 +209,32 @@ export class ReverbWebSocketService {
 
       // Manejar eventos internos de presencia
       if (message.event === 'pusher_internal:subscription_succeeded') {
-        const data = JSON.parse(message.data);
-        if (data.presence) { // Es un canal de presencia
+        const parsedMessageData = JSON.parse(message.data); // Esto debería ser el objeto completo
+        
+        // El formato estándar es `parsedMessageData.presence.hash` para los miembros
+        if (parsedMessageData.presence && parsedMessageData.presence.hash) {
           const members = new Map<string, any>();
-          for (const userId in data.presence.data) {
-            const memberInfo = data.presence.data[userId].user_info;
+          for (const userId in parsedMessageData.presence.hash) {
+            const memberInfo = parsedMessageData.presence.hash[userId]; // Info del miembro directamente aquí
             members.set(userId, memberInfo);
           }
           channelData.presenceMembers = members;
-          // Disparar el evento 'here'
           channelData.listeners.get('here')?.forEach(cb => cb(Array.from(members.values())));
         }
-        // Disparar el evento 'subscribed'
         channelData.listeners.get('subscribed')?.forEach(cb => cb());
 
       } else if (message.event === 'pusher_internal:member_added') {
-        const data = JSON.parse(message.data);
-        const newMember = data.user_info;
-        if (channelData.presenceMembers) {
+        const parsedMessageData = JSON.parse(message.data);
+        // El formato estándar es `parsedMessageData.user_info`
+        const newMember = parsedMessageData.user_info; 
+        if (channelData.presenceMembers && newMember) { // Asegurarse que newMember no es null/undefined
           channelData.presenceMembers.set(newMember.id.toString(), newMember);
         }
         channelData.listeners.get('joining')?.forEach(cb => cb(newMember));
       } else if (message.event === 'pusher_internal:member_removed') {
-        const data = JSON.parse(message.data);
-        const removedMemberId = data.user_id.toString(); // Asegurar que sea string para la key del Map
-        const removedMember = channelData.presenceMembers?.get(removedMemberId); // Obtener info antes de borrar
+        const parsedMessageData = JSON.parse(message.data);
+        const removedMemberId = parsedMessageData.user_id.toString(); 
+        const removedMember = channelData.presenceMembers?.get(removedMemberId); 
         channelData.presenceMembers?.delete(removedMemberId);
         channelData.listeners.get('leaving')?.forEach(cb => cb(removedMember || { id: removedMemberId }));
       }
@@ -416,7 +417,7 @@ export class ReverbWebSocketService {
   }
 
   public presence(channelName: string): Promise<EchoChannel> {
-    return this.subscribeChannel(`${channelName}`, true); // Prefijo 'presence-'
+      return this.subscribeChannel(`presence-${channelName}`, true); // Pide "presence-video-room.10"
   }
 
   // Método para cerrar todas las conexiones y limpiar
