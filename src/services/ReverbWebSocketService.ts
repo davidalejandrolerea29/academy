@@ -209,25 +209,27 @@ export class ReverbWebSocketService {
 
       // Manejar eventos internos de presencia
       if (message.event === 'pusher_internal:subscription_succeeded') {
-        const parsedMessageData = JSON.parse(message.data); // Esto debería ser el objeto completo
-        
-        // El formato estándar es `parsedMessageData.presence.hash` para los miembros
-        if (parsedMessageData.presence && parsedMessageData.presence.hash) {
+       const data = JSON.parse(message.data); // message.data es "{}" en tus logs actuales
+        if (data.presence) { // Esto será `undefined` si message.data es "{}"
           const members = new Map<string, any>();
-          for (const userId in parsedMessageData.presence.hash) {
-            const memberInfo = parsedMessageData.presence.hash[userId]; // Info del miembro directamente aquí
+          // Revisa esta parte: data.presence.data[userId].user_info
+          // Debería ser `data.presence.data[userId]` si tu backend envía la información del miembro directamente ahí.
+          // El formato correcto de `pusher_internal:subscription_succeeded` es `data: { presence: { ids: [], hash: {}, data: {} } }`
+          // Donde `data` bajo `presence` contiene la información detallada de cada usuario por ID.
+          for (const userId in data.presence.data) {
+            const memberInfo = data.presence.data[userId].user_info; // <-- ¡CUIDADO AQUÍ!
             members.set(userId, memberInfo);
           }
           channelData.presenceMembers = members;
+          // Disparar el evento 'here'
           channelData.listeners.get('here')?.forEach(cb => cb(Array.from(members.values())));
         }
         channelData.listeners.get('subscribed')?.forEach(cb => cb());
 
       } else if (message.event === 'pusher_internal:member_added') {
-        const parsedMessageData = JSON.parse(message.data);
-        // El formato estándar es `parsedMessageData.user_info`
-        const newMember = parsedMessageData.user_info; 
-        if (channelData.presenceMembers && newMember) { // Asegurarse que newMember no es null/undefined
+        const data = JSON.parse(message.data); // data es "{}" en tus logs actuales
+        const newMember = data.user_info; // <-- ¡CUIDADO AQUÍ!
+        if (channelData.presenceMembers) {
           channelData.presenceMembers.set(newMember.id.toString(), newMember);
         }
         channelData.listeners.get('joining')?.forEach(cb => cb(newMember));
