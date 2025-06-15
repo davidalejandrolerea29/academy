@@ -255,50 +255,50 @@ export class ReverbWebSocketService {
         ws: this.globalWs,
         socketId: this.globalSocketId,
         listeners: new Map(),
-        presenceMembers: new Map() // Inicializar para presencia por si acaso (aunque no se usará en public)
+        presenceMembers: new Map() // Inicializar para presencia por si acaso
       });
     }
     return this.channels.get(channelName)!;
   }
 
   // Método general para suscribirse a un canal (privado o de presencia)
- private async subscribeChannel(channelName: string, isPresence: boolean, requiresAuth: boolean = true): Promise<EchoChannel> {
+  private async subscribeChannel(channelName: string, isPresence: boolean): Promise<EchoChannel> {
     const socketId = await this.connect();
 
     let authData: any = {};
-    if (requiresAuth) { // Solo si el canal requiere autenticación
-        console.log(`ReverbWebSocketService: Realizando POST a ${this.options.authEndpoint} para canal ${channelName} con socketId ${socketId} y token ${this.options.token}`);
-        try {
-            const authResponse = await axios.post(
-                this.options.authEndpoint,
-                { channel_name: channelName, socket_id: socketId },
-                { headers: { Authorization: `Bearer ${this.options.token}` } }
-            );
-            authData = authResponse.data;
-            console.log(`ReverbWebSocketService: Auth successful for channel "${channelName}"`, authData);
-        } catch (error: any) {
-            console.error(`ReverbWebSocketService: FALLÓ la autenticación para canal "${channelName}":`, error.response?.data || error.message);
-            const existingChannel = this.channels.get(channelName);
-            existingChannel?.listeners.get('error')?.forEach(cb => cb(error));
-            throw error;
-        }
+    console.log(`ReverbWebSocketService: Realizando POST a ${this.options.authEndpoint} para canal ${channelName} con socketId ${socketId} y token ${this.options.token}`);
+    try {
+      // Autenticación para canales privados y de presencia
+      const authResponse = await axios.post(
+        this.options.authEndpoint,
+        { channel_name: channelName, socket_id: socketId },
+        { headers: { Authorization: `Bearer ${this.options.token}` } }
+      );
+      authData = authResponse.data;
+      console.log(`ReverbWebSocketService: Auth successful for channel "${channelName}"`, authData); // Imprime la respuesta completa
+
+    } catch (error: any) {
+      console.error(`ReverbWebSocketService: FALLÓ la autenticación para canal "${channelName}":`, error.response?.data || error.message);
+      // Notificar a los listeners de error del canal si ya existen
+      const existingChannel = this.channels.get(channelName);
+      existingChannel?.listeners.get('error')?.forEach(cb => cb(error));
+      throw error; // Propagar el error
     }
 
-    const subscriptionPayload: any = { // Asegurarse de que sea 'any' para asignar 'auth' condicionalmente
-        event: 'pusher:subscribe',
-        data: {
-            channel: channelName,
-        }
+    const subscriptionPayload = {
+      event: 'pusher:subscribe',
+      data: {
+        channel: channelName,
+        auth: authData.auth // El campo 'auth' viene de la respuesta de Laravel
+      }
     };
-    if (requiresAuth) { // Si requiere auth, se añade la firma
-        subscriptionPayload.data.auth = authData.auth;
-    }
+
     if (this.globalWs?.readyState === WebSocket.OPEN) {
-        this.globalWs.send(JSON.stringify(subscriptionPayload));
-        console.log(`ReverbWebSocketService: Sent subscription request for channel: "${channelName}"`);
+      this.globalWs.send(JSON.stringify(subscriptionPayload));
+      console.log(`ReverbWebSocketService: Sent subscription request for channel: "${channelName}"`);
     } else {
-        console.error(`ReverbWebSocketService: Global WebSocket is not open to subscribe to "${channelName}".`);
-        throw new Error("WebSocket not open for subscription.");
+      console.error(`ReverbWebSocketService: Global WebSocket is not open to subscribe to "${channelName}".`);
+      throw new Error("WebSocket not open for subscription.");
     }
 
     const channelSubscription = this.getOrCreateChannelSubscription(channelName);
