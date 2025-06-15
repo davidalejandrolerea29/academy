@@ -419,7 +419,7 @@ export class ReverbWebSocketService {
   }
 
   public presence(channelName: string): Promise<EchoChannel> {
-      return this.subscribeChannel(`${channelName}`, true); // Pide "presence-video-room.10"
+      return this.subscribeChannel(`presence-${channelName}`, true); // Pide "presence-video-room.10"
   }
 
   // Método para cerrar todas las conexiones y limpiar
