@@ -11,9 +11,10 @@ import { Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle, MessageSquare, P
 interface RemoteVideoProps {
   stream: MediaStream | null;
   name: string;
+  id: string;
 }
 
-const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name }) => {
+const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name, id }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name }) => {
 
   return (
     <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
-      <video ref={videoRef} autoPlay className="w-full h-full object-cover" /> {/* Asegúrate de que autoPlay esté ahí */}
+      <video ref={videoRef} autoPlay className="w-full h-full object-cover" data-remote-id={id} /> 
       <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
         {name}
       </div>
@@ -595,14 +596,36 @@ useEffect(() => {
 )}
     </div>
 
-    {Object.entries(participants).map(([id, participantData]) => {
-      // Asegúrate de que el ID del usuario actual sea un string para la comparación consistente
-      if (id === currentUser?.id?.toString()) return null;
-      const remoteStream = remoteStreams[id] || null;
-      return (
-        <RemoteVideo key={id} stream={remoteStream} name={participantData.name} />
-      );
-    })}
+    // Dentro de VideoRoom, podrías tener algo así para depurar:
+   // Dentro de tu VideoRoom.tsx, donde mapeas a los participantes:
+  {Object.entries(participants).map(([id, participantData]) => {
+    const stream = remoteStreams[id]; // Obtener el stream asociado a este id
+    if (!stream) return null; // Si no hay stream, no renderizar el video (o renderizar un placeholder)
+
+    return (
+      <div key={id} className="relative">
+        <RemoteVideo 
+          stream={stream} 
+          name={participantData?.name || `Usuario ${id}`} 
+          id={id} // ¡Aquí pasamos el id!
+        />
+        {/* Tu botón de depuración (si aún lo usas) ahora puede acceder al id directamente */}
+        <button
+          onClick={() => {
+            const remoteVideoElement = document.querySelector(`video[data-remote-id="${id}"]`);
+            if (remoteVideoElement instanceof HTMLVideoElement) {
+              remoteVideoElement.play().catch(e => console.error("Error al reproducir manualmente:", e));
+            }
+          }}
+          className="absolute top-2 right-2 bg-blue-500 text-white p-1 rounded z-10"
+        >
+          Play {participantData?.name}
+        </button>
+      </div>
+    );
+  })}
+
+
   </div>
 </div>
 
