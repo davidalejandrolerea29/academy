@@ -263,9 +263,10 @@ export class ReverbWebSocketService {
 
   // Método general para suscribirse a un canal (privado o de presencia)
   private async subscribeChannel(channelName: string, isPresence: boolean): Promise<EchoChannel> {
-    const socketId = await this.connect(); // Asegurarse de que la conexión global esté establecida
+    const socketId = await this.connect();
 
     let authData: any = {};
+    console.log(`ReverbWebSocketService: Realizando POST a ${this.options.authEndpoint} para canal ${channelName} con socketId ${socketId} y token ${this.options.token}`);
     try {
       // Autenticación para canales privados y de presencia
       const authResponse = await axios.post(
@@ -274,10 +275,10 @@ export class ReverbWebSocketService {
         { headers: { Authorization: `Bearer ${this.options.token}` } }
       );
       authData = authResponse.data;
-      console.log(`ReverbWebSocketService: Auth successful for channel "${channelName}"`);
+      console.log(`ReverbWebSocketService: Auth successful for channel "${channelName}"`, authData); // Imprime la respuesta completa
 
     } catch (error: any) {
-      console.error(`ReverbWebSocketService: Failed to authenticate for channel "${channelName}":`, error.response?.data || error.message);
+      console.error(`ReverbWebSocketService: FALLÓ la autenticación para canal "${channelName}":`, error.response?.data || error.message);
       // Notificar a los listeners de error del canal si ya existen
       const existingChannel = this.channels.get(channelName);
       existingChannel?.listeners.get('error')?.forEach(cb => cb(error));
