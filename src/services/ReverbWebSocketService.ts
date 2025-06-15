@@ -446,7 +446,7 @@ let reverbServiceInstance: ReverbWebSocketService | null = null;
 
 export const createReverbWebSocketService = (token: string): ReverbWebSocketService => {
   if (!reverbServiceInstance) {
-    const appKey = 'sfnheugrsf0hhvj0k6oo'; // Tu APP_KEY de Reverb
+    const appKey = '324006'; // Tu APP_KEY de Reverb
     const wsHost = 'english-meet.duckdns.org'; // Tu WSS_HOST
     const wsPort = 443; // Tu WSS_PORT (normalmente 443 para HTTPS)
     const authEndpoint = 'https://english-meet.duckdns.org/broadcasting/auth'; // Tu AUTH_ENDPOINT
