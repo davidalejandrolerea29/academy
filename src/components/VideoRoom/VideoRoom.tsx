@@ -15,6 +15,7 @@ interface RemoteVideoProps {
 }
 
 const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name, id }) => {
+   console.log(`VIENE AL MENOS`);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isMuted, setIsMuted] = useState(true); // Nuevo estado para controlar el mute
 
