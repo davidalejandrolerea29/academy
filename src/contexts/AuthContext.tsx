@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
-import { createEcho } from '../config-reverb/echo';
+// import { createEcho } from '../config-reverb/echo';
 interface AuthContextType {
   currentUser: User | null;
   loading: boolean;
@@ -98,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('token', access_token);
 
 
-      const echo = createEcho(access_token);
+      // const echo = createEcho(access_token);
 
       setCurrentUser({
   token: access_token,
