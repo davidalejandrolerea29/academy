@@ -560,7 +560,7 @@ useEffect(() => {
       Object.values(peerConnectionsRef.current).forEach(pc => {
           if (pc.connectionState !== 'closed') pc.close();
       });
-      Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+      // Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
       peerConnectionsRef.current = {}; // Limpiar el ref explícitamente
       setRemoteStreams({}); // Limpiar el estado de streams remotos
       channelRef.current = null;
