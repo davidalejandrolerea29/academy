@@ -93,12 +93,12 @@ const VideoRoom: React.FC = () => {
 
 
   // useEffect para obtener el stream local
-  useEffect(() => {
+useEffect(() => {
     const startMedia = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         console.log('Local stream tracks:', stream.getTracks());
-        setLocalStream(stream);
+        setLocalStream(stream); // <-- Aquí se actualiza el estado
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
@@ -113,12 +113,10 @@ const VideoRoom: React.FC = () => {
 
     return () => {
       localStream?.getTracks().forEach(track => track.stop());
-      // Usar Object.values(remoteStreams) para los streams ya en el estado
       Object.values(remoteStreams).forEach(stream => stream.getTracks().forEach(track => track.stop()));
       setRemoteStreams({});
     };
   }, []); // localStream NO es una dependencia aquí, se establece ONCE.
-
 
   const toggleVideo = () => {
     if (!localStream) return;
@@ -294,13 +292,9 @@ const sendSignal = useCallback((toId: string, data: any) => {
 
 // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
 useEffect(() => {
-    console.log("current user", currentUser);
-    if (!roomId || !currentUser) {
-        console.log("Faltan roomId o currentUser para unirse al canal.");
-        return;
-    }
-    if (!localStream) {
-        console.log("Esperando localStream para unirse al canal.");
+   console.log("current user", currentUser);
+    if (!roomId || !currentUser || !localStream) { // Esperar a que todo esté listo
+        console.log("Faltan roomId, currentUser o localStream para unirse al canal. Reintentando...");
         return;
     }
     if (channelRef.current) {
@@ -308,7 +302,7 @@ useEffect(() => {
         return;
     }
 
-   const reverbService = createReverbWebSocketService(currentUser.token);
+    const reverbService = createReverbWebSocketService(currentUser.token);
     let currentChannelInstance: EchoChannel | null = null;
 
     console.log(`Intentando unirse al canal video-room.${roomId}`);
@@ -565,10 +559,9 @@ useEffect(() => {
       Object.values(peerConnectionsRef.current).forEach(pc => {
           if (pc.connectionState !== 'closed') pc.close();
       });
-      peerConnectionsRef.current = {};
-      // Asegurarse de detener tracks de streams remotos
-      Object.values(remoteStreams).forEach(stream => stream.getTracks().forEach(track => track.stop()));
-      setRemoteStreams({});
+      Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+      peerConnectionsRef.current = {}; // Limpiar el ref explícitamente
+      setRemoteStreams({}); // Limpiar el estado de streams remotos
       channelRef.current = null;
     };
 }, [roomId, currentUser, localStream, sendSignal, videoEnabled, micEnabled]);
