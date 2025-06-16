@@ -178,7 +178,7 @@ const VideoRoom: React.FC = () => {
 // En VideoRoom.tsx, dentro del componente:
 const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
-
+const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   // --- Refs para mantener referencias persistentes ---
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const channelRef = useRef<EchoChannel | null>(null);
@@ -829,38 +829,25 @@ useEffect(() => {
             </div>
 
             {/* Videos remotos */}
-        {allParticipants.map(participant => {
-          // Aquí está la clave: verificar si el stream existe antes de renderizar RemoteVideo
-          // Si el stream es null, se puede mostrar un placeholder.
-          // Si el stream existe, renderizar RemoteVideo.
-          // Ya tienes la lógica de placeholder en RemoteVideo con !videoEnabled,
-          // pero si stream es null, no deberíamos renderizar RemoteVideo
-          // Esto es lo que estaba pasando: estabas mostrando tu div de "Cargando video..."
-          // en lugar de tu componente RemoteVideo.
-          
-          if (!participant.stream) {
-            // Placeholder si el stream aún no ha llegado
-            return (
-              <div
-                key={participant.id}
-                className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-gray-800 flex items-center justify-center text-gray-400"
-              >
-                Cargando video de {participant.name}...
-              </div>
-            );
-          }
-
-          return (
-            <RemoteVideo
-              key={participant.id}
-              stream={participant.stream}
-              name={participant.name}
-              id={participant.id}
-              videoEnabled={participant.videoEnabled}
-              micEnabled={participant.micEnabled}
-            />
-          );
-        })}
+       {Object.entries(participants).map(([id, { name }]) => (
+        <div key={id} className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
+          <video
+            ref={(videoElement) => { // Usar un callback ref para asignar srcObject
+              if (videoElement && remoteStreams[id]) {
+                videoElement.srcObject = remoteStreams[id];
+              }
+            }}
+            autoPlay
+            muted // Considera silenciar por defecto para evitar feedback, y luego dar control al usuario
+            playsInline // Importante para iOS
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
+            {name}
+          </div>
+          {/* Aquí podrías añadir el medidor de volumen para el remoto también */}
+        </div>
+      ))}
           </div>
         </div>
 
