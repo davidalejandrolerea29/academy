@@ -480,30 +480,47 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
 
 // --- Singleton para usar en toda la aplicación ---
 // Esto asegura que solo haya una instancia del servicio WebSocket.
+// ... (código anterior) ...
+
+// Define la URL base de tu API desde las variables de entorno de Vite
+const API_URL = import.meta.env.VITE_API_URL;
 
 let reverbServiceInstance: ReverbWebSocketService | null = null;
 
 export const createReverbWebSocketService = (token: string): ReverbWebSocketService => {
   if (!reverbServiceInstance) {
     const appKey = 'sfnheugrsf0hhvj0k6oo'; // Tu APP_KEY de Reverb
-    const wsHost = '127.0.0.1'; // Tu WSS_HOST
-    const wsPort = 3000; // Tu WSS_PORT (normalmente 443 para HTTPS)
-    const authEndpoint = 'http://127.0.0.1:3000/broadcasting/auth'; // <--- ¡Apunta a tu Node.js!
+
+    // Parseamos la API_URL para extraer solo el hostname (dominio/IP)
+    const apiUrlParsed = new URL(API_URL);
+    const apiHost = apiUrlParsed.hostname; // Esto te dará '127.0.0.1' o 'localhost'
+
+    // wsHost y wsPort son para la conexión WebSocket directa a Reverb (Node.js)
+    const wsHost = apiHost; // Usa el mismo host que tu API
+    const wsPort = 3000; // Este es el puerto de tu servidor Node.js (Reverb)
+
+    // authEndpoint debe apuntar a tu servidor Node.js (puerto 3000)
+    // donde manejas la autenticación de Broadcasting.
+    const authEndpoint = `${apiUrlParsed.protocol}//${apiHost}:${wsPort}/broadcasting/auth`;
+
+    console.log("ReverbService: Usando wsHost:", wsHost);
+    console.log("ReverbService: Usando wsPort:", wsPort);
+    console.log("ReverbService: Usando authEndpoint:", authEndpoint); // Para depuración
 
     reverbServiceInstance = new ReverbWebSocketService({
       appKey,
       wsHost,
       wsPort,
-      authEndpoint, // Ahora apunta a Node.js
-      token, // Asegúrate de que `setAuthToken` o similar ponga esto en los headers
+      authEndpoint,
+      token,
     });
   } else {
-    // Si la instancia ya existe, asegúrate de actualizar el token si ha cambiado
-    // Esto es importante si el token puede expirar y refrescarse.
-    reverbServiceInstance.setToken(token); // Necesitas un método setToken
+    reverbServiceInstance.setToken(token);
   }
   return reverbServiceInstance;
 };
+
+// ... (resto del código) ...
 
 // Extensión para la clase ReverbWebSocketService para actualizar el token
 declare module './ReverbWebSocketService' {
