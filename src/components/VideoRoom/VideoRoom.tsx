@@ -567,30 +567,45 @@ useEffect(() => {
                       }
                       break;
                   // VideoRoom.tsx - dentro de joinedChannel.listenForWhisper('Signal')
-                  case 'candidate':
-                      if (data.candidate && data.candidate.candidate) { // Añade una verificación más estricta para data.candidate.candidate
-                          console.log(`[ICE Candidate IN] Recibido candidato para ${from}:`, data.candidate);
-                          const peerConnection = peerConnectionsRef.current[from]; // Usa la ref correcta
-                          if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
-                              console.log(`[ICE Candidate IN] RemoteDescription YA ESTABLECIDA para ${from}. Tipo: ${peerConnection.remoteDescription.type}`);
-                              try {
-                                  await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                                  console.log(`[ICE Candidate IN] Añadido ICE candidate para ${from} exitosamente.`);
-                              } catch (e) {
-                                  // Esto es importante: capturar y loguear errores al añadir candidatos
-                                  console.error(`[ICE Candidate IN] Error al añadir ICE candidate para ${from}:`, e, data.candidate);
-                              }
-                          } else {
-                              console.log(`[ICE Candidate IN] Candidato para ${from} en cola. RemoteDescription aún no establecida. Actual remoteDescription:`, peerConnection ? peerConnection.remoteDescription : 'PeerConnection no existe.');
-                              if (!iceCandidatesQueueRef.current[from]) {
-                                  iceCandidatesQueueRef.current[from] = [];
-                              }
-                              iceCandidatesQueueRef.current[from].push(data.candidate);
-                          }
-                      } else {
-                          console.warn("Received null/undefined ICE candidate or candidate.candidate. Ignoring.");
-                      }
-                      break;
+                 case 'candidate':
+    // Agrega una verificación más estricta para data.candidate y data.candidate.candidate
+    if (data.candidate && data.candidate.candidate) {
+        console.log(`[ICE Candidate IN] Recibido candidato para ${from}:`, data.candidate);
+
+        // Asegúrate de usar la ref correcta para obtener la PeerConnection
+        const peerConnection = peerConnectionsRef.current[from];
+
+        // Solo procede si la PeerConnection existe
+        if (peerConnection) {
+            // Verifica si la RemoteDescription ya ha sido establecida
+            if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+                console.log(`[ICE Candidate IN] RemoteDescription YA ESTABLECIDA para ${from}. Tipo: ${peerConnection.remoteDescription.type}`);
+                try {
+                    // Intenta añadir el candidato ICE
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    console.log(`[ICE Candidate IN] Añadido ICE candidate para ${from} exitosamente.`);
+                } catch (e) {
+                    // Es crucial capturar y loguear errores al añadir candidatos
+                    // ya que pueden indicar un problema con el candidato o el estado de la PC
+                    console.error(`[ICE Candidate IN] Error al añadir ICE candidate para ${from}:`, e, data.candidate);
+                }
+            } else {
+                // Si la RemoteDescription aún no está establecida, encola el candidato
+                console.log(`[ICE Candidate IN] Candidato para ${from} en cola. RemoteDescription aún no establecida. Actual remoteDescription:`, peerConnection.remoteDescription);
+
+                if (!iceCandidatesQueueRef.current[from]) {
+                    iceCandidatesQueueRef.current[from] = [];
+                }
+                iceCandidatesQueueRef.current[from].push(data.candidate);
+                console.log(`[ICE Candidate IN] Candidato añadido a la cola para ${from}. Cola actual: ${iceCandidatesQueueRef.current[from].length} candidatos.`);
+            }
+        } else {
+            console.warn(`[ICE Candidate IN] PeerConnection para ${from} no encontrada al intentar añadir candidato. Ignorando candidato.`);
+        }
+    } else {
+        console.warn("Received null/undefined ICE candidate or candidate.candidate. Ignoring.");
+    }
+    break;
                   default:
                       console.warn(`[SIGNAL IN] Tipo de señal desconocido: ${data.type}`);
               }
