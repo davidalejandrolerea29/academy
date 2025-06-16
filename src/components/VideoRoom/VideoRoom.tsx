@@ -100,18 +100,33 @@ const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
 
+  const sendSignal = useCallback((toId: string, data: any) => {
+    if (!channelRef.current) {
+      console.warn("Cannot send signal: channel is not ready.");
+      return;
+    }
+    channelRef.current.whisper('Signal', {
+      to: toId,
+      from: currentUser?.id,
+      data,
+    });
+  }, [currentUser?.id]);
   // --- Función auxiliar para obtener/crear RTCPeerConnection ---
-  const getOrCreatePeerConnection = useCallback((peerId: string) => {
+    const getOrCreatePeerConnection = useCallback((peerId: string) => {
     if (!peerConnectionsRef.current[peerId]) {
       console.log(`[PC] Creando nueva RTCPeerConnection para peer: ${peerId}`);
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },],
       });
 
+      // --- CAMBIO CLAVE: Manejo de onicecandidate ---
+      // Dentro de pc.onicecandidate:
       pc.onicecandidate = (event) => {
         if (event.candidate && currentUser) {
           console.log(`[ICE Candidate] Generado candidato para ${peerId}.`);
-          sendSignal(peerId, { type: 'candidate', candidate: event.candidate });
+          // Envía event.candidate como un objeto plano para que sea reconstruido.
+          sendSignal(peerId, { type: 'candidate', candidate: event.candidate.toJSON() });
         }
       };
 
@@ -131,8 +146,41 @@ const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
         });
       };
 
+      // --- CAMBIO CLAVE: Manejo de onnegotiationneeded ---
       pc.onnegotiationneeded = async () => {
-          console.log(`[onnegotiationneeded] Se activó para peer: ${peerId}. Este evento NO inicia la oferta. Solo para depuración.`);
+          console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
+          if (!localStream) {
+            console.warn(`[onnegotiationneeded] localStream no está listo para peer ${peerId}. No se puede crear oferta.`);
+            return;
+          }
+
+          // Asegurarse de que los tracks locales estén añadidos antes de crear la oferta
+          localStream.getTracks().forEach(track => {
+            if (!pc.getSenders().some(sender => sender.track === track)) {
+              pc.addTrack(track, localStream);
+              console.log(`[ON_NEGOTIATION] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+            }
+          });
+
+          try {
+            // Solo creamos oferta si somos el "iniciador" basado en IDs
+            // (esto evita ofertas duplicadas si ambos inician al mismo tiempo)
+            const localUserId = parseInt(currentUser?.id.toString() || '0');
+            const remoteMemberId = parseInt(peerId);
+            const isInitiator = localUserId < remoteMemberId; // O tu lógica para determinar quién inicia
+
+            if (isInitiator) {
+                console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
+            } else {
+                console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
+            }
+
+          } catch (e) {
+            console.error("Error en onnegotiationneeded al crear/enviar oferta:", e);
+          }
       };
 
       pc.onconnectionstatechange = () => {
@@ -152,53 +200,56 @@ const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
         }
       };
 
+      // --- CAMBIO: Añadir los tracks locales INMEDIATAMENTE al crear la PC ---
+      // Esto asegura que pc.onnegotiationneeded se dispare si es necesario
+      // o que la oferta inicial contenga los tracks.
+      if (localStream) {
+        localStream.getTracks().forEach(track => {
+          if (!pc.getSenders().some(sender => sender.track === track)) {
+            pc.addTrack(track, localStream);
+            console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+          }
+        });
+      }
+
+
       peerConnectionsRef.current = { ...peerConnectionsRef.current, [peerId]: pc };
     }
     return peerConnectionsRef.current[peerId];
-  }, [currentUser]);
+  }, [currentUser, localStream, sendSignal]); // Añadido localStream a las dependencias
 
-  const sendSignal = useCallback((toId: string, data: any) => {
-    if (!channelRef.current) {
-      console.warn("Cannot send signal: channel is not ready.");
-      return;
-    }
-    channelRef.current.whisper('Signal', {
-      to: toId,
-      from: currentUser?.id,
-      data,
-    });
-  }, [currentUser?.id]);
+
 
   // --- NUEVA FUNCIÓN PARA INICIAR LA LLAMADA CON UN PEER ESPECÍFICO ---
-  const initiateCallForPeer = useCallback(async (peerId: string, isInitiator: boolean) => {
-    if (!localStream || !currentUser) {
-      console.warn(`[initiateCallForPeer] localStream o currentUser no están listos para peer ${peerId}.`);
-      return;
-    }
+  // const initiateCallForPeer = useCallback(async (peerId: string, isInitiator: boolean) => {
+  //   if (!localStream || !currentUser) {
+  //     console.warn(`[initiateCallForPeer] localStream o currentUser no están listos para peer ${peerId}.`);
+  //     return;
+  //   }
 
-    const pc = getOrCreatePeerConnection(peerId);
+  //   const pc = getOrCreatePeerConnection(peerId);
 
-    // Añadir tracks locales si no están ya añadidos
-    localStream.getTracks().forEach(track => {
-      if (!pc.getSenders().some(sender => sender.track === track)) {
-        pc.addTrack(track, localStream);
-        console.log(`[INIT_CALL] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
-      }
-    });
+  //   // Añadir tracks locales si no están ya añadidos
+  //   localStream.getTracks().forEach(track => {
+  //     if (!pc.getSenders().some(sender => sender.track === track)) {
+  //       pc.addTrack(track, localStream);
+  //       console.log(`[INIT_CALL] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+  //     }
+  //   });
 
-    if (isInitiator) {
-      console.log(`[INIT_CALL - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendSignal(peerId, { type: 'offer', sdp: offer.sdp });
-      } catch (e) {
-        console.error("Error al crear/enviar oferta en initiateCallForPeer:", e);
-      }
-    } else {
-      console.log(`[INIT_CALL - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
-    }
-  }, [localStream, currentUser, getOrCreatePeerConnection, sendSignal]);
+  //   if (isInitiator) {
+  //     console.log(`[INIT_CALL - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
+  //     try {
+  //       const offer = await pc.createOffer();
+  //       await pc.setLocalDescription(offer);
+  //       sendSignal(peerId, { type: 'offer', sdp: offer.sdp });
+  //     } catch (e) {
+  //       console.error("Error al crear/enviar oferta en initiateCallForPeer:", e);
+  //     }
+  //   } else {
+  //     console.log(`[INIT_CALL - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
+  //   }
+  // }, [localStream, currentUser, getOrCreatePeerConnection, sendSignal]);
 
   // --- useEffect para obtener el stream local ---
   useEffect(() => {
@@ -271,12 +322,13 @@ useEffect(() => {
                 stream: null
               };
 
-              const remoteMemberId = parseInt(String(member.id));
+              // const remoteMemberId = parseInt(String(member.id));
               // Determina si este cliente debe iniciar la oferta
-              const shouldInitiate = localUserId < remoteMemberId;
+              // const shouldInitiate = localUserId < remoteMemberId;
 
               // Llama a la nueva función para iniciar la llamada con este peer
-              await initiateCallForPeer(String(member.id), shouldInitiate);
+              // await initiateCallForPeer(String(member.id), shouldInitiate);
+              getOrCreatePeerConnection(member.id);
             }
           }
           setParticipants(initialParticipants);
@@ -302,13 +354,14 @@ useEffect(() => {
                 return updatedParticipants;
             });
 
-            const localUserId = parseInt(currentUser.id.toString());
-            const remoteMemberId = parseInt(memberId);
+            // const localUserId = parseInt(currentUser.id.toString());
+            // const remoteMemberId = parseInt(memberId);
             // Determina si este cliente debe iniciar la oferta
-            const shouldInitiate = localUserId < remoteMemberId;
+            // const shouldInitiate = localUserId < remoteMemberId;
 
             // Llama a la nueva función para iniciar la llamada con este peer
-            await initiateCallForPeer(memberId, shouldInitiate);
+            // await initiateCallForPeer(memberId, shouldInitiate);
+            getOrCreatePeerConnection(member.id);
 
         });
 
@@ -337,18 +390,34 @@ useEffect(() => {
               switch (data.type) {
                   case 'offer':
                       console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
-                      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                        // Antes de setRemoteDescription, asegúrate de que los tracks locales estén añadidos.
+                        if (localStream) {
+                            localStream.getTracks().forEach(track => {
+                                if (!pc.getSenders().some(sender => sender.track === track)) {
+                                    pc.addTrack(track, localStream);
+                                    console.log(`[SDP Offer Recv] ✅ Añadido track local ${track.kind} a PC de ${from}`);
+                                }
+                            });
+                        }
+                      await pc.setRemoteDescription(new RTCSessionDescription({
+                          type: data.sdpType, // Usa el sdpType que enviaste
+                          sdp: data.sdp
+                      }));
                       console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
                       const answer = await pc.createAnswer();
                       await pc.setLocalDescription(answer);
-                      sendSignal(from, { type: 'answer', sdp: answer.sdp });
+                      sendSignal(from, { type: 'answer', sdp: answer.sdp, sdpType: answer.type }); // También envía el tipo de la respuesta
                       break;
                   case 'answer':
                       console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
-                      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                      await pc.setRemoteDescription(new RTCSessionDescription({
+                          type: data.sdpType, // Usa el sdpType que enviaste
+                          sdp: data.sdp
+                      }));
                       break;
                   case 'candidate':
                       if (data.candidate) {
+                          // Reconstruye RTCIceCandidate a partir del objeto plano
                           await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ICE candidate:", e, data.candidate));
                       } else {
                           console.warn("Received null/undefined ICE candidate. Ignoring.");
