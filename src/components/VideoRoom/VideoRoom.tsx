@@ -2,41 +2,48 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
-import { Room } from '../../types';
-import { useMicVolume } from '../../hooks/useMicVolume';
+import { supabase } from '../../lib/supabase'; // Asumo que esto es relevante para otras partes de tu app
+import { Room } from '../../types'; // Asumo que este tipo está definido
+import { useMicVolume } from '../../hooks/useMicVolume'; // Asumo que tu hook está bien
 
 import { Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle, MessageSquare, PhoneOff } from 'lucide-react';
 
 interface RemoteVideoProps {
   stream: MediaStream | null;
   name: string;
-  id: string;
+  id: string; // Asegúrate de pasar el ID al componente RemoteVideo
 }
 
 const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name, id }) => {
-   console.log(`VIENE AL MENOS`);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isMuted, setIsMuted] = useState(true); // Nuevo estado para controlar el mute
+  const [isMuted, setIsMuted] = useState(true); // Estado para controlar el mute del video remoto (inicialmente muteado)
 
   useEffect(() => {
-    console.log(`[RemoteVideo] Renderizando ${name} (ID: ${id}). Stream recibido:`, stream);
+    // console.log(`[RemoteVideo] Renderizando ${name} (ID: ${id}). Stream recibido:`, stream);
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
-      // Aplicar el estado de mute
-      videoRef.current.muted = isMuted; // <-- Aquí
-      console.log(`[RemoteVideo] Asignado srcObject para ${name} (ID: ${id}). Tracks:`, stream.getTracks().map(t => t.kind));
-      videoRef.current.play().catch(e => console.warn(`Error al intentar reproducir video de ${name} (ID: ${id}):`, e));
+      // Intenta reproducir el video. Si el navegador lo bloquea, se manejará con el .catch
+      videoRef.current.play().catch(e => {
+        // console.warn(`Error al intentar reproducir video de ${name} (ID: ${id}):`, e);
+        // Si hay un error de autoplay, desmutear y intentar de nuevo
+        if (e.name === 'NotAllowedError' || e.name === 'NotSupportedError' || e.name === 'AbortError') {
+             // console.log(`[RemoteVideo] Autoplay bloqueado para ${name}. Se requiere interacción del usuario.`);
+             // Puedes mostrar un botón "Play" o un indicador visual aquí.
+        }
+      });
     } else if (videoRef.current) {
-         videoRef.current.srcObject = null;
+         videoRef.current.srcObject = null; // Limpiar si el stream se ha ido
     }
-  }, [stream, name, id, isMuted]); // <-- isMuted como dependencia
+  }, [stream, name, id]);
 
+  // Si quieres que los videos remotos no estén muteados por defecto, cambia `useState(true)` a `useState(false)`
+  // y quita `muted={isMuted}` del elemento <video> o cambia `muted` a `false`.
+  // La línea `videoRef.current.muted = isMuted;` en el useEffect debería ser eliminada si no quieres control de mute manual para remotos.
+  // Usualmente, los videos remotos no se muten a sí mismos, pero un usuario local podría silenciar a otro.
   const toggleMute = () => {
     if (videoRef.current) {
       videoRef.current.muted = !videoRef.current.muted;
       setIsMuted(videoRef.current.muted);
-      // Si estaba muteado y lo desmuteas, intenta reproducir por si acaso
       if (!videoRef.current.muted) {
         videoRef.current.play().catch(e => console.warn(`Error al reproducir después de desmutear:`, e));
       }
@@ -45,7 +52,8 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name, id }) => {
 
   return (
     <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
-      <video ref={videoRef} autoPlay muted={isMuted} className="w-full h-full object-cover" data-remote-id={id} /> {/* muted={isMuted} */}
+      {/* Asegúrate de que `muted` en <video> refleje `isMuted` si quieres control de mute manual */}
+      <video ref={videoRef} autoPlay muted={isMuted} className="w-full h-full object-cover" data-remote-id={id} />
       <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
         {name}
       </div>
@@ -66,39 +74,139 @@ const VideoRoom: React.FC = () => {
   const navigate = useNavigate();
 
   const { roomId } = useParams<{ roomId: string }>();
-  const { currentUser } = useAuth();
-  const [room, setRoom] = useState<Room | null>(null);
+  const { currentUser } = useAuth(); // Asegúrate de que `currentUser.id` y `currentUser.name` existan
+  const [room, setRoom] = useState<Room | null>(null); // Estado para la información de la sala (si es necesario)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isTeacher, setIsTeacher] = useState(false);
+  const [isTeacher, setIsTeacher] = useState(false); // Determinar si el usuario actual es profesor
   const [isRecording, setIsRecording] = useState(false);
   const [messages, setMessages] = useState<{ sender: string; text: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
+// En VideoRoom.tsx, dentro del componente:
+const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
 
-  // --- CAMBIO CLAVE: Usamos useRef para peerConnections y channel ---
+  // --- Refs para mantener referencias persistentes ---
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const channelRef = useRef<EchoChannel | null>(null);
+  const reverbServiceRef = useRef(createReverbWebSocketService(currentUser?.token || '')); // Instancia del servicio
 
-  // remoteStreams todavía es un estado porque queremos que cause re-renders para mostrar los videos
-  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
-
-
+  // Estado para streams remotos y participantes
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [participants, setParticipants] = useState<Record<string, { name: string, videoEnabled?: boolean, micEnabled?: boolean }>>({});
+  // participants ahora incluye toda la info necesaria para renderizar y gestionar el estado del usuario
+  const [participants, setParticipants] = useState<Record<string, { id: string, name: string, videoEnabled: boolean, micEnabled: boolean, stream: MediaStream | null }>>({});
+
   const [micEnabled, setMicEnabled] = useState(true);
-  const [volume, setVolume] = useState(0); // <--- Asegúrate de que esta línea exista y no esté comentada
   const [videoEnabled, setVideoEnabled] = useState(true);
-  const volume2 = useMicVolume(localStream); // Asumo que `useMicVolume` no tiene problemas
+  const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
 
+  // --- Función auxiliar para obtener/crear RTCPeerConnection ---
+  const getOrCreatePeerConnection = useCallback((peerId: string) => {
+    if (!peerConnectionsRef.current[peerId]) {
+      console.log(`[PC] Creando nueva RTCPeerConnection para peer: ${peerId}`);
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      });
 
-  // useEffect para obtener el stream local
-useEffect(() => {
+      pc.onicecandidate = (event) => {
+        if (event.candidate && currentUser) {
+          console.log(`[ICE Candidate] Generado candidato para ${peerId}.`);
+          sendSignal(peerId, { type: 'candidate', candidate: event.candidate });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        console.log(`[ontrack] Recibiendo stream de ${peerId}, tracks:`, event.streams[0].getTracks().map(t => t.kind));
+        setParticipants(prev => {
+          const currentParticipant = prev[peerId] || {};
+          return {
+            ...prev,
+            [peerId]: {
+              ...currentParticipant,
+              id: peerId,
+              name: currentParticipant.name || `Usuario ${peerId}`,
+              stream: event.streams[0]
+            }
+          };
+        });
+      };
+
+      pc.onnegotiationneeded = async () => {
+          console.log(`[onnegotiationneeded] Se activó para peer: ${peerId}. Este evento NO inicia la oferta. Solo para depuración.`);
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Cleaning up.`);
+          pc.close();
+          const newPeerConnections = { ...peerConnectionsRef.current };
+          delete newPeerConnections[peerId];
+          peerConnectionsRef.current = newPeerConnections;
+
+          setParticipants(prev => {
+            const copy = { ...prev };
+            delete copy[peerId];
+            return copy;
+          });
+        }
+      };
+
+      peerConnectionsRef.current = { ...peerConnectionsRef.current, [peerId]: pc };
+    }
+    return peerConnectionsRef.current[peerId];
+  }, [currentUser]);
+
+  const sendSignal = useCallback((toId: string, data: any) => {
+    if (!channelRef.current) {
+      console.warn("Cannot send signal: channel is not ready.");
+      return;
+    }
+    channelRef.current.whisper('Signal', {
+      to: toId,
+      from: currentUser?.id,
+      data,
+    });
+  }, [currentUser?.id]);
+
+  // --- NUEVA FUNCIÓN PARA INICIAR LA LLAMADA CON UN PEER ESPECÍFICO ---
+  const initiateCallForPeer = useCallback(async (peerId: string, isInitiator: boolean) => {
+    if (!localStream || !currentUser) {
+      console.warn(`[initiateCallForPeer] localStream o currentUser no están listos para peer ${peerId}.`);
+      return;
+    }
+
+    const pc = getOrCreatePeerConnection(peerId);
+
+    // Añadir tracks locales si no están ya añadidos
+    localStream.getTracks().forEach(track => {
+      if (!pc.getSenders().some(sender => sender.track === track)) {
+        pc.addTrack(track, localStream);
+        console.log(`[INIT_CALL] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+      }
+    });
+
+    if (isInitiator) {
+      console.log(`[INIT_CALL - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal(peerId, { type: 'offer', sdp: offer.sdp });
+      } catch (e) {
+        console.error("Error al crear/enviar oferta en initiateCallForPeer:", e);
+      }
+    } else {
+      console.log(`[INIT_CALL - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
+    }
+  }, [localStream, currentUser, getOrCreatePeerConnection, sendSignal]);
+
+  // --- useEffect para obtener el stream local ---
+  useEffect(() => {
     const startMedia = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        console.log('Local stream tracks:', stream.getTracks());
-        setLocalStream(stream); // <-- Aquí se actualiza el estado
+        // console.log('Local stream tracks:', stream.getTracks());
+        setLocalStream(stream);
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
@@ -109,15 +217,217 @@ useEffect(() => {
         setError("No se pudo acceder a la cámara o micrófono. Asegúrate de dar permisos.");
       }
     };
+
     startMedia();
 
     return () => {
+      // Limpia los streams y conexiones al desmontar el componente
       localStream?.getTracks().forEach(track => track.stop());
-      Object.values(remoteStreams).forEach(stream => stream.getTracks().forEach(track => track.stop()));
-      setRemoteStreams({});
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+          if (pc.connectionState !== 'closed') pc.close();
+      });
+      peerConnectionsRef.current = {};
+      setLocalStream(null);
+      setParticipants({});
+      channelRef.current?.leave(); // Asegúrate de dejar el canal de Echo/Reverb
+      channelRef.current = null;
+      setHasJoinedChannel(false);
     };
-  }, []); // localStream NO es una dependencia aquí, se establece ONCE.
+  }, []); // El array de dependencias vacío asegura que esto solo se ejecute una vez al montar
 
+  // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB Y WEB RTC ---
+useEffect(() => {
+    if (!roomId || !currentUser || !localStream) {
+        console.log("Faltan roomId, currentUser o localStream para unirse al canal. Reintentando...");
+        return;
+    }
+    if (channelRef.current) {
+        console.log("Ya existe un canal (en el ref), no se unirá de nuevo.");
+        return;
+    }
+
+    const reverbService = reverbServiceRef.current;
+    let currentChannelInstance: EchoChannel | null = null;
+
+    console.log(`Intentando unirse al canal presence-video-room.${roomId}`);
+      reverbService.presence(`presence-video-room.${roomId}`)
+      .then((joinedChannel: EchoChannel) => {
+        currentChannelInstance = joinedChannel;
+        channelRef.current = joinedChannel;
+        setHasJoinedChannel(true);
+        // --- joinedChannel.here: Para miembros que ya están en la sala cuando te unes ---
+        joinedChannel.here(async (members: { id: string; name: string; user_info?: any }[]) => {
+          console.log("Aquí estamos: Sincronizando participantes iniciales:", members);
+          const initialParticipants: Record<string, { id: string, name: string, videoEnabled: boolean, micEnabled: boolean, stream: MediaStream | null }> = {};
+          const localUserId = parseInt(currentUser.id.toString());
+
+          for (const member of members) {
+            if (String(member.id) !== String(currentUser.id)) {
+              initialParticipants[String(member.id)] = {
+                id: String(member.id),
+                name: member.name || member.user_info?.name || `Usuario ${member.id}`,
+                videoEnabled: true,
+                micEnabled: true,
+                stream: null
+              };
+
+              const remoteMemberId = parseInt(String(member.id));
+              // Determina si este cliente debe iniciar la oferta
+              const shouldInitiate = localUserId < remoteMemberId;
+
+              // Llama a la nueva función para iniciar la llamada con este peer
+              await initiateCallForPeer(String(member.id), shouldInitiate);
+            }
+          }
+          setParticipants(initialParticipants);
+        });
+
+        // --- joinedChannel.joining: Para miembros que se unen DESPUÉS de ti ---
+        joinedChannel.joining(async (member: { id: string; name: string; user_info?: any }) => {
+            console.log("Un nuevo participante se ha unido:", member);
+            const memberId = String(member.id);
+            if (memberId === String(currentUser.id)) return;
+
+            setParticipants(prev => {
+                const updatedParticipants = {
+                    ...prev,
+                    [memberId]: {
+                        id: memberId,
+                        name: member.name || member.user_info?.name || `Usuario ${memberId}`,
+                        videoEnabled: true,
+                        micEnabled: true,
+                        stream: null
+                    }
+                };
+                return updatedParticipants;
+            });
+
+            const localUserId = parseInt(currentUser.id.toString());
+            const remoteMemberId = parseInt(memberId);
+            // Determina si este cliente debe iniciar la oferta
+            const shouldInitiate = localUserId < remoteMemberId;
+
+            // Llama a la nueva función para iniciar la llamada con este peer
+            await initiateCallForPeer(memberId, shouldInitiate);
+
+        });
+
+
+     
+        joinedChannel.subscribed(() => {
+          console.log("✅ Suscrito correctamente al canal video room.");
+        });
+
+        joinedChannel.error((err: any) => {
+          console.error("❌ Error en canal de video-room:", err);
+          channelRef.current = null;
+          setError("No se pudo conectar a la sala de video.");
+          setLoading(false);
+          setHasJoinedChannel(false);
+        });
+
+
+        // --- Listener para señales WebRTC (Ofertas, Respuestas, Candidatos ICE) ---
+      joinedChannel.listenForWhisper('Signal', async ({ to, from, data }: { to: string; from: string; data: any }) => {
+          if (to !== String(currentUser.id)) return;
+
+          const pc = getOrCreatePeerConnection(from);
+
+          try {
+              switch (data.type) {
+                  case 'offer':
+                      console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
+                      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                      console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
+                      const answer = await pc.createAnswer();
+                      await pc.setLocalDescription(answer);
+                      sendSignal(from, { type: 'answer', sdp: answer.sdp });
+                      break;
+                  case 'answer':
+                      console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
+                      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                      break;
+                  case 'candidate':
+                      if (data.candidate) {
+                          await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ICE candidate:", e, data.candidate));
+                      } else {
+                          console.warn("Received null/undefined ICE candidate. Ignoring.");
+                      }
+                      break;
+                  default:
+                      console.warn(`[SIGNAL IN] Tipo de señal desconocido: ${data.type}`);
+              }
+          } catch (e) {
+              console.error("Error processing WebRTC signal:", e);
+          }
+      });
+
+
+      })
+      .catch(error => {
+        console.error("❌ Error al unirse al canal video-room:", error);
+        channelRef.current = null;
+        setError("No se pudo conectar a la sala de video.");
+        setLoading(false);
+        setHasJoinedChannel(false);
+      });
+
+    // Función de limpieza al desmontar o cuando las dependencias cambien
+    return () => {
+      console.log("Limpiando useEffect de conexión al canal.");
+      if (currentChannelInstance) {
+        currentChannelInstance.leave(); // Deja el canal de Echo/Reverb
+        setHasJoinedChannel(false);
+      }
+      // Cierra todas las PeerConnections
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+          if (pc.connectionState !== 'closed') pc.close();
+      });
+      peerConnectionsRef.current = {}; // Limpia el ref explícitamente
+      setParticipants({}); // Limpia los participantes
+      channelRef.current = null; // Limpia el ref del canal
+    };
+  }, [roomId, currentUser, localStream, sendSignal, getOrCreatePeerConnection]); // Añadido getOrCreatePeerConnection
+
+  // --- Listeners para Whispers de estado de video/micrófono ---
+  useEffect(() => {
+    const currentChannel = channelRef.current;
+    if (currentChannel) {
+      const chatListener = (msg: { sender: string; text: string }) => {
+        setMessages(prev => [...prev, msg]);
+      };
+      currentChannel.listenForWhisper('chat-message', chatListener);
+
+      currentChannel.listenForWhisper('toggle-video', ({ id, enabled }: { id: string; enabled: boolean }) => {
+        // console.log(`[toggle-video] Recibido para ${id}: ${enabled}`);
+        setParticipants(prev => ({
+          ...prev,
+          [id]: { ...prev[id], videoEnabled: enabled }
+        }));
+      });
+
+      currentChannel.listenForWhisper('toggle-mic', ({ id, enabled }: { id: string; enabled: boolean }) => {
+        // console.log(`[toggle-mic] Recibido para ${id}: ${enabled}`);
+        setParticipants(prev => ({
+          ...prev,
+          [id]: { ...prev[id], micEnabled: enabled }
+        }));
+      });
+
+      return () => {
+        // Laravel Echo / Reverb se encarga de limpiar listeners al hacer `channel.leave()`
+        // Si tienes listeners de `listenForWhisper` que necesitan ser explícitamente removidos,
+        // tendrías que ver la implementación de `ReverbWebSocketService`.
+      };
+    }
+  }, [currentUser?.id]);
+
+  // Logs para depuración de participantes
+  useEffect(() => {
+    // console.log('🔄 Lista de participantes actualizada (estado):', participants);
+  }, [participants]);
+
+  // Funciones de control de medios
   const toggleVideo = () => {
     if (!localStream) return;
     const videoTrack = localStream.getVideoTracks()[0];
@@ -125,7 +435,6 @@ useEffect(() => {
     videoTrack.enabled = !videoTrack.enabled;
     setVideoEnabled(videoTrack.enabled);
 
-    // Usa channelRef.current
     channelRef.current?.whisper('toggle-video', {
       id: currentUser?.id,
       enabled: videoTrack.enabled,
@@ -139,7 +448,6 @@ useEffect(() => {
     audioTrack.enabled = !audioTrack.enabled;
     setMicEnabled(audioTrack.enabled);
 
-    // Usa channelRef.current
     channelRef.current?.whisper('toggle-mic', {
       id: currentUser?.id,
       enabled: audioTrack.enabled,
@@ -147,472 +455,89 @@ useEffect(() => {
   };
 
   const toggleScreenShare = async () => {
-    if (!localStream) return;
+    if (!localStream) return; // Asegúrate de tener el stream original
 
     try {
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      const screenTrack = screenStream.getVideoTracks()[0];
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); // Audio para compartir audio del sistema si se desea
+      const screenVideoTrack = screenStream.getVideoTracks()[0];
+      const screenAudioTrack = screenStream.getAudioTracks()[0]; // Si compartes audio del sistema
 
-      // Usa peerConnectionsRef.current
+      // Reemplaza las pistas en todas las PeerConnections existentes
       Object.values(peerConnectionsRef.current).forEach(pc => {
-        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) {
-          sender.replaceTrack(screenTrack);
+        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (videoSender) {
+          videoSender.replaceTrack(screenVideoTrack);
+        }
+        const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
+        if (audioSender && screenAudioTrack) { // Solo si hay audio en la compartición de pantalla
+            audioSender.replaceTrack(screenAudioTrack);
         }
       });
 
-      screenTrack.onended = () => {
-        const videoTrack = localStream.getVideoTracks()[0];
+      // Cuando la compartición de pantalla termina (ej. el usuario hace clic en "Detener compartir")
+      screenVideoTrack.onended = () => {
+        // Vuelve a cambiar a la cámara original
+        const cameraVideoTrack = localStream.getVideoTracks()[0];
+        const cameraAudioTrack = localStream.getAudioTracks()[0];
+
         Object.values(peerConnectionsRef.current).forEach(pc => {
-          const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(videoTrack);
+          const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+          if (videoSender) {
+            videoSender.replaceTrack(cameraVideoTrack);
+          }
+          const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
+          if (audioSender && cameraAudioTrack) {
+              audioSender.replaceTrack(cameraAudioTrack);
           }
         });
-        setVideoEnabled(true);
+        setVideoEnabled(true); // Tu cámara local debería estar visible de nuevo
+        setMicEnabled(cameraAudioTrack?.enabled || false); // Tu micrófono local debería estar habilitado de nuevo
       };
-      setVideoEnabled(false);
+      setVideoEnabled(false); // Tu cámara local debería ocultarse (solo se ve la pantalla compartida)
+      setMicEnabled(screenAudioTrack?.enabled || false); // El micrófono local debería deshabilitarse si se comparte audio del sistema
+
     } catch (error) {
       console.error("Error sharing screen:", error);
-      setVideoEnabled(true);
+      // Vuelve al estado original si hay un error
+      setVideoEnabled(localStream?.getVideoTracks()[0]?.enabled || true);
+      setMicEnabled(localStream?.getAudioTracks()[0]?.enabled || true);
     }
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
-    const msg = { sender: currentUser?.name || 'Invitado', text: chatInput };
+    if (!chatInput.trim() || !currentUser?.name) return; // Asegúrate de que currentUser.name esté disponible
+    const msg = { sender: currentUser.name, text: chatInput };
     setMessages(prev => [...prev, msg]);
     setChatInput('');
-    // Usa channelRef.current
     channelRef.current?.whisper('chat-message', msg);
   };
 
-  // Este useEffect para listeners del canal puede depender de channelRef.current
-  // PERO, si ReverbWebSocketService ya tiene un sistema de limpieza, esto podría no ser necesario.
-  // Para fines de prueba y para garantizar que los listeners se configuran correctamente una vez,
-  // podemos mantener un useEffect que dependa de channelRef.current.
-  useEffect(() => {
-    const currentChannel = channelRef.current; // Lee el valor actual del ref
-    if (currentChannel) {
-      const chatListener = (msg: { sender: string; text: string }) => {
-        setMessages(prev => [...prev, msg]);
-      };
-      currentChannel.listenForWhisper('chat-message', chatListener);
-
-      currentChannel.listenForWhisper('toggle-video', ({ id, enabled }: { id: string; enabled: boolean }) => {
-        setParticipants(prev => ({
-          ...prev,
-          [id]: { ...prev[id], videoEnabled: enabled }
-        }));
-      });
-      currentChannel.listenForWhisper('toggle-mic', ({ id, enabled }: { id: string; enabled: boolean }) => {
-        setParticipants(prev => ({
-          ...prev,
-          [id]: { ...prev[id], micEnabled: enabled }
-        }));
-      });
-
-      return () => {
-        // En Reverb/Laravel Echo, usualmente channel.leave() ya limpia todos los listeners.
-        // Si no, aquí deberías desregistrar los listeners específicos si es necesario.
-        // No hay método directo like `stopListeningForWhisper` en Echo/Reverb fuera de `leave()`.
-      };
-    }
-  }, [currentUser?.id]); // Quitamos `channel` de las dependencias, ya que `channelRef.current` no cambia la referencia del ref.
-
-
   const endCall = () => {
+    // Detener todos los tracks de los streams locales
     localStream?.getTracks().forEach(track => track.stop());
-    Object.values(peerConnectionsRef.current).forEach(pc => pc.close()); // Usa el ref
-    peerConnectionsRef.current = {}; // Limpia el ref
-    setRemoteStreams({});
+
+    // Cerrar todas las PeerConnections activas
+    Object.values(peerConnectionsRef.current).forEach(pc => {
+      if (pc.connectionState !== 'closed') pc.close();
+    });
+    peerConnectionsRef.current = {}; // Limpiar el ref
+
+    // Resetear estados relevantes
+    setLocalStream(null);
     setParticipants({});
     setMessages([]);
     setIsRecording(false);
-    channelRef.current?.leave(); // Usa el ref
-    channelRef.current = null; // Limpia el ref
-    navigate('/rooms');
-  };
+    setRemoteStreams({}); // Asegúrate de limpiar también los streams remotos
 
-  // Uso de useMicVolume - sin cambios aquí
-  useEffect(() => {
-    if (!localStream) return;
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const analyser = audioContext.createAnalyser();
-    const microphone = audioContext.createMediaStreamSource(localStream);
-    microphone.connect(analyser);
-
-    analyser.fftSize = 512;
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-    const updateVolume = () => {
-      analyser.getByteFrequencyData(dataArray);
-      let values = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        values += dataArray[i];
-      }
-      const average = values / dataArray.length;
-      setVolume(average);
-      requestAnimationFrame(updateVolume);
-    };
-    updateVolume();
-    return () => {
-      analyser.disconnect();
-      microphone.disconnect();
-      audioContext.close();
-    };
-  }, [localStream]);
-
-  useEffect(() => {
-    console.log('🔄 Lista de participantes actualizada:', participants);
-  }, [participants]);
-
-
-  // `sendSignal` necesita acceder al `channel` para susurrar.
-  // Ahora usará `channelRef.current`.
-  // ... (resto del código)
-
-// sendSignal - No deberíamos cambiarlo, parece bien
-const sendSignal = useCallback((toId: string, data: any) => {
-  if (!channelRef.current) {
-    console.warn("Cannot send signal: channel is not ready.");
-    return;
-  }
-  console.log(`[SIGNAL OUT] Sending ${data.type} to ${toId} from ${currentUser?.id}`);
-  channelRef.current.whisper('Signal', {
-    to: toId,
-    from: currentUser?.id,
-    data,
-  });
-}, [currentUser?.id]);
-
-// --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
-// ... (resto del código)
-
-// --- useEffect PRINCIPAL PARA LA CONEXION A REVERB ---
-useEffect(() => {
-   console.log("current user", currentUser);
-    if (!roomId || !currentUser || !localStream) { // Esperar a que todo esté listo
-        console.log("Faltan roomId, currentUser o localStream para unirse al canal. Reintentando...");
-        return;
-    }
+    // Dejar el canal de Reverb
     if (channelRef.current) {
-        console.log("Ya existe un canal (en el ref), no se unirá de nuevo.");
-        return;
+      channelRef.current.leave();
+      channelRef.current = null;
     }
 
-    const reverbService = createReverbWebSocketService(currentUser.token);
-    let currentChannelInstance: EchoChannel | null = null;
-
-    console.log(`Intentando unirse al canal video-room.${roomId}`);
-    reverbService.presence(`video-room.${roomId}`) // Cambia a joinPresence
-      .then((joinedChannel: EchoChannel) => { // EchoChannel aquí representa un PresenceChannel
-        currentChannelInstance = joinedChannel;
-        channelRef.current = joinedChannel;
-
-        // *** NUEVO: Sincronización inicial de participantes ***
-        joinedChannel.here((members: { id: string; name: string }[]) => {
-          console.log("Aquí estamos: Sincronizando participantes iniciales:", members);
-          const initialParticipants: Record<string, { name: string }> = {};
-          members.forEach(member => {
-            if (member.id !== currentUser.id.toString()) { // Asegúrate de no agregarte a ti mismo
-              initialParticipants[member.id] = { name: member.name };
-            }
-          });
-          setParticipants(initialParticipants);
-        });
-
-        // *** NUEVO: Listener para cuando alguien se une ***
-        joinedChannel.joining((member: { id: string; name: string }) => {
-          console.log(`[joining] Nuevo participante se unió: <span class="math-inline">\{member\.name\} \(</span>{member.id})`);
-          // Solo si no lo tenemos ya (para evitar duplicados o race conditions)
-          setParticipants(prev => {
-            if (!prev[member.id]) {
-                return { ...prev, [member.id]: { name: member.name, videoEnabled: true, micEnabled: true } }; // Puedes inferir estados iniciales
-            }
-            return prev;
-          });
-        });
-
-        // *** NUEVO: Listener para cuando alguien se va ***
-        joinedChannel.leaving((member: { id: string; name: string }) => {
-          console.log(`[leaving] Participante se fue: <span class="math-inline">\{member\.name\} \(</span>{member.id})`);
-          setParticipants(prev => {
-            const updated = { ...prev };
-            delete updated[member.id];
-            return updated;
-          });
-          // También cerrar PC y remover stream aquí
-          const newPeerConnections = { ...peerConnectionsRef.current };
-          if (newPeerConnections[member.id]) {
-            newPeerConnections[member.id].close();
-            delete newPeerConnections[member.id];
-          }
-          peerConnectionsRef.current = newPeerConnections;
-
-          setRemoteStreams(prev => {
-            const copy = { ...prev };
-            delete copy[member.id];
-            return copy;
-          });
-        });
-
-        console.log("Canal obtenido y asignado a ref:", joinedChannel);
-
-        joinedChannel.subscribed(() => {
-          console.log("✅ Suscrito correctamente al canal video room.");
-          // joinedChannel.whisper('user-joined', {
-          //   id: currentUser.id,
-          //   name: currentUser.name,
-          //   videoEnabled: videoEnabled,
-          //   micEnabled: micEnabled,
-          // });
-        });
-
-        joinedChannel.error((err: any) => {
-          console.error("❌ Error en canal de video-room:", err);
-          channelRef.current = null;
-        });
-
-        // Handler for user-joined whispers
-        // joinedChannel.listenForWhisper('user-joined', async ({ id, name, videoEnabled: remoteVideoEnabled, micEnabled: remoteMicEnabled }: { id: string; name: string; videoEnabled?: boolean; micEnabled?: boolean }) => {
-        //   console.log(`[user-joined] recibido de ${id} (mi ID: ${currentUser.id})`);
-        //   if (id === currentUser.id) {
-        //     console.log("Ignorando user-joined para el usuario actual.");
-        //     return;
-        //   }
-
-        //   setParticipants((prev) => {
-        //     if (prev[id]) {
-        //       console.log(`[user-joined] Usuario ${id} ya está en la lista de participantes.`);
-        //       return prev;
-        //     }
-        //     const updated = { ...prev, [id]: { name, videoEnabled: remoteVideoEnabled, micEnabled: remoteMicEnabled } };
-        //     console.log(`[user-joined] Añadiendo nuevo participante ${name} (${id})`);
-        //     return updated;
-        //   });
-
-        //   let pc = peerConnectionsRef.current[id];
-        //   if (!pc) {
-        //       console.log(`[user-joined] Creando nueva PeerConnection para ${id}.`);
-        //       pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-        //       peerConnectionsRef.current = { ...peerConnectionsRef.current, [id]: pc };
-
-        //       // --- Mover todas las asignaciones de eventos AQUÍ, inmediatamente después de crear el PC ---
-        //       pc.onicecandidate = (event) => {
-        //         if (event.candidate) {
-        //           console.log(`[ICE Candidate] Generado candidato para ${id}:`, event.candidate);
-        //           sendSignal(id, { type: 'candidate', candidate: event.candidate });
-        //         }
-        //       };
-
-        //       pc.ontrack = (event) => {
-        //         console.log(`[ontrack] Recibiendo stream de ${id}, tracks:`, event.streams[0].getTracks().map(t => t.kind));
-        //         setRemoteStreams(prev => ({ ...prev, [id]: event.streams[0] }));
-        //       };
-
-        //       // Configurar onnegotiationneeded (el que tiene el ID más bajo en el par es el OFERTANTE)
-        //       pc.onnegotiationneeded = async () => {
-        //           // Esta lógica asegura que el ID más bajo siempre inicie la oferta
-        //           if (currentUser.id < parseInt(id)) {
-        //               console.log(`[onnegotiationneeded] ${currentUser.id} (local) es menor que ${id} (remoto), creando OFERTA.`);
-        //               try {
-        //                   const offer = await pc.createOffer();
-        //                   await pc.setLocalDescription(offer);
-        //                   sendSignal(id, { type: 'offer', sdp: offer.sdp });
-        //               } catch (e) {
-        //                   console.error("Error al crear/enviar oferta en onnegotiationneeded:", e);
-        //               }
-        //           } else {
-        //               console.log(`[onnegotiationneeded] ${currentUser.id} (local) es mayor que ${id} (remoto). Esperando oferta.`);
-        //           }
-        //       };
-
-        //       pc.onconnectionstatechange = () => {
-        //         console.log(`PeerConnection con ${id} estado: ${pc.connectionState}`);
-        //         if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-        //           console.log(`RTC PeerConnection for ${id} disconnected or failed.`);
-        //           pc.close();
-        //           const newPeerConnections = { ...peerConnectionsRef.current };
-        //           delete newPeerConnections[id];
-        //           peerConnectionsRef.current = newPeerConnections;
-
-        //           setParticipants(prev => {
-        //             const copy = { ...prev };
-        //             delete copy[id];
-        //             return copy;
-        //           });
-        //           setRemoteStreams(prev => {
-        //             const copy = { ...prev };
-        //             delete copy[id];
-        //             return copy;
-        //           });
-        //         }
-        //       };
-        //       // --- FIN de mover asignaciones de eventos ---
-
-        //       // AHORA sí, agrega los tracks. Esto disparará onnegotiationneeded si es la primera vez.
-        //       if (localStream) {
-        //         console.log(`[user-joined] Agregando tracks locales a PC de ${id}`);
-        //         localStream.getTracks().forEach(track => {
-        //             if (!pc.getSenders().some(sender => sender.track === track)) {
-        //                 pc.addTrack(track, localStream);
-        //             }
-        //         });
-        //       } else {
-        //           console.warn(`[user-joined] No localStream disponible para agregar tracks a PC de ${id}.`);
-        //       }
-
-        //   } else {
-        //       console.log(`[user-joined] PeerConnection con ${id} ya existe.`);
-        //       // Si el PC ya existe y los tracks ya se agregaron, no hay necesidad de hacer nada aquí.
-        //       // Si necesitamos renegociar (ej. cambiar pistas), onnegotiationneeded lo manejará.
-        //   }
-        // });
-
-        // Handler for Signal whispers (SDP Offer/Answer/Candidate)
-      joinedChannel.listenForWhisper('Signal', async ({ to, from, data }: { to: string; from: string; data: any }) => {
-          console.log(`[SIGNAL IN] Received ${data.type} from ${from} (for me: ${to === currentUser.id})`);
-          if (to !== currentUser.id) return;
-
-          let pc = peerConnectionsRef.current[from];
-          if (!pc) {
-            console.warn(`[SIGNAL IN] Creando nueva PeerConnection para ${from} (señal recibida antes de user-joined o PC no existía).`);
-            pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-            peerConnectionsRef.current = { ...peerConnectionsRef.current, [from]: pc };
-
-            // --- Mover todas las asignaciones de eventos AQUÍ para PCs creados "tarde" ---
-            pc.onicecandidate = (event) => {
-              if (event.candidate) {
-                console.log(`[ICE Candidate] (Tardío) Generado candidato para ${from}:`, event.candidate);
-                sendSignal(from, { type: 'candidate', candidate: event.candidate });
-              }
-            };
-            pc.ontrack = (event) => {
-              console.log(`[ontrack] (Tardío) Recibiendo stream de ${from}, tracks:`, event.streams[0].getTracks().map(t => t.kind));
-              setRemoteStreams(p => ({ ...p, [from]: event.streams[0] }));
-            };
-            // Asegurarse de que onnegotiationneeded también esté configurado para PCs creados tarde
-            pc.onnegotiationneeded = async () => {
-              if (currentUser.id < parseInt(from)) {
-                  console.log(`[onnegotiationneeded] (Tardío) ${currentUser.id} (local) es menor que ${from} (remoto), creando OFERTA.`);
-                  try {
-                      const offer = await pc.createOffer();
-                      await pc.setLocalDescription(offer);
-                      sendSignal(from, { type: 'offer', sdp: offer.sdp });
-                  } catch (e) {
-                      console.error("Error al crear/enviar oferta en onnegotiationneeded (tardío):", e);
-                  }
-              } else {
-                  console.log(`[onnegotiationneeded] (Tardío) ${currentUser.id} (local) es mayor que ${from} (remoto). Esperando oferta.`);
-              }
-            };
-            pc.onconnectionstatechange = () => {
-              console.log(`PeerConnection con ${from} (tardío) estado: ${pc.connectionState}`);
-              if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-                pc.close();
-                const newPeerConnections = { ...peerConnectionsRef.current };
-                delete newPeerConnections[from];
-                peerConnectionsRef.current = newPeerConnections;
-                setParticipants(p => { const copy = { ...p }; delete copy[from]; return copy; });
-                setRemoteStreams(p => { const copy = { ...p }; delete copy[from]; return copy; });
-              }
-            };
-            // --- FIN de mover asignaciones de eventos ---
-
-            // AHORA sí, agrega los tracks si se crea la PC tarde
-            if (localStream) {
-              console.log(`[SIGNAL IN] Agregando tracks locales a PC de ${from}.`);
-              localStream.getTracks().forEach(track => {
-                 if (!pc.getSenders().some(sender => sender.track === track)) {
-                    pc.addTrack(track, localStream);
-                 }
-              });
-            } else {
-                console.warn(`[SIGNAL IN] No localStream disponible para agregar tracks a PC de ${from}.`);
-            }
-          }
-
-          try {
-            switch (data.type) {
-              case 'offer':
-                console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
-                await pc.setRemoteDescription(new RTCSessionDescription(data));
-                console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                sendSignal(from, { type: 'answer', sdp: answer.sdp });
-                break;
-              case 'answer':
-                console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
-                await pc.setRemoteDescription(new RTCSessionDescription(data));
-                break;
-              case 'candidate':
-                console.log(`[ICE Candidate] Recibido candidato de ${from}. Agregando ICE candidate.`);
-                if (data.candidate) {
-                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ICE candidate:", e, data.candidate));
-                } else {
-                    console.warn("Received null/undefined ICE candidate. Ignoring.");
-                }
-                break;
-              default:
-                console.warn(`[SIGNAL IN] Tipo de señal desconocido: ${data.type}`);
-            }
-          } catch (e) {
-            console.error("Error processing WebRTC signal:", e);
-          }
-        });
-
-        // ... (el resto del código de listener y cleanup permanece igual)
-
-        // Handler for UserLeft events
-        joinedChannel.listen('UserLeft', ({ id }: { id: string }) => {
-          console.log('[UserLeft] Usuario salió:', id);
-          setParticipants((prev) => {
-            const updated = { ...prev };
-            delete updated[id];
-            console.log('[UserLeft] Participantes después de salir:', updated);
-            return updated;
-          });
-
-          const newPeerConnections = { ...peerConnectionsRef.current };
-          if (newPeerConnections[id]) {
-            newPeerConnections[id].close();
-            delete newPeerConnections[id];
-          }
-          peerConnectionsRef.current = newPeerConnections;
-
-          setRemoteStreams(prev => {
-            const copy = { ...prev };
-            delete copy[id];
-            return copy;
-          });
-        });
-
-      })
-      .catch(error => {
-        console.error("❌ Error al unirse al canal video-room:", error);
-        channelRef.current = null;
-        setError("No se pudo conectar a la sala de video.");
-        setLoading(false);
-      });
-
-    return () => {
-      console.log("Limpiando useEffect de conexión al canal.");
-      if (currentChannelInstance) {
-        currentChannelInstance.leave();
-      }
-      Object.values(peerConnectionsRef.current).forEach(pc => {
-          if (pc.connectionState !== 'closed') pc.close();
-      });
-      Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
-      peerConnectionsRef.current = {}; // Limpiar el ref explícitamente
-      setRemoteStreams({}); // Limpiar el estado de streams remotos
-      channelRef.current = null;
-    };
-}, [roomId, currentUser, localStream, sendSignal, videoEnabled, micEnabled]);
-
+    navigate('/rooms'); // Redirigir al usuario
+  };
 
   const toggleRecording = () => {
     console.log("Función de grabación no implementada aún.");
@@ -638,55 +563,60 @@ useEffect(() => {
     );
   }
 
+  // Obtenemos los IDs de los participantes del estado 'participants'
+  const participantIds = Object.keys(participants);
+
   return (
     <div className="flex h-screen bg-black text-white">
       <div className="flex flex-col flex-1 relative">
-       <div className="flex-1 flex items-center justify-center bg-gray-950">
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-6xl p-4">
+        <div className="flex-1 flex items-center justify-center bg-gray-950">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-6xl p-4">
 
-    {/* Video local */}
-    <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
-      <video ref={localVideoRef} autoPlay muted className="w-full h-full object-cover" />
-      <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
-        Tú
-      </div>
-       {micEnabled && (
-   <div className="absolute top-2 right-2 flex gap-[2px] items-end h-6">
-    {/* Código para el indicador de volumen */}
-  </div>
-)}
-    </div>
+            {/* Video local */}
+            <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
+              <video ref={localVideoRef} autoPlay muted className="w-full h-full object-cover" />
+              <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
+                Tú
+              </div>
+              {micEnabled && (
+                <div className="absolute top-2 right-2 flex gap-[2px] items-end h-6">
+                    {/* Indicador de volumen para el micrófono local */}
+                    {[...Array(5)].map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-1 rounded-full bg-blue-400 transition-all duration-100 ${
+                          volume > i * (255 / 5) ? `h-${(i + 1) * 2}` : 'h-1' // Ajusta el multiplicador para el tamaño visual
+                        }`}
+                      />
+                    ))}
+                </div>
+              )}
+            </div>
 
-  {Object.entries(participants).map(([id, participantData]) => {
-    const stream = remoteStreams[id]; // Obtener el stream asociado a este id
-    if (!stream) return null; // Si no hay stream, no renderizar el video (o renderizar un placeholder)
+            {/* Videos remotos */}
+            {participantIds.map(id => {
+              const participantData = participants[id];
+              // Asegúrate de que `participantData` y `participantData.stream` existan antes de renderizar
+              if (!participantData || !participantData.stream) {
+                  // Puedes renderizar un placeholder si aún no hay stream pero sí participante
+                  return (
+                    <div key={id} className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-gray-800 flex items-center justify-center text-gray-400">
+                      Cargando video de {participantData?.name || `Usuario ${id}`}...
+                    </div>
+                  );
+              }
 
-    return (
-      <div key={id} className="relative">
-        <RemoteVideo 
-          stream={stream} 
-          name={participantData?.name || `Usuario ${id}`} 
-          id={id} // ¡Aquí pasamos el id!
-        />
-        {/* Tu botón de depuración (si aún lo usas) ahora puede acceder al id directamente */}
-        <button
-          onClick={() => {
-            const remoteVideoElement = document.querySelector(`video[data-remote-id="${id}"]`);
-            if (remoteVideoElement instanceof HTMLVideoElement) {
-              remoteVideoElement.play().catch(e => console.error("Error al reproducir manualmente:", e));
-            }
-          }}
-          className="absolute top-2 right-2 bg-blue-500 text-white p-1 rounded z-10"
-        >
-          Play {participantData?.name}
-        </button>
-      </div>
-    );
-  })}
-
-
-  </div>
-</div>
+              return (
+                <RemoteVideo
+                  key={id}
+                  stream={participantData.stream}
+                  name={participantData.name}
+                  id={participantData.id}
+                />
+              );
+            })}
+          </div>
+        </div>
 
         {/* Controles */}
         <div className="flex justify-center gap-4 p-4 border-t border-gray-700 bg-black bg-opacity-80">

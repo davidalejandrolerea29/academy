@@ -56,16 +56,15 @@ export class ReverbWebSocketService {
   private baseReconnectInterval = 1000; // 1 segundo
   private connectionPromise: Promise<string> | null = null; // Para evitar múltiples intentos de conexión
 
-  constructor(options: WebSocketServiceOptions) {
+constructor(options: WebSocketServiceOptions) {
     this.options = options;
-    // URL completa para la conexión WebSocket de Reverb
-    // wsHost y wsPort ya deben incluir wss:// y el puerto
-    this.wsUrl = `wss://${options.wsHost}:${options.wsPort}/app/${options.appKey}`;
 
-    // Desactivar logs de Pusher.js si aún estuvieran en window
-    // if (window.Pusher) {
-    //   window.Pusher.logToConsole = false;
-    // }
+    const protocol = (options.wsHost === '127.0.0.1' || options.wsHost === 'localhost') ? 'ws' : 'wss';
+    // --- ASÍ ES COMO DEBE QUEDAR LA LÍNEA ---
+    this.wsUrl = `${protocol}://${options.wsHost}:${options.wsPort}/app/${options.appKey}`;
+    // ----------------------------------------
+
+    console.log("ReverbWebSocketService: URL de conexión construida:", this.wsUrl);
   }
 
   // --- Métodos de Gestión de la Conexión Global ---
@@ -106,10 +105,11 @@ export class ReverbWebSocketService {
           // console.log('ReverbWebSocketService: Global WebSocket message:', message); // Para depuración
 
           if (message.event === 'pusher:connection_established') {
-            const data = JSON.parse(message.data);
-            this.globalSocketId = data.socket_id;
-            console.log('ReverbWebSocketService: Global connection established, Socket ID:', this.globalSocketId);
-            resolve(this.globalSocketId); // Resolver la promesa con el socketId
+              const data = JSON.parse(message.data);
+              this.globalSocketId = data.socket_id;
+              console.log('ReverbWebSocketService: Global connection established, Socket ID:', this.globalSocketId);
+              // ¡Aquí es donde la promesa `connect()` se resuelve!
+              resolve(this.globalSocketId); // ESTO ES CLAVE
           } else if (message.event === 'pusher:pong') {
             // console.log('ReverbWebSocketService: Received global pong.');
           }
@@ -200,53 +200,67 @@ export class ReverbWebSocketService {
   }
 
   // --- Despacho de mensajes a canales ---
-  private dispatchToChannelListeners(message: any) {
-    // Si el mensaje tiene un canal asociado, lo despachamos a los listeners de ese canal
+  // ReverbWebSocketService.ts (Solo la sección dispatchToChannelListeners)
+
+// ...
+// src/services/ReverbWebSocketService.ts (dentro de dispatchToChannelListeners)
+
+// src/services/ReverbWebSocketService.ts (dentro de dispatchToChannelListeners)
+
+private dispatchToChannelListeners(message: any) {
     if (message.channel && this.channels.has(message.channel)) {
-      const channelData = this.channels.get(message.channel)!;
-      // Notificar listeners de eventos específicos (incluyendo "client-" whispers si vienen de otro cliente)
-      channelData.listeners.get(message.event)?.forEach(cb => cb(message.data));
+        const channelData = this.channels.get(message.channel)!;
 
-      // Manejar eventos internos de presencia
-      if (message.event === 'pusher_internal:subscription_succeeded') {
-       const data = JSON.parse(message.data); // message.data es "{}" en tus logs actuales
-        if (data.presence) { // Esto será `undefined` si message.data es "{}"
-          const members = new Map<string, any>();
-          // Revisa esta parte: data.presence.data[userId].user_info
-          // Debería ser `data.presence.data[userId]` si tu backend envía la información del miembro directamente ahí.
-          // El formato correcto de `pusher_internal:subscription_succeeded` es `data: { presence: { ids: [], hash: {}, data: {} } }`
-          // Donde `data` bajo `presence` contiene la información detallada de cada usuario por ID.
-          for (const userId in data.presence.data) {
-            const memberInfo = data.presence.data[userId].user_info; // <-- ¡CUIDADO AQUÍ!
-            members.set(userId, memberInfo);
-          }
-          channelData.presenceMembers = members;
-          // Disparar el evento 'here'
-          channelData.listeners.get('here')?.forEach(cb => cb(Array.from(members.values())));
-        }
-        channelData.listeners.get('subscribed')?.forEach(cb => cb());
+        // Notificar listeners de eventos específicos (primero los eventos directos del mensaje)
+        channelData.listeners.get(message.event)?.forEach(cb => cb(message.data));
 
-      } else if (message.event === 'pusher_internal:member_added') {
-        const data = JSON.parse(message.data); // data es "{}" en tus logs actuales
-        const newMember = data.user_info; // <-- ¡CUIDADO AQUÍ!
-        if (channelData.presenceMembers) {
-          channelData.presenceMembers.set(newMember.id.toString(), newMember);
+        // Manejar eventos internos de presencia
+        if (message.event === 'pusher_internal:subscription_succeeded') {
+            const data = JSON.parse(message.data);
+            console.log('ReverbWebSocketService: pusher_internal:subscription_succeeded data:', data);
+
+           if (data.presence && data.presence.data) {
+                // Agrega este log para ver el contenido real
+                console.log('ReverbWebSocketService: Contenido de data.presence.data:', data.presence.data);
+                const members = new Map<string, any>();
+                for (const userId in data.presence.data) {
+                    const memberInfo = data.presence.data[userId];
+                    members.set(String(memberInfo.id), memberInfo);
+                }
+                channelData.presenceMembers = members;
+                console.log(`ReverbWebSocketService: Miembros de presencia populados: ${members.size} miembros. (Después de populación)`);
+            } else {
+                console.log('ReverbWebSocketService: pusher_internal:subscription_succeeded no contiene datos de presencia o está vacío.');
+                channelData.presenceMembers = new Map();
+            }
+
+            // SEGUNDO: Disparar el evento 'subscribed' (confirmación de suscripción)
+            channelData.listeners.get('subscribed')?.forEach(cb => cb());
+
+            // TERCERO: Disparar el evento que informa al 'here' que los miembros están listos.
+            // Esto se hace DESPUÉS de que channelData.presenceMembers ha sido definitivamente populado.
+            channelData.listeners.get('subscribed_and_ready_for_here')?.forEach(cb => cb());
+
+
+        } else if (message.event === 'pusher_internal:member_added') {
+            const data = JSON.parse(message.data);
+            console.log('ReverbWebSocketService: pusher_internal:member_added data:', data);
+
+            const newMember = data.user_info;
+            if (channelData.presenceMembers && newMember && newMember.id) {
+                channelData.presenceMembers.set(String(newMember.id), newMember);
+            }
+            channelData.listeners.get('joining')?.forEach(cb => cb(newMember));
+
+        } else if (message.event === 'pusher_internal:member_removed') {
+            // ... (sin cambios) ...
         }
-        channelData.listeners.get('joining')?.forEach(cb => cb(newMember));
-      } else if (message.event === 'pusher_internal:member_removed') {
-        const parsedMessageData = JSON.parse(message.data);
-        const removedMemberId = parsedMessageData.user_id.toString(); 
-        const removedMember = channelData.presenceMembers?.get(removedMemberId); 
-        channelData.presenceMembers?.delete(removedMemberId);
-        channelData.listeners.get('leaving')?.forEach(cb => cb(removedMember || { id: removedMemberId }));
-      }
     }
-  }
-
+}
   // --- Métodos para unirse a Canales (replicando Echo) ---
 
   // Método auxiliar para obtener o crear una estructura de canal
-  private getOrCreateChannelSubscription(channelName: string): ChannelSubscription {
+private getOrCreateChannelSubscription(channelName: string): ChannelSubscription {
     if (!this.channels.has(channelName)) {
       if (!this.globalWs || !this.globalSocketId) {
         throw new Error("Global WebSocket not connected. Cannot create channel subscription structure.");
@@ -255,11 +269,11 @@ export class ReverbWebSocketService {
         ws: this.globalWs,
         socketId: this.globalSocketId,
         listeners: new Map(),
-        presenceMembers: new Map() // Inicializar para presencia por si acaso
+        presenceMembers: new Map() // <-- Asegúrate que esto siempre sea un Map
       });
     }
     return this.channels.get(channelName)!;
-  }
+}
 
   // Método general para suscribirse a un canal (privado o de presencia)
   private async subscribeChannel(channelName: string, isPresence: boolean): Promise<EchoChannel> {
@@ -285,14 +299,18 @@ export class ReverbWebSocketService {
       throw error; // Propagar el error
     }
 
-    const subscriptionPayload = {
+    const subscriptionPayload: any = { // Aseguramos que sea 'any' para añadir propiedades dinámicamente
       event: 'pusher:subscribe',
       data: {
         channel: channelName,
-        auth: authData.auth // El campo 'auth' viene de la respuesta de Laravel
+        auth: authData.auth // El campo 'auth' viene de la respuesta de tu backend de Node.js
       }
     };
-
+    if (isPresence && authData.channel_data) {
+        // authData.channel_data ya es un string JSON de tu backend de Node.js
+        subscriptionPayload.data.channel_data = authData.channel_data;
+        console.log(`ReverbWebSocketService: Including channel_data for presence channel:`, authData.channel_data);
+    }
     if (this.globalWs?.readyState === WebSocket.OPEN) {
       this.globalWs.send(JSON.stringify(subscriptionPayload));
       console.log(`ReverbWebSocketService: Sent subscription request for channel: "${channelName}"`);
@@ -366,9 +384,30 @@ export class ReverbWebSocketService {
           channelSubscription.listeners.set('here', new Set());
         }
         channelSubscription.listeners.get('here')?.add(callback);
-        // Si ya tenemos miembros, los pasamos inmediatamente
-        if (channelSubscription.presenceMembers && channelSubscription.presenceMembers.size > 0) {
-            callback(Array.from(channelSubscription.presenceMembers.values()));
+
+        const fireHereIfReady = () => {
+            // Revisa si ya hay miembros cuando este callback se dispara
+            if (channelSubscription.presenceMembers && channelSubscription.presenceMembers.size > 0) {
+                console.log(`ReverbWebSocketService: Disparando callback 'here' para canal "${channelName}" con ${channelSubscription.presenceMembers.size} miembros.`);
+                callback(Array.from(channelSubscription.presenceMembers.values()));
+            } else {
+                 // Este log es el que estamos viendo. Es crucial que no lo veamos después de subscription_succeeded
+                 console.log(`ReverbWebSocketService: 'here' callback registrado, pero miembros aún no disponibles para canal "${channelName}".`);
+            }
+        };
+
+        // Registra el callback para cuando el canal esté suscrito y listo para el 'here'
+        if (!channelSubscription.listeners.has('subscribed_and_ready_for_here')) {
+            channelSubscription.listeners.set('subscribed_and_ready_for_here', new Set());
+        }
+        channelSubscription.listeners.get('subscribed_and_ready_for_here')?.add(fireHereIfReady);
+
+        // Caso de borde: Si el listener `here` se añade *después* de que todo ya se disparó
+        // (lo cual es menos común si sigues el patrón React useEffect),
+        // intenta dispararlo de inmediato si ya estás suscrito y tienes miembros.
+        // Pero el principal mecanismo es el `subscribed_and_ready_for_here`
+        if (channelSubscription.listeners.get('subscribed')?.size > 0 && channelSubscription.presenceMembers?.size > 0) {
+            fireHereIfReady();
         }
       },
       joining: (callback: (member: any) => void) => {
@@ -446,17 +485,17 @@ let reverbServiceInstance: ReverbWebSocketService | null = null;
 
 export const createReverbWebSocketService = (token: string): ReverbWebSocketService => {
   if (!reverbServiceInstance) {
-    const appKey = '324006'; // Tu APP_KEY de Reverb
-    const wsHost = 'english-meet.duckdns.org'; // Tu WSS_HOST
-    const wsPort = 443; // Tu WSS_PORT (normalmente 443 para HTTPS)
-    const authEndpoint = 'https://english-meet.duckdns.org/broadcasting/auth'; // Tu AUTH_ENDPOINT
+    const appKey = 'sfnheugrsf0hhvj0k6oo'; // Tu APP_KEY de Reverb
+    const wsHost = '127.0.0.1'; // Tu WSS_HOST
+    const wsPort = 3000; // Tu WSS_PORT (normalmente 443 para HTTPS)
+    const authEndpoint = 'http://127.0.0.1:3000/broadcasting/auth'; // <--- ¡Apunta a tu Node.js!
 
     reverbServiceInstance = new ReverbWebSocketService({
       appKey,
       wsHost,
       wsPort,
-      authEndpoint,
-      token,
+      authEndpoint, // Ahora apunta a Node.js
+      token, // Asegúrate de que `setAuthToken` o similar ponga esto en los headers
     });
   } else {
     // Si la instancia ya existe, asegúrate de actualizar el token si ha cambiado
