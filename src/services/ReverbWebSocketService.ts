@@ -8,8 +8,10 @@ interface WebSocketServiceOptions {
   appKey: string;
   wsHost: string;
   wsPort: number;
+  wssPort: number;
   authEndpoint: string;
   token: string; // El token de autenticación del usuario
+  forceTLS: boolean
 }
 
 // Representa un canal al que estamos suscritos
@@ -483,7 +485,9 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
 // ... (código anterior) ...
 
 // Define la URL base de tu API desde las variables de entorno de Vite
-const API_URL = import.meta.env.VITE_API_URL;
+// ReverbWebSocketService.ts
+
+const API_URL = import.meta.env.VITE_API_URL; // Esto será 'https://english-meet.duckdns.org/api/v1' en prod, o 'http://localhost:8000/api/v1' en local
 
 let reverbServiceInstance: ReverbWebSocketService | null = null;
 
@@ -491,21 +495,31 @@ export const createReverbWebSocketService = (token: string): ReverbWebSocketServ
   if (!reverbServiceInstance) {
     const appKey = 'sfnheugrsf0hhvj0k6oo'; // Tu APP_KEY de Reverb
 
-    // Parseamos la API_URL para extraer solo el hostname (dominio/IP)
     const apiUrlParsed = new URL(API_URL);
-    const apiHost = apiUrlParsed.hostname; // Esto te dará '127.0.0.1' o 'localhost'
+    const apiHost = apiUrlParsed.hostname;
 
-    // wsHost y wsPort son para la conexión WebSocket directa a Reverb (Node.js)
-    const wsHost = apiHost; // Usa el mismo host que tu API
-    const wsPort = 3000; // Este es el puerto de tu servidor Node.js (Reverb)
+    let wsHost: string;
+    let wsPort: number;
+    let authEndpoint: string;
+    let forceTLS: boolean;
 
-    // authEndpoint debe apuntar a tu servidor Node.js (puerto 3000)
-    // donde manejas la autenticación de Broadcasting.
-    const authEndpoint = `${apiUrlParsed.protocol}//${apiHost}:${wsPort}/broadcasting/auth`;
+    // Detectar si estamos en producción (basado en el dominio)
+    if (apiHost === 'english-meet.duckdns.org') {
+      wsHost = apiHost;
+      wsPort = 443; // En producción, usamos el puerto HTTPS estándar
+      authEndpoint = `https://${apiHost}/broadcasting/auth`; // Sin el puerto 3000, Apache lo redirige
+      forceTLS = true; // Forzamos HTTPS
+    } else {
+      // Entorno local (desarrollo)
+      wsHost = '127.0.0.1'; // O 'localhost' si tu Node.js escucha ahí
+      wsPort = 3000; // Puerto interno del servidor Node.js
+      authEndpoint = `${apiUrlParsed.protocol}//${apiHost}:${wsPort}/broadcasting/auth`; // O tu IP local
+      forceTLS = false; // No forzar TLS en local
+    }
 
     console.log("ReverbService: Usando wsHost:", wsHost);
     console.log("ReverbService: Usando wsPort:", wsPort);
-    console.log("ReverbService: Usando authEndpoint:", authEndpoint); // Para depuración
+    console.log("ReverbService: Usando authEndpoint:", authEndpoint);
 
     reverbServiceInstance = new ReverbWebSocketService({
       appKey,
@@ -513,13 +527,17 @@ export const createReverbWebSocketService = (token: string): ReverbWebSocketServ
       wsPort,
       authEndpoint,
       token,
+      forceTLS, // Pasa la configuración de fuerza TLS
+      // Agrega wssPort si tu ReverbWebSocketService lo usa. Suele ser lo mismo que wsPort si forceTLS es true
+      wssPort: wsPort,
+      // encrypted: forceTLS, // Alias para forceTLS, si tu librería de Pusher lo usa
+      // cluster: 'mt1' // Si es Reverb, NO necesitas cluster
     });
   } else {
     reverbServiceInstance.setToken(token);
   }
   return reverbServiceInstance;
 };
-
 // ... (resto del código) ...
 
 // Extensión para la clase ReverbWebSocketService para actualizar el token
