@@ -19,23 +19,97 @@ interface RemoteVideoProps {
 
 const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name, id, videoEnabled, micEnabled }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isMuted, setIsMuted] = useState(false); // Estado para controlar el mute del video remoto (inicialmente muteado)
+  const [isMuted, setIsMuted] = useState(true); // Estado para controlar el mute del video remoto (inicialmente muteado)
+// RemoteVideo.tsx
+useEffect(() => {
+  console.log(`[RemoteVideo DEBUG] Renderizando ${name} (ID: ${id}). Stream recibido:`, stream);
+  if (videoRef.current && stream) {
+    videoRef.current.srcObject = stream;
+    videoRef.current.muted = isMuted; // Asegura que esté muteado para autoplay
 
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.play().catch(e => {
-        // console.warn(`Error al intentar reproducir video de ${name} (ID: ${id}):`, e);
-        if (e.name === 'NotAllowedError' || e.name === 'NotSupportedError' || e.name === 'AbortError') {
-             // console.log(`[RemoteVideo] Autoplay bloqueado para ${name}. Se requiere interacción del usuario.`);
-        }
-      });
-    } else if (videoRef.current) {
-         videoRef.current.srcObject = null;
+    console.log(`[RemoteVideo DEBUG] Asignando srcObject para ${name}. Tracks:`, stream.getTracks().map(t => t.kind));
+
+    stream.getTracks().forEach(track => {
+    console.log(`[RemoteVideo Track Debug for ${name}] Kind: ${track.kind}, ID: ${track.id}, Label: ${track.label}, Enabled: ${track.enabled}, ReadyState: ${track.readyState}`);
+    // Para video tracks, también puedes intentar obtener las capacidades si te da más información
+    if (track.kind === 'video') {
+        const settings = track.getSettings();
+        console.log(`[RemoteVideo Video Track Settings for ${name}] Width: ${settings.width}, Height: ${settings.height}, FrameRate: ${settings.frameRate}, AspectRatio: ${settings.aspectRatio}`);
     }
-  }, [stream, name, id]); // videoEnabled y micEnabled no afectan la asignación del stream, solo la UI
+  });
+    if (stream.getVideoTracks().length > 0) {
+        console.log(`[RemoteVideo DEBUG] Video track de ${name} habilitado:`, stream.getVideoTracks()[0].enabled);
+    }
+    if (stream.getAudioTracks().length > 0) {
+        console.log(`[RemoteVideo DEBUG] Audio track de ${name} habilitado:`, stream.getAudioTracks()[0].enabled);
+    }
 
+    // --- NUEVOS LOGS CLAVE AQUÍ ---
+    const checkVideoState = () => {
+        if (videoRef.current) {
+            console.log(`[RemoteVideo State for ${name}] videoWidth: ${videoRef.current.videoWidth}, videoHeight: ${videoRef.current.videoHeight}, paused: ${videoRef.current.paused}, muted: ${videoRef.current.muted}`);
+        }
+    };
 
+    videoRef.current.onloadedmetadata = () => {
+        console.log(`[RemoteVideo DEBUG] onloadedmetadata para ${name} disparado.`);
+        checkVideoState();
+        videoRef.current?.play().catch(e => {
+            console.warn(`[RemoteVideo DEBUG] Error al intentar reproducir video de ${name} (ID: ${id}) en onloadedmetadata:`, e);
+            if (e.name === 'NotAllowedError') {
+                console.log(`[RemoteVideo DEBUG] Autoplay bloqueado para ${name}.`);
+            }
+        });
+    };
+
+    videoRef.current.onplay = () => {
+        console.log(`[RemoteVideo DEBUG] onplay para ${name} disparado. El video ESTÁ INTENTANDO REPRODUCIRSE.`);
+        checkVideoState();
+    };
+
+    videoRef.current.onplaying = () => {
+        console.log(`[RemoteVideo DEBUG] onplaying para ${name} disparado. El video SE ESTÁ REPRODUCIENDO ACTIVAMENTE.`);
+        checkVideoState();
+    };
+
+    videoRef.current.onpause = () => {
+        console.log(`[RemoteVideo DEBUG] onpause para ${name} disparado. El video está PAUSADO.`);
+        checkVideoState();
+    };
+
+    videoRef.current.onerror = (event) => {
+        console.error(`[RemoteVideo DEBUG] Error en el video de ${name} (ID: ${id}):`, event);
+        checkVideoState();
+    };
+
+    // Intenta un play inicial (redundante si onloadedmetadata se encarga, pero no hace daño)
+    videoRef.current.play().catch(e => {
+        console.warn(`[RemoteVideo DEBUG] Error al intentar reproducir video de ${name} (ID: ${id}) en inicial:`, e);
+        if (e.name === 'NotAllowedError') {
+            console.log(`[RemoteVideo DEBUG] Autoplay bloqueado para ${name}.`);
+        }
+    });
+
+    // Añade listeners para limpieza
+    const currentVideoRef = videoRef.current;
+    return () => {
+        if (currentVideoRef) {
+            currentVideoRef.onloadedmetadata = null;
+            currentVideoRef.onplay = null;
+            currentVideoRef.onplaying = null;
+            currentVideoRef.onpause = null;
+            currentVideoRef.onerror = null;
+            // No limpiar srcObject aquí si se mantiene el componente montado
+        }
+    };
+
+  } else if (videoRef.current) {
+       console.log(`[RemoteVideo DEBUG] Limpiando srcObject para ${name} (stream es null).`);
+       videoRef.current.srcObject = null;
+  }
+}, [stream, name, id, isMuted]); // isMuted debe ser una dependencia
+
+// ... (tu función toggleMute y el JSX del return) ...
   // Si quieres que los videos remotos no estén muteados por defecto, cambia `useState(true)` a `useState(false)`
   // y quita `muted={isMuted}` del elemento <video> o cambia `muted` a `false`.
   // La línea `videoRef.current.muted = isMuted;` en el useEffect debería ser eliminada si no quieres control de mute manual para remotos.
@@ -104,7 +178,7 @@ const VideoRoom: React.FC = () => {
 // En VideoRoom.tsx, dentro del componente:
 const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
-
+const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   // --- Refs para mantener referencias persistentes ---
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const channelRef = useRef<EchoChannel | null>(null);
@@ -134,9 +208,38 @@ const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
     const getOrCreatePeerConnection = useCallback((peerId: string) => {
     if (!peerConnectionsRef.current[peerId]) {
       console.log(`[PC] Creando nueva RTCPeerConnection para peer: ${peerId}`);
+      // En la configuración de RTCPeerConnection (donde creas `pc`)
+     // En tu VideoRoom.tsx o donde configures RTCPeerConnection
+      // En tu VideoRoom.tsx o donde sea que configures RTCPeerConnection
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },],
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' },
+          // Tu servidor TURN local
+          {
+            urls: 'turn:127.0.0.1:3478?transport=udp', // Asegúrate de que el puerto 3478 sea el que usa CoTURN
+            username: 'miusuario', // El usuario que configuraste en turnserver.conf
+            credential: 'micontrasena', // La contraseña que configuraste
+          },
+          {
+            urls: 'turn:127.0.0.1:3478?transport=tcp', // TURN sobre TCP, muy importante para compatibilidad
+            username: 'miusuario',
+            credential: 'micontrasena',
+          },
+          // Si hubieras configurado TURNs (TLS) en un puerto como 5349 con certificados (no recomendado para inicio)
+          // {
+          //   urls: 'turns:127.0.0.1:5349?transport=tcp',
+          //   username: 'miusuario',
+          //   credential: 'micontrasena',
+          // },
+        ],
+        iceTransportPolicy: 'all', // Permite todos los tipos de candidatos ICE (host, srflx, relay)
+        bundlePolicy: 'balanced', // Optimiza el bundling de medios
+        rtcpMuxPolicy: 'require', // Requiere multiplexación de RTCP
+        iceCandidatePoolSize: 0, // Un pool de 0 está bien para la mayoría de los casos
       });
 
       // --- CAMBIO CLAVE: Manejo de onicecandidate ---
@@ -151,19 +254,41 @@ const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
 
       pc.ontrack = (event) => {
         console.log(`[ontrack] Recibiendo stream de ${peerId}, tracks:`, event.streams[0].getTracks().map(t => t.kind));
+
+        // Actualiza el stream para este participante
         setParticipants(prev => {
-          const currentParticipant = prev[peerId] || {};
-          return {
-            ...prev,
-            [peerId]: {
-              ...currentParticipant,
-              id: peerId,
-              name: currentParticipant.name || `Usuario ${peerId}`,
-              stream: event.streams[0]
+            const existingParticipant = prev[peerId];
+            if (existingParticipant) {
+                // Si el stream ya existe, verifica si es el mismo.
+                // Si no, o si es nulo, asigna el nuevo stream.
+                if (!existingParticipant.stream || existingParticipant.stream.id !== event.streams[0].id) {
+                    console.log(`[ontrack] Actualizando stream para ${peerId} en el estado.`);
+                    return {
+                        ...prev,
+                        [peerId]: {
+                            ...existingParticipant,
+                            stream: event.streams[0] // Asigna el stream completo
+                        }
+                    };
+                }
+            } else {
+                // Si el participante aún no está en el estado (lo cual no debería pasar
+                // si here/joining lo manejan, pero es un fallback), añádelo con el stream.
+                console.warn(`[ontrack] Participante ${peerId} no encontrado al recibir track. Agregándolo.`);
+                return {
+                    ...prev,
+                    [peerId]: {
+                        id: peerId,
+                        name: `Usuario ${peerId}`, // Puedes refinar esto si el nombre viene en otro lugar
+                        videoEnabled: true, // Asume true inicialmente
+                        micEnabled: true,   // Asume true inicialmente
+                        stream: event.streams[0]
+                    }
+                };
             }
-          };
+            return prev; // No hay cambios si el stream ya existe y es el mismo
         });
-      };
+    };
 
       // --- CAMBIO CLAVE: Manejo de onnegotiationneeded ---
       pc.onnegotiationneeded = async () => {
@@ -375,35 +500,50 @@ useEffect(() => {
 
           try {
               switch (data.type) {
+                  // En tu VideoRoom.tsx, dentro de joinedChannel.listenForWhisper('Signal')
                   case 'offer':
                       console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
+
+                      // Asegúrate de añadir los tracks locales a la PC del respondedor.
+                      // Idealmente, esto ya se hizo antes de llegar aquí,
+                      // pero si no, es un buen lugar para asegurarse.
                       if (localStream) {
                           localStream.getTracks().forEach(track => {
+                              // Solo añade si el track no ha sido añadido ya por un sender
                               if (!pc.getSenders().some(sender => sender.track === track)) {
                                   pc.addTrack(track, localStream);
                                   console.log(`[SDP Offer Recv] ✅ Añadido track local ${track.kind} a PC de ${from}`);
                               }
                           });
                       }
+
                       await pc.setRemoteDescription(new RTCSessionDescription({
                           type: data.sdpType,
                           sdp: data.sdp
                       }));
 
-                      // --- CAMBIO CLAVE: Procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
-                      if (iceCandidatesQueueRef.current[from]) {
-                          console.log(`[ICE Candidate Queue] Procesando ${iceCandidatesQueueRef.current[from].length} candidatos en cola para ${from}.`);
-                          for (const candidate of iceCandidatesQueueRef.current[from]) {
-                              await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.error("Error adding queued ICE candidate:", e, candidate));
+                      // --- Lógica CONSOLIDADA para procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
+                      const peerCandidates = iceCandidatesQueueRef.current[from]; // Usa 'from' consistentemente
+                      if (peerCandidates && peerCandidates.length > 0) {
+                          console.log(`[ICE Candidate Queue] Procesando ${peerCandidates.length} candidatos en cola para ${from}.`);
+                          for (const candidate of peerCandidates) {
+                              try {
+                                  await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                                  console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
+                              } catch (e) {
+                                  console.error(`[ICE Candidate Queue] Error al añadir candidato en cola para ${from}:`, e, candidate);
+                              }
                           }
                           delete iceCandidatesQueueRef.current[from]; // Limpia la cola para este peer
                       }
+
 
                       console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
                       const answer = await pc.createAnswer();
                       await pc.setLocalDescription(answer);
                       sendSignal(from, { type: 'answer', sdp: answer.sdp, sdpType: answer.type });
                       break;
+
                   case 'answer':
                       console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
                       await pc.setRemoteDescription(new RTCSessionDescription({
@@ -411,33 +551,61 @@ useEffect(() => {
                           sdp: data.sdp
                       }));
 
-                      // --- CAMBIO CLAVE: Procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
-                      if (iceCandidatesQueueRef.current[from]) {
-                          console.log(`[ICE Candidate Queue] Procesando ${iceCandidatesQueueRef.current[from].length} candidatos en cola para ${from}.`);
-                          for (const candidate of iceCandidatesQueueRef.current[from]) {
-                              await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.error("Error adding queued ICE candidate:", e, candidate));
+                      // --- Lógica CONSOLIDADA para procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
+                      const answerPeerCandidates = iceCandidatesQueueRef.current[from]; // Usa 'from' consistentemente
+                      if (answerPeerCandidates && answerPeerCandidates.length > 0) {
+                          console.log(`[ICE Candidate Queue] Procesando ${answerPeerCandidates.length} candidatos en cola para ${from}.`);
+                          for (const candidate of answerPeerCandidates) {
+                              try {
+                                  await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                                  console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
+                              } catch (e) {
+                                  console.error(`[ICE Candidate Queue] Error al añadir candidato en cola para ${from}:`, e, candidate);
+                              }
                           }
                           delete iceCandidatesQueueRef.current[from]; // Limpia la cola para este peer
                       }
                       break;
-                  case 'candidate':
-                      if (data.candidate) {
-                          // Verificar si remoteDescription ya fue establecida
-                          if (pc.remoteDescription) {
-                              // Si ya está establecida, añadir el candidato directamente
-                              await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ICE candidate:", e, data.candidate));
-                          } else {
-                              // Si no está establecida, añadir a la cola
-                              console.log(`[ICE Candidate Queue] Candidato para ${from} en cola. RemoteDescription aún no establecida.`);
-                              if (!iceCandidatesQueueRef.current[from]) {
-                                  iceCandidatesQueueRef.current[from] = [];
-                              }
-                              iceCandidatesQueueRef.current[from].push(data.candidate);
-                          }
-                      } else {
-                          console.warn("Received null/undefined ICE candidate. Ignoring.");
-                      }
-                      break;
+                  // VideoRoom.tsx - dentro de joinedChannel.listenForWhisper('Signal')
+                 case 'candidate':
+    // Agrega una verificación más estricta para data.candidate y data.candidate.candidate
+    if (data.candidate && data.candidate.candidate) {
+        console.log(`[ICE Candidate IN] Recibido candidato para ${from}:`, data.candidate);
+
+        // Asegúrate de usar la ref correcta para obtener la PeerConnection
+        const peerConnection = peerConnectionsRef.current[from];
+
+        // Solo procede si la PeerConnection existe
+        if (peerConnection) {
+            // Verifica si la RemoteDescription ya ha sido establecida
+            if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+                console.log(`[ICE Candidate IN] RemoteDescription YA ESTABLECIDA para ${from}. Tipo: ${peerConnection.remoteDescription.type}`);
+                try {
+                    // Intenta añadir el candidato ICE
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    console.log(`[ICE Candidate IN] Añadido ICE candidate para ${from} exitosamente.`);
+                } catch (e) {
+                    // Es crucial capturar y loguear errores al añadir candidatos
+                    // ya que pueden indicar un problema con el candidato o el estado de la PC
+                    console.error(`[ICE Candidate IN] Error al añadir ICE candidate para ${from}:`, e, data.candidate);
+                }
+            } else {
+                // Si la RemoteDescription aún no está establecida, encola el candidato
+                console.log(`[ICE Candidate IN] Candidato para ${from} en cola. RemoteDescription aún no establecida. Actual remoteDescription:`, peerConnection.remoteDescription);
+
+                if (!iceCandidatesQueueRef.current[from]) {
+                    iceCandidatesQueueRef.current[from] = [];
+                }
+                iceCandidatesQueueRef.current[from].push(data.candidate);
+                console.log(`[ICE Candidate IN] Candidato añadido a la cola para ${from}. Cola actual: ${iceCandidatesQueueRef.current[from].length} candidatos.`);
+            }
+        } else {
+            console.warn(`[ICE Candidate IN] PeerConnection para ${from} no encontrada al intentar añadir candidato. Ignorando candidato.`);
+        }
+    } else {
+        console.warn("Received null/undefined ICE candidate or candidate.candidate. Ignoring.");
+    }
+    break;
                   default:
                       console.warn(`[SIGNAL IN] Tipo de señal desconocido: ${data.type}`);
               }
@@ -646,7 +814,7 @@ useEffect(() => {
   }
 
   // Obtenemos los IDs de los participantes del estado 'participants'
-  const participantIds = Object.keys(participants);
+  const allParticipants = Object.values(participants);
 
   return (
     <div className="flex h-screen bg-black text-white">
@@ -676,28 +844,25 @@ useEffect(() => {
             </div>
 
             {/* Videos remotos */}
-            {participantIds.map(id => {
-              const participantData = participants[id];
-              if (!participantData || !participantData.stream) {
-                  return (
-                    <div key={id} className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-gray-800 flex items-center justify-center text-gray-400">
-                      Cargando video de {participantData?.name || `Usuario ${id}`}...
-                    </div>
-                  );
+       {Object.entries(participants).map(([id, { name }]) => (
+        <div key={id} className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
+          <video
+            ref={(videoElement) => { // Usar un callback ref para asignar srcObject
+              if (videoElement && remoteStreams[id]) {
+                videoElement.srcObject = remoteStreams[id];
               }
-
-              return (
-                <RemoteVideo
-                  key={id}
-                  stream={participantData.stream}
-                  name={participantData.name}
-                  id={participantData.id}
-                  // --- ESTOS SON LOS CAMBIOS CLAVE ---
-                  videoEnabled={participantData.videoEnabled}
-                  micEnabled={participantData.micEnabled}
-                />
-              );
-            })}
+            }}
+            autoPlay
+            muted // Considera silenciar por defecto para evitar feedback, y luego dar control al usuario
+            playsInline // Importante para iOS
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
+            {name}
+          </div>
+          {/* Aquí podrías añadir el medidor de volumen para el remoto también */}
+        </div>
+      ))}
           </div>
         </div>
 
