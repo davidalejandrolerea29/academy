@@ -20,9 +20,42 @@ interface RemoteVideoProps {
 const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, name, id, videoEnabled, micEnabled }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isMuted, setIsMuted] = useState(true); // Estado para controlar el mute del video remoto (inicialmente muteado)
+  console.log(`[RemoteVideo RENDER] Componente RemoteVideo renderizando para ${name} (ID: ${id})`);
+
+  
 // RemoteVideo.tsx
 useEffect(() => {
-  console.log(`[RemoteVideo DEBUG] Renderizando ${name} (ID: ${id}). Stream recibido:`, stream);
+  console.log(`[RemoteVideo DEBUG] --- INICIO useEffect para ${name} (ID: ${id}) ---`);
+  console.log(`[RemoteVideo DEBUG] Prop 'stream' recibida:`, stream ? stream.id : 'null');
+  console.log(`[RemoteVideo DEBUG] Valor de videoRef.current al inicio:`, videoRef.current); // AÑADE ESTO
+
+  if (!videoRef.current) { // NUEVA COMPROBACIÓN TEMPRANA
+    console.error(`[RemoteVideo DEBUG] videoRef.current es NULO para ${name}. El elemento <video> no está disponible.`);
+    return; // Salir si la ref no está lista
+  }
+  if (!stream) { // COMPROBACIÓN DE STREAM (redundante si el log anterior muestra null, pero explícito)
+      console.warn(`[RemoteVideo DEBUG] El stream es NULO para ${name}. No se puede asignar srcObject.`);
+      videoRef.current.srcObject = null; // Asegúrate de limpiar si el stream se vuelve nulo
+      return;
+  }
+
+
+  // AÑADE ESTOS LOGS PARA VER LOS TRACKS REALES AL INICIO DEL useEffect
+  console.log(`[RemoteVideo DEBUG] Tracks en el stream para ${name}:`, stream.getTracks().map(t => ({
+      kind: t.kind,
+      id: t.id,
+      label: t.label,
+      enabled: t.enabled,
+      readyState: t.readyState // Esto es CLAVE: ¿están 'live'?
+  })));
+
+
+  if (stream.getVideoTracks().length === 0) {
+      console.warn(`[RemoteVideo DEBUG] El stream para ${name} NO TIENE TRACKS DE VIDEO.`);
+  }
+  if (stream.getAudioTracks().length === 0) {
+      console.warn(`[RemoteVideo DEBUG] El stream para ${name} NO TIENE TRACKS DE AUDIO.`);
+  }
   if (videoRef.current && stream) {
     videoRef.current.srcObject = stream;
     videoRef.current.muted = isMuted; // Asegura que esté muteado para autoplay
@@ -192,6 +225,53 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
+  useEffect(() => {
+    console.log(`[VideoRoom State] Participants actualizados:`, Object.keys(participants).map(id => ({
+        id,
+        name: participants[id].name,
+        hasStream: !!participants[id].stream,
+        streamId: participants[id].stream?.id,
+        videoEnabled: participants[id].videoEnabled,
+        micEnabled: participants[id].micEnabled
+    })));
+  }, [participants]);
+
+  // Log el estado de cada PeerConnection en peerConnectionsRef.current
+  useEffect(() => {
+    // Para ver el estado inicial y cualquier cambio posterior en las PeerConnections
+    const logPeerConnectionStates = () => {
+      console.log(`[VideoRoom State] Estado actual de peerConnectionsRef:`);
+      const pcs = peerConnectionsRef.current;
+      if (Object.keys(pcs).length === 0) {
+        console.log("  No hay PeerConnections activas.");
+        return;
+      }
+      for (const peerId in pcs) {
+        const pc = pcs[peerId];
+        if (pc) {
+          console.log(`  - Peer ${peerId}:`);
+          console.log(`    - connectionState: ${pc.connectionState}`);
+          console.log(`    - signalingState: ${pc.signalingState}`);
+          console.log(`    - iceConnectionState: ${pc.iceConnectionState}`);
+          console.log(`    - iceGatheringState: ${pc.iceGatheringState}`);
+          console.log(`    - localDescription: ${pc.localDescription?.type || 'N/A'}`);
+          console.log(`    - remoteDescription: ${pc.remoteDescription?.type || 'N/A'}`);
+          console.log(`    - senders: ${pc.getSenders().length} (${pc.getSenders().map(s => s.track?.kind).join(', ')})`);
+          console.log(`    - receivers: ${pc.getReceivers().length} (${pc.getReceivers().map(r => r.track?.kind).join(', ')})`);
+        }
+      }
+    };
+
+    // Logear inmediatamente
+    logPeerConnectionStates();
+
+    // Establecer un intervalo para logear periódicamente (útil para cambios de estado ICE/Connection)
+    const intervalId = setInterval(logPeerConnectionStates, 5000); // Cada 5 segundos
+
+    return () => {
+      clearInterval(intervalId); // Limpiar el intervalo al desmontar
+    };
+  }, []); // Dependencia vacía para que se ejecute una vez y establezca el intervalo
 
   const sendSignal = useCallback((toId: string, data: any) => {
     if (!channelRef.current) {
@@ -317,6 +397,7 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
                 console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
+                console.log(`[SIGNAL OUT] Enviando OFFER de ${currentUser?.id} a ${peerId}:`, { type: 'offer', sdpType: offer.type }); // NUEVO LOG
                 sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
             } else {
                 console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
@@ -355,7 +436,18 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
           }
         });
       }
-
+      pc.oniceconnectionstatechange = () => {
+          console.log(`[PC State - ICE] PeerConnection con ${peerId} ICE: ${pc.iceConnectionState}`);
+      };
+      pc.onconnectionstatechange = () => {
+          console.log(`[PC State - Connection] PeerConnection con ${peerId} conexión: ${pc.connectionState}`);
+      };
+      pc.onsignalingstatechange = () => {
+          console.log(`[PC State - Signaling] PeerConnection con ${peerId} signaling: ${pc.signalingState}`);
+      };
+      pc.onicegatheringstatechange = () => {
+          console.log(`[PC State - Ice Gathering] PeerConnection con ${peerId} ICE gathering: ${pc.iceGatheringState}`);
+      };
 
       peerConnectionsRef.current = { ...peerConnectionsRef.current, [peerId]: pc };
     }
@@ -568,44 +660,44 @@ useEffect(() => {
                       break;
                   // VideoRoom.tsx - dentro de joinedChannel.listenForWhisper('Signal')
                  case 'candidate':
-    // Agrega una verificación más estricta para data.candidate y data.candidate.candidate
-    if (data.candidate && data.candidate.candidate) {
-        console.log(`[ICE Candidate IN] Recibido candidato para ${from}:`, data.candidate);
+                    // Agrega una verificación más estricta para data.candidate y data.candidate.candidate
+                    if (data.candidate && data.candidate.candidate) {
+                        console.log(`[ICE Candidate IN] Recibido candidato para ${from}:`, data.candidate);
 
-        // Asegúrate de usar la ref correcta para obtener la PeerConnection
-        const peerConnection = peerConnectionsRef.current[from];
+                        // Asegúrate de usar la ref correcta para obtener la PeerConnection
+                        const peerConnection = peerConnectionsRef.current[from];
 
-        // Solo procede si la PeerConnection existe
-        if (peerConnection) {
-            // Verifica si la RemoteDescription ya ha sido establecida
-            if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
-                console.log(`[ICE Candidate IN] RemoteDescription YA ESTABLECIDA para ${from}. Tipo: ${peerConnection.remoteDescription.type}`);
-                try {
-                    // Intenta añadir el candidato ICE
-                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                    console.log(`[ICE Candidate IN] Añadido ICE candidate para ${from} exitosamente.`);
-                } catch (e) {
-                    // Es crucial capturar y loguear errores al añadir candidatos
-                    // ya que pueden indicar un problema con el candidato o el estado de la PC
-                    console.error(`[ICE Candidate IN] Error al añadir ICE candidate para ${from}:`, e, data.candidate);
-                }
-            } else {
-                // Si la RemoteDescription aún no está establecida, encola el candidato
-                console.log(`[ICE Candidate IN] Candidato para ${from} en cola. RemoteDescription aún no establecida. Actual remoteDescription:`, peerConnection.remoteDescription);
+                        // Solo procede si la PeerConnection existe
+                        if (peerConnection) {
+                            // Verifica si la RemoteDescription ya ha sido establecida
+                            if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+                                console.log(`[ICE Candidate IN] RemoteDescription YA ESTABLECIDA para ${from}. Tipo: ${peerConnection.remoteDescription.type}`);
+                                try {
+                                    // Intenta añadir el candidato ICE
+                                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                                    console.log(`[ICE Candidate IN] Añadido ICE candidate para ${from} exitosamente.`);
+                                } catch (e) {
+                                    // Es crucial capturar y loguear errores al añadir candidatos
+                                    // ya que pueden indicar un problema con el candidato o el estado de la PC
+                                    console.error(`[ICE Candidate IN] Error al añadir ICE candidate para ${from}:`, e, data.candidate);
+                                }
+                            } else {
+                                // Si la RemoteDescription aún no está establecida, encola el candidato
+                                console.log(`[ICE Candidate IN] Candidato para ${from} en cola. RemoteDescription aún no establecida. Actual remoteDescription:`, peerConnection.remoteDescription);
 
-                if (!iceCandidatesQueueRef.current[from]) {
-                    iceCandidatesQueueRef.current[from] = [];
-                }
-                iceCandidatesQueueRef.current[from].push(data.candidate);
-                console.log(`[ICE Candidate IN] Candidato añadido a la cola para ${from}. Cola actual: ${iceCandidatesQueueRef.current[from].length} candidatos.`);
-            }
-        } else {
-            console.warn(`[ICE Candidate IN] PeerConnection para ${from} no encontrada al intentar añadir candidato. Ignorando candidato.`);
-        }
-    } else {
-        console.warn("Received null/undefined ICE candidate or candidate.candidate. Ignoring.");
-    }
-    break;
+                                if (!iceCandidatesQueueRef.current[from]) {
+                                    iceCandidatesQueueRef.current[from] = [];
+                                }
+                                iceCandidatesQueueRef.current[from].push(data.candidate);
+                                console.log(`[ICE Candidate IN] Candidato añadido a la cola para ${from}. Cola actual: ${iceCandidatesQueueRef.current[from].length} candidatos.`);
+                            }
+                        } else {
+                            console.warn(`[ICE Candidate IN] PeerConnection para ${from} no encontrada al intentar añadir candidato. Ignorando candidato.`);
+                        }
+                    } else {
+                        console.warn("Received null/undefined ICE candidate or candidate.candidate. Ignoring.");
+                    }
+                    break;
                   default:
                       console.warn(`[SIGNAL IN] Tipo de señal desconocido: ${data.type}`);
               }
