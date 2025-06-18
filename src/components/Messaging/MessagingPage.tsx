@@ -11,11 +11,12 @@ const MessagingPage: React.FC = () => {
     'contacts'
   );
 
-  const handleSelectContact = (userId: string, userData: User) => {
-    setSelectedContactId(userId);
-    setSelectedContactData(userData);
-    setMobileView('chat');
-  };
+const handleSelectContact = (userId: number, userData: User) => {
+  setSelectedContactId(userId.toString());
+  setSelectedContactData(userData);
+  setMobileView('chat');
+};
+
 
   const handleBackToContacts = () => {
     setMobileView('contacts');

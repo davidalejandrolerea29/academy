@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@daily-co/daily-react": "^0.22.0",
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
     "@headlessui/react": "^1.7.18",
     "@jitsi/react-sdk": "^1.4.0",
     "@supabase/supabase-js": "^2.49.8",

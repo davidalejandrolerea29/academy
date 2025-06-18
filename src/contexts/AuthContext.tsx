@@ -163,7 +163,8 @@ console.log('respuesta de la api', data)
         throw new Error(data.message || 'Sesión inválida');
       }
 
- setCurrentUser({
+setCurrentUser({
+  token, // ✅ Esto es lo que te falta
   id: data.id,
   email: data.email,
   name: data.name ?? '',
@@ -177,10 +178,26 @@ console.log('respuesta de la api', data)
   role_description: data.role_description,
 });
 
-    } catch (e) {
-      localStorage.removeItem('token');
-      setCurrentUser(null);
-    } finally {
+
+     setCurrentUser({
+    token, // ← obligatorio para que se reconozca el usuario
+    id: data.id,
+    email: data.email,
+    name: data.name ?? '',
+    role_id: data.role_id,
+    role: {
+      id: data.role_id,
+      description: data.role_description,
+      created_at: data.role_created_at ?? '',
+      updated_at: data.role_updated_at ?? ''
+    },
+    role_description: data.role_description,
+  });
+
+} catch (e) {
+  console.error('Error al obtener el usuario actual:', e);
+  // no borres el token si no estás seguro de que es inválido
+} finally {
       setLoading(false);
     }
   };
