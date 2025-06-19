@@ -1,7 +1,5 @@
 export type UserRole = 'Student' | 'Teacher' | 'Admin';
 
-
-
 export interface Role {
   id: number;
   description: UserRole;
@@ -14,13 +12,13 @@ export interface User {
   email: string;
   name: string;
   role_id: number;
-  role: Role;
-  role_description: string,
-  token: string;
- // photo_url?: string | null;
- // email_verified_at?: string | null;
-  //created_at: string;
-  //updated_at: string;
+  role: Role; // Asegúrate de que esta propiedad exista y sea del tipo Role
+  token?: string; // Hice token opcional ya que no siempre estará presente
+  // Quité role_description ya que `user.role.description` ya lo provee
+  // photo_url?: string | null;
+  // email_verified_at?: string | null;
+  // created_at?: string; // Opcional, ya que no siempre lo usarás directamente
+  // updated_at?: string; // Opcional
 }
 
 
