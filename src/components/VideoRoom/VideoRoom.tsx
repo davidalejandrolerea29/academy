@@ -7,6 +7,7 @@ import { Room } from '../../types'; // Asumo que este tipo está definido
 import { useMicVolume } from '../../hooks/useMicVolume'; // Asumo que tu hook está bien
 
 import { Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle, MessageSquare, PhoneOff } from 'lucide-react';
+const [isSharingScreen, setIsSharingScreen] = useState(false);
 
 interface RemoteVideoProps {
   stream: MediaStream | null;
@@ -192,7 +193,7 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
-
+const roomParticipantId = currentUser?.id; 
   const sendSignal = useCallback((toId: string, data: any) => {
     if (!channelRef.current) {
       console.warn("Cannot send signal: channel is not ready.");
@@ -706,7 +707,7 @@ useEffect(() => {
 
   const toggleScreenShare = async () => {
     if (!localStream) return; // Asegúrate de tener el stream original
-
+   setIsSharingScreen(true);
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); // Audio para compartir audio del sistema si se desea
       const screenVideoTrack = screenStream.getVideoTracks()[0];
@@ -742,6 +743,7 @@ useEffect(() => {
         });
         setVideoEnabled(true); // Tu cámara local debería estar visible de nuevo
         setMicEnabled(cameraAudioTrack?.enabled || false); // Tu micrófono local debería estar habilitado de nuevo
+         setIsSharingScreen(false);
       };
       setVideoEnabled(false); // Tu cámara local debería ocultarse (solo se ve la pantalla compartida)
       setMicEnabled(screenAudioTrack?.enabled || false); // El micrófono local debería deshabilitarse si se comparte audio del sistema
@@ -754,14 +756,49 @@ useEffect(() => {
     }
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim() || !currentUser?.name) return; // Asegúrate de que currentUser.name esté disponible
-    const msg = { sender: currentUser.name, text: chatInput };
-    setMessages(prev => [...prev, msg]);
-    setChatInput('');
-    channelRef.current?.whisper('chat-message', msg);
+const handleSendMessage = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!chatInput.trim() || !currentUser?.id || !roomParticipantId) return;
+
+  const payload = {
+    content: chatInput.trim(),
+    room_participant_id: roomParticipantId,
   };
+
+  try {
+    const response = await fetch(`${API_URL}/auth/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${currentUser.token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (data?.data) {
+      setMessages(prev => [...prev, {
+        sender: currentUser.name,
+        text: chatInput.trim(),
+      }]);
+
+      // Opcional: emitir whisper si querés mantenerlo instantáneo para emisor
+      channelRef.current?.whisper('chat-message', {
+        sender: currentUser.name,
+        text: chatInput.trim(),
+      });
+
+      setChatInput('');
+    } else {
+      console.error('Respuesta inesperada:', data);
+    }
+  } catch (error) {
+    console.error('Error al enviar mensaje:', error);
+  }
+};
+
 
   const endCall = () => {
     // Detener todos los tracks de los streams locales
@@ -842,7 +879,19 @@ useEffect(() => {
                 </div>
               )}
             </div>
-
+{isSharingScreen && (
+  <div className="w-full aspect-video mb-4 rounded-xl overflow-hidden border border-blue-600 shadow-xl">
+    <video
+      ref={localVideoRef}
+      autoPlay
+      muted
+      className="w-full h-full object-contain"
+    />
+    <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
+      Compartiendo pantalla
+    </div>
+  </div>
+)}
             {/* Videos remotos */}
        {Object.entries(participants).map(([id, { name }]) => (
         <div key={id} className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
@@ -923,6 +972,9 @@ useEffect(() => {
         <form
           onSubmit={handleSendMessage}
           className="p-4 border-t border-gray-700 flex gap-2"
+          channelRef={channelRef}
+         currentUser={currentUser}
+         roomParticipantId={roomParticipantId}
         >
           <input
             value={chatInput}
