@@ -702,21 +702,53 @@ useEffect(() => {
     }
   };
   
-const roomParticipantId = currentUser?.id;
+const [roomParticipantId, setRoomParticipantId] = useState<number | null>(null);
+useEffect(() => {
+  const fetchRoomParticipantId = async () => {
+    if (!roomId || !currentUser?.id) return;
+
+    try {
+      const response = await fetch(`${API_URL}/auth/room-participant?user_id=${currentUser.id}&room_id=${roomId}`, {
+        headers: {
+          Authorization: `Bearer ${currentUser.token}`,
+          Accept: 'application/json',
+        }
+      });
+
+      const data = await response.json();
+
+      if (data?.id) {
+        console.log('✅ room_participant_id obtenido:', data.id);
+        setRoomParticipantId(data.id);
+      } else {
+        console.error('❌ No se encontró room_participant_id:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error al obtener room_participant_id:', error);
+    }
+  };
+
+  fetchRoomParticipantId();
+}, [roomId, currentUser?.id]);
+if (!roomParticipantId) return;
+
+console.log('roompartricipan', roomParticipantId);
 const handleSendMessage = async (e: React.FormEvent) => {
   e.preventDefault();
-  if (!chatInput.trim() || !currentUser?.id || !roomParticipantId) return;
+  if (!chatInput.trim() || !currentUser?.name || !channelRef.current || !roomParticipantId) return;
 
   const payload = {
     content: chatInput.trim(),
     room_participant_id: roomParticipantId,
+    room_id: Number(roomId),
   };
+  console.log('el payload', payload);
 
   try {
     const response = await fetch(`${API_URL}/auth/messages`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${currentUser.token}`,
+        Authorization: `Bearer ${currentUser.token}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
@@ -731,7 +763,6 @@ const handleSendMessage = async (e: React.FormEvent) => {
         text: chatInput.trim(),
       }]);
 
-      // Opcional: emitir whisper si querés mantenerlo instantáneo para emisor
       channelRef.current?.whisper('chat-message', {
         sender: currentUser.name,
         text: chatInput.trim(),
@@ -745,6 +776,7 @@ const handleSendMessage = async (e: React.FormEvent) => {
     console.error('Error al enviar mensaje:', error);
   }
 };
+
 
 
 
@@ -903,9 +935,7 @@ const handleSendMessage = async (e: React.FormEvent) => {
         <form
           onSubmit={handleSendMessage}
           className="p-4 border-t border-gray-700 flex gap-2"
-          channelRef={channelRef}
-         currentUser={currentUser}
-         roomParticipantId={roomParticipantId}
+          
         >
           <input
             value={chatInput}
