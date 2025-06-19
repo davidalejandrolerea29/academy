@@ -9,7 +9,7 @@ const RegisterPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [role, setRole] = useState<UserRole>('alumno');
+  const [role, setRole] = useState<UserRole>('Student');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   

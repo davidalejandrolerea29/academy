@@ -1,12 +1,13 @@
-// src/components/Messaging/Chat.tsx
-
+// imports
 import React, { useState, useEffect, useRef } from 'react';
-import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService'; // ¡RUTA CORREGIDA!
-
-import { supabase } from '../../lib/supabase';
+import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useAuth } from '../../contexts/AuthContext';
 import { Message, User } from '../../types';
-import { Send, Clock } from 'lucide-react';
+import { Send, Clock, Paperclip, Smile } from 'lucide-react';
+import Picker from '@emoji-mart/react';
+import data from '@emoji-mart/data';
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 interface ChatProps {
   recipientId: string;
@@ -18,137 +19,112 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Calculamos roomId para el canal Laravel Echo (por ejemplo con ambos IDs ordenados)
-  const roomId = currentUser && recipientId ? [currentUser.id, recipientId].sort().join('-') : null;
+  const roomId = currentUser && recipientId
+    ? [currentUser.id, recipientId].sort().join('-')
+    : null;
 
- useEffect(() => {
+  useEffect(() => {
     if (!currentUser?.id || !recipientId) return;
 
-    const reverbService = createReverbWebSocketService(currentUser.token); // Usa el nuevo servicio
-
     const fetchMessages = async () => {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${recipientId}),and(sender_id.eq.${recipientId},receiver_id.eq.${currentUser.id})`)
-        .order('timestamp', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching messages:', error);
-        return;
-      }
-
-      setMessages(data || []);
-      setLoading(false);
-
-      const unread = (data || []).filter(
-        (msg) => msg.receiver_id === currentUser.id && !msg.read
-      );
-      for (const msg of unread) {
-        await supabase.from('messages').update({ read: true }).eq('id', msg.id);
+      try {
+        const response = await fetch(
+          `${API_URL}/auth/messages?user_id=${currentUser.id}&recipient_id=${recipientId}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${currentUser.token}`,
+            },
+          }
+        );
+        const data = await response.json();
+        setMessages(data.messages || []);
+      } catch (error) {
+        console.error('Error al obtener mensajes:', error);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchMessages();
 
-    const supabaseChannel = supabase
-      .channel('chat')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        (payload) => {
-          const msg = payload.new as Message;
-          if (
-            (msg.sender_id === currentUser.id && msg.receiver_id === recipientId) ||
-            (msg.sender_id === recipientId && msg.receiver_id === currentUser.id)
-          ) {
-            setMessages((prev) => [...prev, msg]);
-            if (msg.receiver_id === currentUser.id && !msg.read) {
-              supabase.from('messages').update({ read: true }).eq('id', msg.id);
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    let channel: EchoChannel | null = null; // Declara el canal
+    let channel: EchoChannel | null = null;
+    const reverbService = createReverbWebSocketService(currentUser.token);
 
     if (roomId) {
-      // --- REEMPLAZO DE Echo POR ReverbWebSocketService ---
-      reverbService.private(`room.${roomId}`) // Usamos .private para canales privados
-        .then((chann: EchoChannel) => {
-          channel = chann; // Asigna el canal
-          console.log("Canal de chat obtenido:", channel);
-
-          channel.subscribed(() => {
-            console.log(`✅ Suscrito correctamente a room.${roomId}`);
-          });
-
+      reverbService
+        .private(`room.${roomId}`)
+        .then((chann) => {
+          channel = chann;
           channel.listen('.messagecreated', (data: any) => {
-            console.log('🔔 Mensaje recibido por ReverbWebSocketService:', data);
-            const msg = data.message; // Asumo que el payload es { message: { ... } }
-            if (
-              (msg.sender_id === currentUser.id && msg.receiver_id === recipientId) ||
-              (msg.sender_id === recipientId && msg.receiver_id === currentUser.id)
-            ) {
-              setMessages((prev) => [...prev, msg]);
-            }
-          });
-
-          channel.error((err: any) => {
-            console.error("❌ Error en canal de chat:", err);
+            const msg: Message = data.message;
+            setMessages((prev) => [...prev, msg]);
           });
         })
-        .catch(error => {
-          console.error("❌ Error al unirse al canal de chat:", error);
-          channel = null; // Asegúrate de que el canal se limpie en caso de error
-        });
-      // --- FIN DEL REEMPLAZO ---
+        .catch((err) => console.error('❌ Error canal:', err));
 
       return () => {
-        // Asegúrate de que `channel` esté definido antes de llamar a `stopListening` o `leave`
-        if (channel) {
-          channel.leave(); // Esto ahora desuscribirá del canal
-          // channel.stopListening('.messagecreated'); // Ya no es necesario con el `leave`
-        }
-        supabase.removeChannel(supabaseChannel);
+        if (channel) channel.leave();
       };
     }
-
-    return () => {
-      supabase.removeChannel(supabaseChannel);
-    };
-  }, [currentUser, recipientId, roomId]); // Dependencias del useEffect
-
+  }, [currentUser, recipientId, roomId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !currentUser) return;
+ const handleEmojiSelect = (emoji: any) => {
+  setNewMessage((prev) => prev + emoji.native);
+  setShowEmojiPicker(false); // <- Esto lo oculta automáticamente
+};
 
-    const { error } = await supabase.from('messages').insert([
-      {
-        sender_id: currentUser.id,
-        receiver_id: recipientId,
-        content: newMessage,
-        read: false,
-        participants: [currentUser.id, recipientId],
-      },
-    ]);
-
-    if (error) {
-      console.error('Error sending message:', error);
-    } else {
-      setNewMessage('');
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      setAttachedFile(e.target.files[0]);
     }
   };
 
-  // ... el resto del render igual, sin cambios
+const sendMessage = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!newMessage.trim() && !attachedFile) return;
+
+  const formData = new FormData();
+  formData.append('sender_id', currentUser?.id);
+  formData.append('receiver_id', recipientId);
+  formData.append('content', newMessage.trim() || ''); // ✅ campo obligatorio
+
+  if (attachedFile) {
+    formData.append('file', attachedFile);
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/auth/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${currentUser?.token}`,
+        Accept: 'application/json', // ✅ evita respuestas HTML
+      },
+      body: formData,
+    });
+
+    const text = await response.text();
+    console.log('Respuesta del servidor:', text);
+    const data = JSON.parse(text);
+
+    if (data?.data) {
+      setMessages((prev) => [...prev, data.data]);
+      setNewMessage('');
+      setAttachedFile(null);
+    }
+  } catch (error) {
+    console.error('Error al enviar mensaje:', error);
+  }
+};
+
 
   if (loading) {
     return (
@@ -162,39 +138,58 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
     <div className="flex flex-col h-full">
       <div className="bg-white shadow-sm p-4 border-b">
         <h2 className="text-lg font-semibold text-gray-800">
-          {recipientData.display_name}
+          {recipientData.name}
         </h2>
-        <span className="text-sm text-gray-500">
-          {recipientData.role === 'teacher' ? 'Profesor' :
-            recipientData.role === 'alumno' ? 'Alumno' : 'Administrador'}
+        <span className="text-sm text-gray-500 capitalize">
+          {recipientData.role_description}
         </span>
       </div>
 
-      <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+      <div className="flex-1 p-4 overflow-y-auto bg-gray-100">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-500">
             <p>No hay mensajes. ¡Envía el primero!</p>
           </div>
         ) : (
           messages.map((message) => {
-            const isOwnMessage = message.sender_id === currentUser?.id;
+            const sender = message.room_participant?.user;
+            const isOwnMessage = sender?.id === currentUser?.id;
+
             return (
               <div
                 key={message.id}
                 className={`flex mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg ${isOwnMessage
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-white text-gray-800 border border-gray-200'
-                    }`}
+                  className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-2xl shadow-sm ${
+                    isOwnMessage
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-800 border'
+                  }`}
                 >
-                  <div className="text-sm">{message.content}</div>
+                  {!isOwnMessage && (
+                    <div className="text-xs text-gray-500 mb-1">
+                      {sender?.name}
+                    </div>
+                  )}
+                  <div className="text-sm break-words whitespace-pre-wrap">
+                    {message.content}
+                  </div>
+                  {message.attachment_url && (
+                    <a
+                      href={message.attachment_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block mt-2 text-xs text-blue-200 underline"
+                    >
+                      Ver archivo adjunto
+                    </a>
+                  )}
                   <div className="flex items-center justify-end mt-1">
-                    <span className={`text-xs ${isOwnMessage ? 'text-blue-100' : 'text-gray-500'}`}>
+                    <span className={`text-xs ${isOwnMessage ? 'text-blue-100' : 'text-gray-400'}`}>
                       {new Date(message.timestamp).toLocaleTimeString('es-ES', {
                         hour: '2-digit',
-                        minute: '2-digit'
+                        minute: '2-digit',
                       })}
                     </span>
                     {isOwnMessage && (
@@ -216,22 +211,48 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
       </div>
 
       <form onSubmit={sendMessage} className="p-4 bg-white border-t">
-        <div className="flex">
+        <div className="flex items-center space-x-2">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className="text-gray-500 hover:text-blue-600"
+            >
+              <Smile className="w-6 h-6" />
+            </button>
+            {showEmojiPicker && (
+              <div className="absolute bottom-12 left-0 z-50">
+                <Picker data={data} onEmojiSelect={handleEmojiSelect} theme="light" />
+              </div>
+            )}
+          </div>
+
+          <label className="cursor-pointer text-gray-500 hover:text-blue-600">
+            <Paperclip className="w-6 h-6" />
+            <input type="file" hidden onChange={handleFileChange} />
+          </label>
+
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Escribe un mensaje..."
-            className="flex-1 border border-gray-300 rounded-l-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+
           <button
             type="submit"
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-r-md flex items-center transition-colors"
-            disabled={!newMessage.trim()}
+            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
+            disabled={!newMessage.trim() && !attachedFile}
           >
             <Send className="w-5 h-5" />
           </button>
         </div>
+        {attachedFile && (
+          <div className="mt-2 text-xs text-gray-500">
+            Archivo seleccionado: <strong>{attachedFile.name}</strong>
+          </div>
+        )}
       </form>
     </div>
   );

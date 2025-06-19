@@ -36,13 +36,21 @@ export interface Room {
 }
 
 export interface Message {
-  id: string;
-  sender_id: string;
-  receiver_id: string;
+  id: number;
   content: string;
-  timestamp: Date;
+  timestamp: string;
+  sender_id: number;
+  receiver_id: number;
   read: boolean;
+  room_participant: {
+    user: {
+      id: number;
+      name: string;
+    };
+  };
 }
+
+
 
 export interface RoomParticipant {
   userId: number;
