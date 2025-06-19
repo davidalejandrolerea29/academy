@@ -7,7 +7,7 @@ import { Room } from '../../types'; // Asumo que este tipo está definido
 import { useMicVolume } from '../../hooks/useMicVolume'; // Asumo que tu hook está bien
 
 import { Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle, MessageSquare, PhoneOff } from 'lucide-react';
-const [isSharingScreen, setIsSharingScreen] = useState(false);
+
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
 import RemoteVideo from './RemoteVideo'; // Ajusta la ruta si RemoteVideo.tsx está en otro lugar
@@ -29,6 +29,7 @@ const VideoRoom: React.FC = () => {
   const streamLogCountsRef = useRef<Record<string, number>>({});
 // En VideoRoom.tsx, dentro del componente:
 const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
+const [isSharingScreen, setIsSharingScreen] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
 const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   // --- Refs para mantener referencias persistentes ---
@@ -40,7 +41,7 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   // participants ahora incluye toda la info necesaria para renderizar y gestionar el estado del usuario
   const [participants, setParticipants] = useState<Record<string, { id: string, name: string, videoEnabled: boolean, micEnabled: boolean, stream: MediaStream | null }>>({});
-
+ 
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
@@ -355,7 +356,7 @@ useEffect(() => {
 
     const reverbService = reverbServiceRef.current;
     let currentChannelInstance: EchoChannel | null = null;
-
+    
     console.log(`Intentando unirse al canal presence-video-room.${roomId}`);
       reverbService.presence(`presence-video-room.${roomId}`)
       .then((joinedChannel: EchoChannel) => {
@@ -588,6 +589,7 @@ useEffect(() => {
 
   // --- Listeners para Whispers de estado de video/micrófono ---
   useEffect(() => {
+    
     const currentChannel = channelRef.current;
     if (currentChannel) {
       const chatListener = (msg: { sender: string; text: string }) => {
@@ -699,7 +701,8 @@ useEffect(() => {
       setMicEnabled(localStream?.getAudioTracks()[0]?.enabled || true);
     }
   };
-
+  
+const roomParticipantId = currentUser?.id;
 const handleSendMessage = async (e: React.FormEvent) => {
   e.preventDefault();
   if (!chatInput.trim() || !currentUser?.id || !roomParticipantId) return;
@@ -742,6 +745,7 @@ const handleSendMessage = async (e: React.FormEvent) => {
     console.error('Error al enviar mensaje:', error);
   }
 };
+
 
 
   const endCall = () => {
@@ -805,26 +809,24 @@ const handleSendMessage = async (e: React.FormEvent) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-6xl p-4">
 
             {/* Video local */}
-            <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black">
-              <video ref={localVideoRef} autoPlay muted className="w-full h-full object-cover" />
-              <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
-                Tú
-              </div>
-              {micEnabled && (
-                <div className="absolute top-2 right-2 flex gap-[2px] items-end h-6">
-                    {/* Indicador de volumen para el micrófono local */}
-                    {[...Array(5)].map((_, i) => (
-                      <div
-                        key={i}
-                        className={`w-1 rounded-full bg-blue-400 transition-all duration-100 ${
-                          volume > i * (255 / 5) ? `h-${(i + 1) * 2}` : 'h-1'
-                        }`}
-                      />
-                    ))}
-                </div>
-              )}
-            </div>
-
+            <div
+  className={`
+    relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black
+    ${isSharingScreen ? 'col-span-2 w-full' : ''}
+  `}
+>
+  <video
+    ref={localVideoRef}
+    autoPlay
+    muted
+    className="w-full h-full object-contain" // usa contain si no querés recortar pantalla compartida
+  />
+  <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
+    {isSharingScreen ? 'Compartiendo pantalla' : 'Tú'}
+  </div>
+  {/* ... mic indicator */}
+</div>
+            
             {/* ¡VIDEOS REMOTOS AHORA USANDO EL COMPONENTE REMOTEVIDEO! */}
             {Object.values(participants).map(p => (
               // Asegúrate de que 'p' no sea el usuario local si no quieres renderizar tu propio video dos veces
