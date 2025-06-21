@@ -11,7 +11,7 @@ import { Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle, MessageSquare, P
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
 import RemoteVideo from './RemoteVideo'; // Ajusta la ruta si RemoteVideo.tsx está en otro lugar
-
+import ChatBox from './ChatBox';
 
 const VideoRoom: React.FC = () => {
   const API_URL = import.meta.env.VITE_API_URL;
@@ -23,9 +23,6 @@ const VideoRoom: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isTeacher, setIsTeacher] = useState(false); // Determinar si el usuario actual es profesor
-  const [isRecording, setIsRecording] = useState(false);
-  const [messages, setMessages] = useState<{ sender: string; text: string }[]>([]);
-  const [chatInput, setChatInput] = useState('');
   const streamLogCountsRef = useRef<Record<string, number>>({});
 // En VideoRoom.tsx, dentro del componente:
 const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
@@ -46,24 +43,24 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
   useEffect(() => {
-    console.log(`[VideoRoom State] Participants actualizados:`, Object.keys(participants).map(id => ({
+    Object.keys(participants).map(id => ({
         id,
         name: participants[id].name,
         hasStream: !!participants[id].stream,
         streamId: participants[id].stream?.id,
         videoEnabled: participants[id].videoEnabled,
         micEnabled: participants[id].micEnabled
-    })));
+    }));
   }, [participants]);
 
   // Log el estado de cada PeerConnection en peerConnectionsRef.current
   useEffect(() => {
     // Para ver el estado inicial y cualquier cambio posterior en las PeerConnections
     const logPeerConnectionStates = () => {
-      console.log(`[VideoRoom State] Estado actual de peerConnectionsRef:`);
+      //console.log(`[VideoRoom State] Estado actual de peerConnectionsRef:`);
       const pcs = peerConnectionsRef.current;
       if (Object.keys(pcs).length === 0) {
-        console.log("  No hay PeerConnections activas.");
+        //console.log("  No hay PeerConnections activas.");
         return;
       }
       // for (const peerId in pcs) {
@@ -100,14 +97,14 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
       return;
     }
     // Añade este log para verificar si la señal 'answer' se está intentando enviar
-    console.log(`[SIGNAL OUT DEBUG] Intentando enviar señal de tipo ${signalData.type} de ${currentUser?.id} a ${toPeerId}`);
+    //console.log(`[SIGNAL OUT DEBUG] Intentando enviar señal de tipo ${signalData.type} de ${currentUser?.id} a ${toPeerId}`);
     try {
       await channelRef.current.whisper('Signal', {
         to: toPeerId,
         from: String(currentUser?.id), // Asegúrate de que esto sea la ID correcta del remitente
         data: signalData
       });
-      console.log(`[SIGNAL OUT DEBUG] ✅ Señal ${signalData.type} enviada de ${currentUser?.id} a ${toPeerId}`);
+      //console.log(`[SIGNAL OUT DEBUG] ✅ Señal ${signalData.type} enviada de ${currentUser?.id} a ${toPeerId}`);
     } catch (error) {
       console.error(`[SIGNAL OUT ERROR] Error al enviar señal ${signalData.type} de ${currentUser?.id} a ${toPeerId}:`, error);
     }
@@ -115,7 +112,7 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
   // --- Función auxiliar para obtener/crear RTCPeerConnection ---
     const getOrCreatePeerConnection = useCallback((peerId: string) => {
     if (!peerConnectionsRef.current[peerId]) {
-      console.log(`[PC] Creando nueva RTCPeerConnection para peer: ${peerId}`);
+      //console.log(`[PC] Creando nueva RTCPeerConnection para peer: ${peerId}`);
       // En la configuración de RTCPeerConnection (donde creas `pc`)
      // En tu VideoRoom.tsx o donde configures RTCPeerConnection
       // En tu VideoRoom.tsx o donde sea que configures RTCPeerConnection
@@ -156,12 +153,12 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
       // o que la oferta inicial contenga los tracks.
       if (localStream) {
           localStream.getTracks().forEach(track => {
-              console.log(`[PC Creation DEBUG] Track ${track.kind} readyState: ${track.readyState}`); // <-- NUEVO LOG
+              //console.log(`[PC Creation DEBUG] Track ${track.kind} readyState: ${track.readyState}`); // <-- NUEVO LOG
               if (!pc.getSenders().some(sender => sender.track === track)) {
                   pc.addTrack(track, localStream);
-                  console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+                  //console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
               } else {
-                  console.log(`[PC Creation] Track ${track.kind} ya EXISTE para ${peerId}. No se añade de nuevo.`);
+                  //console.log(`[PC Creation] Track ${track.kind} ya EXISTE para ${peerId}. No se añade de nuevo.`);
               }
           });
       }
@@ -179,9 +176,9 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
               streamLogCountsRef.current[streamId] = (streamLogCountsRef.current[streamId] || 0) + 1;
 
               if (streamLogCountsRef.current[streamId] <= 3) {
-                  console.log(`[ontrack DEBUG] Recibiendo ${trackKind} track de ${peerId} (Stream ID: ${streamId}).`);
+                  //console.log(`[ontrack DEBUG] Recibiendo ${trackKind} track de ${peerId} (Stream ID: ${streamId}).`);
               } else if (streamLogCountsRef.current[streamId] === 4) {
-                  console.log(`[ontrack DEBUG] (Más de 3 logs para stream ${streamId}, suprimiendo logs adicionales para este stream)`);
+                  //console.log(`[ontrack DEBUG] (Más de 3 logs para stream ${streamId}, suprimiendo logs adicionales para este stream)`);
               }
           } else {
               console.warn(`[ontrack DEBUG] Recibido evento sin stream para peer: ${peerId}`);
@@ -191,7 +188,7 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
               const existingParticipant = prev[peerId];
               if (existingParticipant) {
                   if (!existingParticipant.stream || existingParticipant.stream.id !== incomingStream.id) {
-                      console.log(`[ontrack DEBUG] Actualizando stream para ${peerId} en el estado. Nuevo stream ID: ${incomingStream.id}`);
+                      //console.log(`[ontrack DEBUG] Actualizando stream para ${peerId} en el estado. Nuevo stream ID: ${incomingStream.id}`);
                       return {
                           ...prev,
                           [peerId]: {
@@ -221,14 +218,14 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
       // Dentro de pc.onicecandidate:
       pc.onicecandidate = (event) => {
         if (event.candidate && currentUser) {
-          console.log(`[ICE Candidate] Generado candidato para ${peerId}.`);
+          //console.log(`[ICE Candidate] Generado candidato para ${peerId}.`);
           // Envía event.candidate como un objeto plano para que sea reconstruido.
           sendSignal(peerId, { type: 'candidate', candidate: event.candidate.toJSON() });
         }
       };
       // --- CAMBIO CLAVE: Manejo de onnegotiationneeded ---
       pc.onnegotiationneeded = async () => {
-          console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
+          //console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
           if (!localStream) {
             console.warn(`[onnegotiationneeded] localStream no está listo para peer ${peerId}. No se puede crear oferta.`);
             return;
@@ -238,7 +235,7 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
           localStream.getTracks().forEach(track => {
             if (!pc.getSenders().some(sender => sender.track === track)) {
               pc.addTrack(track, localStream);
-              console.log(`[ON_NEGOTIATION] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+              //console.log(`[ON_NEGOTIATION] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
             }
           });
 
@@ -250,13 +247,13 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
             const isInitiator = localUserId < remoteMemberId; // O tu lógica para determinar quién inicia
 
             if (isInitiator) {
-                console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
+                //console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
-                console.log(`[SIGNAL OUT] Enviando OFFER de ${currentUser?.id} a ${peerId}:`, { type: 'offer', sdpType: offer.type }); // NUEVO LOG
+                //console.log(`[SIGNAL OUT] Enviando OFFER de ${currentUser?.id} a ${peerId}:`, { type: 'offer', sdpType: offer.type }); // NUEVO LOG
                 sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
             } else {
-                console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
+                //console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
             }
 
           } catch (e) {
@@ -265,9 +262,9 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
       };
 
       pc.onconnectionstatechange = () => {
-        console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
+        //console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
         if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Cleaning up.`);
+          //console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Cleaning up.`);
           pc.close();
           const newPeerConnections = { ...peerConnectionsRef.current };
           delete newPeerConnections[peerId];
@@ -283,16 +280,16 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
 
 
       pc.oniceconnectionstatechange = () => {
-          console.log(`[PC State - ICE] PeerConnection con ${peerId} ICE: ${pc.iceConnectionState}`);
+          //console.log(`[PC State - ICE] PeerConnection con ${peerId} ICE: ${pc.iceConnectionState}`);
       };
       pc.onconnectionstatechange = () => {
-          console.log(`[PC State - Connection] PeerConnection con ${peerId} conexión: ${pc.connectionState}`);
+          //console.log(`[PC State - Connection] PeerConnection con ${peerId} conexión: ${pc.connectionState}`);
       };
       pc.onsignalingstatechange = () => {
-          console.log(`[PC State - Signaling] PeerConnection con ${peerId} signaling: ${pc.signalingState}`);
+          //console.log(`[PC State - Signaling] PeerConnection con ${peerId} signaling: ${pc.signalingState}`);
       };
       pc.onicegatheringstatechange = () => {
-          console.log(`[PC State - Ice Gathering] PeerConnection con ${peerId} ICE gathering: ${pc.iceGatheringState}`);
+          //console.log(`[PC State - Ice Gathering] PeerConnection con ${peerId} ICE gathering: ${pc.iceGatheringState}`);
       };
 
       peerConnectionsRef.current = { ...peerConnectionsRef.current, [peerId]: pc };
@@ -315,7 +312,7 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
         const audioTrack = stream.getAudioTracks()[0];
 
         // Debugging: Verifica el estado real de los tracks al obtenerlos
-        console.log(`[Local Stream Init] Video track enabled: ${videoTrack?.enabled}, Audio track enabled: ${audioTrack?.enabled}`);
+        //console.log(`[Local Stream Init] Video track enabled: ${videoTrack?.enabled}, Audio track enabled: ${audioTrack?.enabled}`);
 
         setVideoEnabled(videoTrack?.enabled || false);
         setMicEnabled(audioTrack?.enabled || false);
@@ -346,18 +343,18 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
   // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB Y WEB RTC ---
 useEffect(() => {
     if (!roomId || !currentUser || !localStream) {
-        console.log("Faltan roomId, currentUser o localStream para unirse al canal. Reintentando...");
+        //console.log("Faltan roomId, currentUser o localStream para unirse al canal. Reintentando...");
         return;
     }
     if (channelRef.current) {
-        console.log("Ya existe un canal (en el ref), no se unirá de nuevo.");
+        //console.log("Ya existe un canal (en el ref), no se unirá de nuevo.");
         return;
     }
 
     const reverbService = reverbServiceRef.current;
     let currentChannelInstance: EchoChannel | null = null;
     
-    console.log(`Intentando unirse al canal presence-video-room.${roomId}`);
+    //console.log(`Intentando unirse al canal presence-video-room.${roomId}`);
       reverbService.presence(`presence-video-room.${roomId}`)
       .then((joinedChannel: EchoChannel) => {
         currentChannelInstance = joinedChannel;
@@ -365,7 +362,7 @@ useEffect(() => {
         setHasJoinedChannel(true);
         // --- joinedChannel.here: Para miembros que ya están en la sala cuando te unes ---
         joinedChannel.here(async (members: { id: string; name: string; user_info?: any }[]) => {
-          console.log("Aquí estamos: Sincronizando participantes iniciales:", members);
+          //console.log("Aquí estamos: Sincronizando participantes iniciales:", members);
           const initialParticipants: Record<string, { id: string, name: string, videoEnabled: boolean, micEnabled: boolean, stream: MediaStream | null }> = {};
           const localUserId = parseInt(currentUser.id.toString());
 
@@ -393,7 +390,7 @@ useEffect(() => {
 
         // --- joinedChannel.joining: Para miembros que se unen DESPUÉS de ti ---
         joinedChannel.joining(async (member: { id: string; name: string; user_info?: any }) => {
-            console.log("Un nuevo participante se ha unido:", member);
+            //console.log("Un nuevo participante se ha unido:", member);
             const memberId = String(member.id);
             if (memberId === String(currentUser.id)) return;
 
@@ -432,7 +429,7 @@ useEffect(() => {
 
         // --- Listener para señales WebRTC (Ofertas, Respuestas, Candidatos ICE) ---
        joinedChannel.listenForWhisper('Signal', async ({ to, from, data }: { to: string; from: string; data: any }) => {
-          console.log(`[DEBUG WHISPER RECIBIDO] Mensaje recibido: to=${to}, from=${from}, type=${data.type}`);
+          //console.log(`[DEBUG WHISPER RECIBIDO] Mensaje recibido: to=${to}, from=${from}, type=${data.type}`);
 
           if (to !== String(currentUser.id)) {
               console.warn(`[DEBUG WHISPER FILTRADO] Mensaje para otro usuario. Mi ID: ${currentUser.id}, Mensaje TO: ${to}`);
@@ -445,18 +442,18 @@ useEffect(() => {
               switch (data.type) {
                   // En tu VideoRoom.tsx, dentro de joinedChannel.listenForWhisper('Signal')
                   case 'offer':
-                      console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
-                      console.log(`[SDP Offer Recv DEBUG] localStream disponible para ${from}?:`, !!localStream);
+                      //console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
+                      //console.log(`[SDP Offer Recv DEBUG] localStream disponible para ${from}?:`, !!localStream);
                       if (localStream) {
-                          console.log(`[SDP Offer Recv DEBUG] localStream tracks para ${from}:`, localStream.getTracks().map(t => t.kind));
+                          //console.log(`[SDP Offer Recv DEBUG] localStream tracks para ${from}:`, localStream.getTracks().map(t => t.kind));
                           localStream.getTracks().forEach(track => {
                               const hasSender = pc.getSenders().some(sender => sender.track === track);
-                              console.log(`[SDP Offer Recv DEBUG] Track ${track.kind} (ID: ${track.id}) ya tiene sender en PC de ${from}?: ${hasSender}`);
+                              //console.log(`[SDP Offer Recv DEBUG] Track ${track.kind} (ID: ${track.id}) ya tiene sender en PC de ${from}?: ${hasSender}`);
                               if (!hasSender) {
                                   pc.addTrack(track, localStream);
-                                  console.log(`[SDP Offer Recv] ✅ Añadido track local ${track.kind} a PC de ${from}`);
+                                  //console.log(`[SDP Offer Recv] ✅ Añadido track local ${track.kind} a PC de ${from}`);
                               } else {
-                                  console.log(`[SDP Offer Recv] Track ${track.kind} ya EXISTE en PC de ${from}. No se añade de nuevo.`);
+                                  //console.log(`[SDP Offer Recv] Track ${track.kind} ya EXISTE en PC de ${from}. No se añade de nuevo.`);
                               }
                           });
                       } else {
@@ -470,11 +467,11 @@ useEffect(() => {
                       // --- Lógica CONSOLIDADA para procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
                       const peerCandidates = iceCandidatesQueueRef.current[from]; // Usa 'from' consistentemente
                       if (peerCandidates && peerCandidates.length > 0) {
-                          console.log(`[ICE Candidate Queue] Procesando ${peerCandidates.length} candidatos en cola para ${from}.`);
+                          //console.log(`[ICE Candidate Queue] Procesando ${peerCandidates.length} candidatos en cola para ${from}.`);
                           for (const candidate of peerCandidates) {
                               try {
                                   await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                                  console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
+                                  //console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
                               } catch (e) {
                                   console.error(`[ICE Candidate Queue] Error al añadir candidato en cola para ${from}:`, e, candidate);
                               }
@@ -483,28 +480,28 @@ useEffect(() => {
                       }
 
 
-                      console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
+                      //console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
                       const answer = await pc.createAnswer();
                       await pc.setLocalDescription(answer);
                       sendSignal(from, { type: 'answer', sdp: answer.sdp, sdpType: answer.type });
                       break;
 
                   case 'answer':
-                      console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
+                      //console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
                       await pc.setRemoteDescription(new RTCSessionDescription({
                           type: data.sdpType,
                           sdp: data.sdp
                       }));
-                      console.log(`[PC State - Signaling] PeerConnection con ${from} signaling: ${pc.signalingState}`); // <-- NUEVO LOG
+                      //console.log(`[PC State - Signaling] PeerConnection con ${from} signaling: ${pc.signalingState}`); // <-- NUEVO LOG
 
                       // --- Lógica CONSOLIDADA para procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
                       const answerPeerCandidates = iceCandidatesQueueRef.current[from]; // Usa 'from' consistentemente
                       if (answerPeerCandidates && answerPeerCandidates.length > 0) {
-                          console.log(`[ICE Candidate Queue] Procesando ${answerPeerCandidates.length} candidatos en cola para ${from}.`);
+                          //console.log(`[ICE Candidate Queue] Procesando ${answerPeerCandidates.length} candidatos en cola para ${from}.`);
                           for (const candidate of answerPeerCandidates) {
                               try {
                                   await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                                  console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
+                                  //console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
                               } catch (e) {
                                   console.error(`[ICE Candidate Queue] Error al añadir candidato en cola para ${from}:`, e, candidate);
                               }
@@ -516,7 +513,7 @@ useEffect(() => {
                  case 'candidate':
                     // Agrega una verificación más estricta para data.candidate y data.candidate.candidate
                     if (data.candidate && data.candidate.candidate) {
-                        console.log(`[ICE Candidate IN] Recibido candidato para ${from}:`, data.candidate);
+                        //console.log(`[ICE Candidate IN] Recibido candidato para ${from}:`, data.candidate);
 
                         // Asegúrate de usar la ref correcta para obtener la PeerConnection
                         const peerConnection = peerConnectionsRef.current[from];
@@ -525,11 +522,11 @@ useEffect(() => {
                         if (peerConnection) {
                             // Verifica si la RemoteDescription ya ha sido establecida
                             if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
-                                console.log(`[ICE Candidate IN] RemoteDescription YA ESTABLECIDA para ${from}. Tipo: ${peerConnection.remoteDescription.type}`);
+                                //console.log(`[ICE Candidate IN] RemoteDescription YA ESTABLECIDA para ${from}. Tipo: ${peerConnection.remoteDescription.type}`);
                                 try {
                                     // Intenta añadir el candidato ICE
                                     await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                                    console.log(`[ICE Candidate IN] Añadido ICE candidate para ${from} exitosamente.`);
+                                    //console.log(`[ICE Candidate IN] Añadido ICE candidate para ${from} exitosamente.`);
                                 } catch (e) {
                                     // Es crucial capturar y loguear errores al añadir candidatos
                                     // ya que pueden indicar un problema con el candidato o el estado de la PC
@@ -537,13 +534,13 @@ useEffect(() => {
                                 }
                             } else {
                                 // Si la RemoteDescription aún no está establecida, encola el candidato
-                                console.log(`[ICE Candidate IN] Candidato para ${from} en cola. RemoteDescription aún no establecida. Actual remoteDescription:`, peerConnection.remoteDescription);
+                                //console.log(`[ICE Candidate IN] Candidato para ${from} en cola. RemoteDescription aún no establecida. Actual remoteDescription:`, peerConnection.remoteDescription);
 
                                 if (!iceCandidatesQueueRef.current[from]) {
                                     iceCandidatesQueueRef.current[from] = [];
                                 }
                                 iceCandidatesQueueRef.current[from].push(data.candidate);
-                                console.log(`[ICE Candidate IN] Candidato añadido a la cola para ${from}. Cola actual: ${iceCandidatesQueueRef.current[from].length} candidatos.`);
+                                //console.log(`[ICE Candidate IN] Candidato añadido a la cola para ${from}. Cola actual: ${iceCandidatesQueueRef.current[from].length} candidatos.`);
                             }
                         } else {
                             console.warn(`[ICE Candidate IN] PeerConnection para ${from} no encontrada al intentar añadir candidato. Ignorando candidato.`);
@@ -572,7 +569,7 @@ useEffect(() => {
 
     // Función de limpieza al desmontar o cuando las dependencias cambien
     return () => {
-      console.log("Limpiando useEffect de conexión al canal.");
+      //console.log("Limpiando useEffect de conexión al canal.");
       if (currentChannelInstance) {
         currentChannelInstance.leave(); // Deja el canal de Echo/Reverb
         setHasJoinedChannel(false);
@@ -592,10 +589,10 @@ useEffect(() => {
     
     const currentChannel = channelRef.current;
     if (currentChannel) {
-      const chatListener = (msg: { sender: string; text: string }) => {
-        setMessages(prev => [...prev, msg]);
-      };
-      currentChannel.listenForWhisper('chat-message', chatListener);
+      // const chatListener = (msg: { sender: string; text: string }) => {
+      //   setMessages(prev => [...prev, msg]);
+      // };
+      // currentChannel.listenForWhisper('chat-message', chatListener);
 
       currentChannel.listenForWhisper('toggle-video', ({ id, enabled }: { id: string; enabled: boolean }) => {
         // console.log(`[toggle-video] Recibido para ${id}: ${enabled}`);
@@ -718,7 +715,7 @@ useEffect(() => {
       const data = await response.json();
 
       if (data?.id) {
-        console.log('✅ room_participant_id obtenido:', data.id);
+        //console.log('✅ room_participant_id obtenido:', data.id);
         setRoomParticipantId(data.id);
       } else {
         console.error('❌ No se encontró room_participant_id:', data);
@@ -731,54 +728,6 @@ useEffect(() => {
   fetchRoomParticipantId();
 }, [roomId, currentUser?.id]);
 if (!roomParticipantId) return;
-
-console.log('roompartricipan', roomParticipantId);
-const handleSendMessage = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!chatInput.trim() || !currentUser?.name || !channelRef.current || !roomParticipantId) return;
-
-  const payload = {
-    content: chatInput.trim(),
-    room_participant_id: roomParticipantId,
-    room_id: Number(roomId),
-  };
-  console.log('el payload', payload);
-
-  try {
-    const response = await fetch(`${API_URL}/auth/messages`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${currentUser.token}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-
-    if (data?.data) {
-      setMessages(prev => [...prev, {
-        sender: currentUser.name,
-        text: chatInput.trim(),
-      }]);
-
-      channelRef.current?.whisper('chat-message', {
-        sender: currentUser.name,
-        text: chatInput.trim(),
-      });
-
-      setChatInput('');
-    } else {
-      console.error('Respuesta inesperada:', data);
-    }
-  } catch (error) {
-    console.error('Error al enviar mensaje:', error);
-  }
-};
-
-
-
 
   const endCall = () => {
     // Detener todos los tracks de los streams locales
@@ -793,8 +742,8 @@ const handleSendMessage = async (e: React.FormEvent) => {
     // Resetear estados relevantes
     setLocalStream(null);
     setParticipants({});
-    setMessages([]);
-    setIsRecording(false);
+    // setMessages([]);
+    // setIsRecording(false);
     setRemoteStreams({}); // Asegúrate de limpiar también los streams remotos
 
     // Dejar el canal de Reverb
@@ -806,10 +755,10 @@ const handleSendMessage = async (e: React.FormEvent) => {
     navigate('/rooms'); // Redirigir al usuario
   };
 
-  const toggleRecording = () => {
-    console.log("Función de grabación no implementada aún.");
-    setIsRecording(prev => !prev);
-  };
+  // const toggleRecording = () => {
+  //   //console.log("Función de grabación no implementada aún.");
+  //   setIsRecording(prev => !prev);
+  // };
 
 
   if (loading) {
@@ -920,33 +869,8 @@ const handleSendMessage = async (e: React.FormEvent) => {
       </div>
 
       {/* Chat lateral */}
-      <div className="w-80 border-l border-gray-700 bg-gray-900 flex flex-col">
-        <div className="p-4 border-b border-gray-700 text-lg font-semibold flex items-center gap-2">
-          <MessageSquare size={20} /> Chat
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {messages.map((msg, idx) => (
-            <div key={idx} className="bg-gray-800 p-2 rounded">
-              <div className="text-xs text-gray-400">{msg.sender}</div>
-              <div className="text-sm">{msg.text}</div>
-            </div>
-          ))}
-        </div>
-        <form
-          onSubmit={handleSendMessage}
-          className="p-4 border-t border-gray-700 flex gap-2"
-          
-        >
-          <input
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            className="flex-1 p-2 rounded bg-gray-800 text-white"
-            placeholder="Escribe un mensaje..."
-          />
-          <button type="submit" className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700">
-            Enviar
-          </button>
-        </form>
+      <div className="w-80 border-l border-gray-700 bg-gray-900 flex flex-col flex-2 py-8 justify-end">
+        {roomId && <ChatBox roomId={roomId} />}
       </div>
     </div>
   );
