@@ -66,7 +66,7 @@ constructor(options: WebSocketServiceOptions) {
     this.wsUrl = `${protocol}://${options.wsHost}:${options.wsPort}/app/${options.appKey}`;
     // ----------------------------------------
 
-    console.log("ReverbWebSocketService: URL de conexión construida:", this.wsUrl);
+    //console.log("ReverbWebSocketService: URL de conexión construida:", this.wsUrl);
   }
 
   // --- Métodos de Gestión de la Conexión Global ---
@@ -79,7 +79,7 @@ constructor(options: WebSocketServiceOptions) {
 
     // Si ya estamos conectados y tenemos un socketId, lo resolvemos inmediatamente
     if (this.globalWs && this.globalWs.readyState === WebSocket.OPEN && this.globalSocketId) {
-      console.log("ReverbWebSocketService: Global WebSocket already connected. Socket ID:", this.globalSocketId);
+      //console.log("ReverbWebSocketService: Global WebSocket already connected. Socket ID:", this.globalSocketId);
       this.clearReconnectTimeout(); // Asegurarse de limpiar cualquier timeout pendiente
       this.reconnectAttempts = 0;
       return Promise.resolve(this.globalSocketId);
@@ -87,14 +87,14 @@ constructor(options: WebSocketServiceOptions) {
 
     // Crear una nueva promesa de conexión
     this.connectionPromise = new Promise((resolve, reject) => {
-      console.log("ReverbWebSocketService: Establishing new Global WebSocket connection to", this.wsUrl);
+      //console.log("ReverbWebSocketService: Establishing new Global WebSocket connection to", this.wsUrl);
       try {
         const ws = new WebSocket(this.wsUrl);
         this.globalWs = ws;
         this.globalSocketId = null; // Reiniciar socketId al iniciar una nueva conexión
 
         ws.onopen = () => {
-          console.log('ReverbWebSocketService: Global WebSocket opened!');
+          //console.log('ReverbWebSocketService: Global WebSocket opened!');
           this.reconnectAttempts = 0; // Resetear intentos al conectar exitosamente
           this.clearReconnectTimeout();
           this.emitGlobalEvent('connected'); // Emitir evento global de conexión
@@ -171,7 +171,7 @@ constructor(options: WebSocketServiceOptions) {
     }
 
     const delay = this.baseReconnectInterval * Math.pow(2, this.reconnectAttempts);
-    console.log(`ReverbWebSocketService: Attempting reconnect in ${delay / 1000} seconds... (Attempt ${this.reconnectAttempts + 1})`);
+    //console.log(`ReverbWebSocketService: Attempting reconnect in ${delay / 1000} seconds... (Attempt ${this.reconnectAttempts + 1})`);
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectAttempts++;
       this.connect().catch(e => console.error("ReverbWebSocketService: Reconnect failed during attempt:", e));
@@ -219,20 +219,20 @@ private dispatchToChannelListeners(message: any) {
         // Manejar eventos internos de presencia
         if (message.event === 'pusher_internal:subscription_succeeded') {
             const data = JSON.parse(message.data);
-            console.log('ReverbWebSocketService: pusher_internal:subscription_succeeded data:', data);
+            //console.log('ReverbWebSocketService: pusher_internal:subscription_succeeded data:', data);
 
            if (data.presence && data.presence.data) {
                 // Agrega este log para ver el contenido real
-                console.log('ReverbWebSocketService: Contenido de data.presence.data:', data.presence.data);
+                //console.log('ReverbWebSocketService: Contenido de data.presence.data:', data.presence.data);
                 const members = new Map<string, any>();
                 for (const userId in data.presence.data) {
                     const memberInfo = data.presence.data[userId];
                     members.set(String(memberInfo.id), memberInfo);
                 }
                 channelData.presenceMembers = members;
-                console.log(`ReverbWebSocketService: Miembros de presencia populados: ${members.size} miembros. (Después de populación)`);
+                //console.log(`ReverbWebSocketService: Miembros de presencia populados: ${members.size} miembros. (Después de populación)`);
             } else {
-                console.log('ReverbWebSocketService: pusher_internal:subscription_succeeded no contiene datos de presencia o está vacío.');
+                //console.log('ReverbWebSocketService: pusher_internal:subscription_succeeded no contiene datos de presencia o está vacío.');
                 channelData.presenceMembers = new Map();
             }
 
@@ -246,7 +246,7 @@ private dispatchToChannelListeners(message: any) {
 
         } else if (message.event === 'pusher_internal:member_added') {
             const data = JSON.parse(message.data);
-            console.log('ReverbWebSocketService: pusher_internal:member_added data:', data);
+            //console.log('ReverbWebSocketService: pusher_internal:member_added data:', data);
 
             const newMember = data.user_info;
             if (channelData.presenceMembers && newMember && newMember.id) {
@@ -282,7 +282,7 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
     const socketId = await this.connect();
 
     let authData: any = {};
-    console.log(`ReverbWebSocketService: Realizando POST a ${this.options.authEndpoint} para canal ${channelName} con socketId ${socketId} y token ${this.options.token}`);
+    //console.log(`ReverbWebSocketService: Realizando POST a ${this.options.authEndpoint} para canal ${channelName} con socketId ${socketId} y token ${this.options.token}`);
     try {
       // Autenticación para canales privados y de presencia
       const authResponse = await axios.post(
@@ -291,7 +291,7 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
         { headers: { Authorization: `Bearer ${this.options.token}` } }
       );
       authData = authResponse.data;
-      console.log(`ReverbWebSocketService: Auth successful for channel "${channelName}"`, authData); // Imprime la respuesta completa
+      //console.log(`ReverbWebSocketService: Auth successful for channel "${channelName}"`, authData); // Imprime la respuesta completa
 
     } catch (error: any) {
       console.error(`ReverbWebSocketService: FALLÓ la autenticación para canal "${channelName}":`, error.response?.data || error.message);
@@ -311,11 +311,11 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
     if (isPresence && authData.channel_data) {
         // authData.channel_data ya es un string JSON de tu backend de Node.js
         subscriptionPayload.data.channel_data = authData.channel_data;
-        console.log(`ReverbWebSocketService: Including channel_data for presence channel:`, authData.channel_data);
+        //console.log(`ReverbWebSocketService: Including channel_data for presence channel:`, authData.channel_data);
     }
     if (this.globalWs?.readyState === WebSocket.OPEN) {
       this.globalWs.send(JSON.stringify(subscriptionPayload));
-      console.log(`ReverbWebSocketService: Sent subscription request for channel: "${channelName}"`);
+      //console.log(`ReverbWebSocketService: Sent subscription request for channel: "${channelName}"`);
     } else {
       console.error(`ReverbWebSocketService: Global WebSocket is not open to subscribe to "${channelName}".`);
       throw new Error("WebSocket not open for subscription.");
@@ -359,10 +359,10 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
             event: 'pusher:unsubscribe',
             data: { channel: channelName }
           }));
-          console.log(`ReverbWebSocketService: Sent unsubscribe request for channel: "${channelName}"`);
+          //console.log(`ReverbWebSocketService: Sent unsubscribe request for channel: "${channelName}"`);
         }
         this.channels.delete(channelName); // Eliminar el canal del mapa
-        console.log(`ReverbWebSocketService: Channel "${channelName}" left.`);
+        //console.log(`ReverbWebSocketService: Channel "${channelName}" left.`);
       },
       subscribed: (callback: Function) => {
         if (!channelSubscription.listeners.has('subscribed')) {
@@ -390,11 +390,11 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
         const fireHereIfReady = () => {
             // Revisa si ya hay miembros cuando este callback se dispara
             if (channelSubscription.presenceMembers && channelSubscription.presenceMembers.size > 0) {
-                console.log(`ReverbWebSocketService: Disparando callback 'here' para canal "${channelName}" con ${channelSubscription.presenceMembers.size} miembros.`);
+                //console.log(`ReverbWebSocketService: Disparando callback 'here' para canal "${channelName}" con ${channelSubscription.presenceMembers.size} miembros.`);
                 callback(Array.from(channelSubscription.presenceMembers.values()));
             } else {
                  // Este log es el que estamos viendo. Es crucial que no lo veamos después de subscription_succeeded
-                 console.log(`ReverbWebSocketService: 'here' callback registrado, pero miembros aún no disponibles para canal "${channelName}".`);
+                 //console.log(`ReverbWebSocketService: 'here' callback registrado, pero miembros aún no disponibles para canal "${channelName}".`);
             }
         };
 
@@ -455,18 +455,26 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
     // entonces lo mantenemos como si fuera un canal "privado" en su suscripción lógica.
     return this.subscribeChannel(channelName, false);
   }
-
-  public private(channelName: string): Promise<EchoChannel> {
-    return this.subscribeChannel(`private-${channelName}`, false); // Prefijo 'private-'
+  // Añade un método que no añada prefijos
+  public customChannel(channelName: string): Promise<EchoChannel> {
+      return this.subscribeChannel(channelName, false); // No añade prefijo, ni es de presencia
   }
-
+  public private(channelName: string): Promise<EchoChannel> {
+      // Si el Echo de Laravel/Pusher espera "private-", entonces tu función private() DEBE recibir "room.7"
+      // Y construir "private-room.7" aquí.
+      // Pero tu ChatBox.tsx ya te está dando "private-room.7".
+      // Entonces, o bien cambias ChatBox.tsx para pasar "room.7" a .private(),
+      // o cambias esta función para no añadir nada.
+      // POR AHORA, para arreglar el problema de inmediato:
+      return this.subscribeChannel(channelName, false); // NO añade el prefijo 'private-' aquí
+  }
   public presence(channelName: string): Promise<EchoChannel> {
       return this.subscribeChannel(`presence-${channelName}`, true); // Pide "presence-video-room.10"
   }
 
   // Método para cerrar todas las conexiones y limpiar
   public disconnect() {
-    console.log("ReverbWebSocketService: Disconnecting all channels and global WebSocket.");
+    //console.log("ReverbWebSocketService: Disconnecting all channels and global WebSocket.");
     if (this.globalWs) {
       this.globalWs.close(1000, "Client initiated disconnect");
       this.globalWs = null;
@@ -517,9 +525,9 @@ export const createReverbWebSocketService = (token: string): ReverbWebSocketServ
       forceTLS = false; // No forzar TLS en local
     }
 
-    console.log("ReverbService: Usando wsHost:", wsHost);
-    console.log("ReverbService: Usando wsPort:", wsPort);
-    console.log("ReverbService: Usando authEndpoint:", authEndpoint);
+    //console.log("ReverbService: Usando wsHost:", wsHost);
+    //console.log("ReverbService: Usando wsPort:", wsPort);
+    //console.log("ReverbService: Usando authEndpoint:", authEndpoint);
 
     reverbServiceInstance = new ReverbWebSocketService({
       appKey,
@@ -549,7 +557,7 @@ declare module './ReverbWebSocketService' {
 
 ReverbWebSocketService.prototype.setToken = function(token: string) {
   if (this.options.token !== token) {
-    console.log("ReverbWebSocketService: Updating token.");
+    //console.log("ReverbWebSocketService: Updating token.");
     this.options.token = token;
     // No reconectamos automáticamente aquí, la próxima suscripción usará el nuevo token.
     // Si necesitas que los canales ya suscritos usen el nuevo token de inmediato,
