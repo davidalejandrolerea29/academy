@@ -3,6 +3,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types';
 import { Search, UserCircle } from 'lucide-react';
 const API_URL = import.meta.env.VITE_API_URL;
+const token = localStorage.getItem('token');
+console.log('el api url', API_URL)
+console.log('el token de contacto', token)
 interface ContactsListProps {
   onSelectContact: (userId: number, userData: User) => void;
   selectedContactId: number | null;
@@ -18,28 +21,31 @@ const ContactsList: React.FC<ContactsListProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const fetchContacts = async () => {
-      setLoading(true);
-    
-    try {
-      const response = await fetch(`${API_URL}/auth/users`, {
+
+  const fetchContacts = async () => {
+  setLoading(true);
+  try {
+       const response = await fetch(`${API_URL}/auth/contacts`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         }
       });
-      console.log('Response:', response);
-      if (!response.ok) throw new Error('Error al obtener los usuarios');
-      const data = await response.json();
-      setContacts(data);
-    } catch (error) {
-      console.error('Error fetching users:', error);
-    } finally {
-      setLoading(false);
-    }
-    };
+
+    if (!response.ok) throw new Error('Error al obtener los contactos');
+
+    const data = await response.json();
+    // data.contacts es un array de objetos con key: `user`
+    const extractedUsers = data.contacts.map((c: any) => c.user);
+    setContacts(extractedUsers);
+  } catch (error) {
+    console.error('Error fetching contacts:', error);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
     fetchContacts();
   }, [currentUser]);
@@ -51,11 +57,11 @@ const ContactsList: React.FC<ContactsListProps> = ({
 
   const getRoleLabel = (role: string) => {
     switch (role) {
-      case 'teacher':
+      case 'Teacher':
         return 'Profesor';
-      case 'alumno':
+      case 'Student':
         return 'Alumno';
-      case 'admin':
+      case 'Admin':
         return 'Administrador';
       default:
         return role;
@@ -115,7 +121,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
                   <div>
                     <h3 className="font-medium text-gray-800">{contact.name}</h3>
                     <div className="flex space-x-2 text-sm text-gray-500">
-                      <span>{getRoleLabel(contact.role_description)}</span>
+                      <span>{getRoleLabel(contact.name)}</span>
                     </div>
                   </div>
                 </div>
