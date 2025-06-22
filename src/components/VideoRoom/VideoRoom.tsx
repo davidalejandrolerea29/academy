@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useParams, useNavigate } from 'react-router-dom';
