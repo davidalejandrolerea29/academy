@@ -50,6 +50,18 @@ export interface Message {
   };
 }
 
+export interface MessagePrivate {
+  id: number;
+  user_id: number;
+  contact_id: number;
+  content: string;
+  read: boolean;
+  created_at: string;
+  attachment_url?: string;
+  sender?: User; // <- relación cargada por Laravel
+}
+
+
 
 
 export interface RoomParticipant {
