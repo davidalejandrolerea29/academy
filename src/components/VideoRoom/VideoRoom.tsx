@@ -29,6 +29,7 @@ const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
 const [isSharingScreen, setIsSharingScreen] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
 const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+const screenShareStreamRef = useRef<MediaStream | null>(null);
   // --- Refs para mantener referencias persistentes ---
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const channelRef = useRef<EchoChannel | null>(null);
@@ -37,8 +38,16 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
   // Estado para streams remotos y participantes
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   // participants ahora incluye toda la info necesaria para renderizar y gestionar el estado del usuario
-  const [participants, setParticipants] = useState<Record<string, { id: string, name: string, videoEnabled: boolean, micEnabled: boolean, stream: MediaStream | null }>>({});
- 
+const [participants, setParticipants] = useState<Record<string, {
+    id: string,
+    name: string,
+    videoEnabled: boolean,
+    micEnabled: boolean,
+    cameraStream: MediaStream | null, // Para la cámara principal
+    screenStream: MediaStream | null,  // Para la pantalla compartida
+    // Opcional: una lista de todos los streams si no sabes qué esperar
+    // streams: MediaStream[]
+}>>({});
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
@@ -46,8 +55,8 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
     Object.keys(participants).map(id => ({
         id,
         name: participants[id].name,
-        hasStream: !!participants[id].stream,
-        streamId: participants[id].stream?.id,
+        // hasStream: !!participants[id].stream,
+        // streamId: participants[id].stream?.id,
         videoEnabled: participants[id].videoEnabled,
         micEnabled: participants[id].micEnabled
     }));
@@ -164,55 +173,99 @@ const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>(
       }
       peerConnectionsRef.current[peerId] = pc;
 
-      pc.ontrack = (event) => {
-          // Ahora, peerId ya está disponible desde el closure de getOrCreatePeerConnection
-          // y es el ID REAL del usuario remoto, no la ID del track.
-          const incomingStream = event.streams[0];
-          const trackKind = event.track.kind; // 'audio' o 'video'
+     // En tu pc.ontrack dentro de VideoRoom.tsx
+// Dentro de getOrCreatePeerConnection, después de crear `const pc = new RTCPeerConnection({...});`
+pc.ontrack = (event) => {
+    const incomingStream = event.streams[0]; // Esto es el MediaStream al que pertenece el track
+    const track = event.track; // El MediaStreamTrack que llegó
 
-          // Lógica para limitar logs del stream (la que ya implementaste)
-          if (incomingStream) {
-              const streamId = incomingStream.id;
-              streamLogCountsRef.current[streamId] = (streamLogCountsRef.current[streamId] || 0) + 1;
+    // ES CLAVE QUE PEERID ESTÉ CORRECTAMENTE DEFINIDO AQUÍ.
+    // Si 'peerId' viene del scope exterior (ej. el parámetro de getOrCreatePeerConnection), úsalo.
+    // Si necesitas inferirlo del evento, es más complejo y puede ser event.transceiver.mid o event.receiver.track.id
+    // Para simplificar, asumamos que `peerId` ya está disponible en este scope correctamente.
 
-              if (streamLogCountsRef.current[streamId] <= 3) {
-                  //console.log(`[ontrack DEBUG] Recibiendo ${trackKind} track de ${peerId} (Stream ID: ${streamId}).`);
-              } else if (streamLogCountsRef.current[streamId] === 4) {
-                  //console.log(`[ontrack DEBUG] (Más de 3 logs para stream ${streamId}, suprimiendo logs adicionales para este stream)`);
-              }
-          } else {
-              console.warn(`[ontrack DEBUG] Recibido evento sin stream para peer: ${peerId}`);
-          }
+    setParticipants(prev => {
+        const existingParticipant = prev[peerId] || { // USA EL `peerId` DEL PARÁMETRO
+            id: peerId,
+            name: `Usuario ${peerId}`, // Obtén el nombre real aquí si lo tienes
+            videoEnabled: true,
+            micEnabled: true,
+            cameraStream: null,
+            screenStream: null
+        };
 
-          setParticipants(prev => {
-              const existingParticipant = prev[peerId];
-              if (existingParticipant) {
-                  if (!existingParticipant.stream || existingParticipant.stream.id !== incomingStream.id) {
-                      //console.log(`[ontrack DEBUG] Actualizando stream para ${peerId} en el estado. Nuevo stream ID: ${incomingStream.id}`);
-                      return {
-                          ...prev,
-                          [peerId]: {
-                              ...existingParticipant,
-                              stream: incomingStream // Asigna el stream completo
-                          }
-                      };
-                  }
-              } else {
-                  console.warn(`[ontrack DEBUG] Participante ${peerId} no encontrado al recibir track. Agregándolo.`);
-                  return {
-                      ...prev,
-                      [peerId]: {
-                          id: peerId,
-                          name: `Usuario ${peerId}`,
-                          videoEnabled: true,
-                          micEnabled: true,
-                          stream: incomingStream
-                      }
-                  };
-              }
-              return prev;
-          });
-      };
+        const updatedParticipant = { ...existingParticipant };
+
+        // Lógica de si el track es de pantalla compartida:
+        // Por lo general, getDisplayMedia crea un *nuevo* MediaStream
+        // y lo adjunta con el track de video de la pantalla.
+        // Lo más fiable es si el `track.kind` es 'video' y si el stream ya no es el de la cámara.
+        // O si el `track.id` es de un track de pantalla (aunque no lo asignes, tiene un ID único).
+
+        let isScreenShareTrack = false;
+        if (track.kind === 'video') {
+            const videoTrack = track as MediaStreamVideoTrack;
+            // Métodos comunes para detectar si es pantalla
+            if (videoTrack.contentHint === 'detail' || videoTrack.contentHint === 'text') {
+                isScreenShareTrack = true;
+            }
+            const trackSettings = videoTrack.getSettings();
+            if (trackSettings.displaySurface) { // Específico de Chrome/Edge
+                isScreenShareTrack = true;
+            }
+            // Otra heurística: si el track.label contiene "screen" o "display"
+            if (videoTrack.label.toLowerCase().includes('screen') || videoTrack.label.toLowerCase().includes('display')) {
+                isScreenShareTrack = true;
+            }
+        }
+        // Si el stream ya existe y es de cámara, y llega un NUEVO track de video,
+        // Y el viejo stream de cámara no tiene este track,
+        // podríamos inferir que es un nuevo stream (de pantalla).
+
+        // Aquí es donde la lógica se pone complicada si un peer envía múltiples streams.
+        // La forma más robusta es que el *remitente* te diga qué stream es.
+        // Si no, la heurística es:
+        // Si el incomingStream.id no es el mismo que el existingParticipant.cameraStream.id
+        // Y incomingStream tiene un track de video, y existingParticipant.cameraStream ya tenía uno.
+        // Entonces es un nuevo stream, probablemente de pantalla.
+
+        // Simplificando: Si llega un track de video, y no es el track de la cámara existente:
+        if (track.kind === 'video') {
+            // Asumimos que si un participante ya tiene un `cameraStream`,
+            // cualquier nuevo track de video que llegue para ese `peerId`
+            // que NO es parte de su `cameraStream` existente, es de pantalla.
+            const isExistingCameraVideoTrack = updatedParticipant.cameraStream?.getVideoTracks().some(t => t.id === track.id);
+            if (isScreenShareTrack || (!isExistingCameraVideoTrack && incomingStream.id !== updatedParticipant.cameraStream?.id)) {
+                console.log(`[ontrack DEBUG] Recibiendo stream de PANTALLA de ${peerId} (Stream ID: ${incomingStream.id}, Track ID: ${track.id}).`);
+                updatedParticipant.screenStream = incomingStream;
+                // Si la pantalla compartida incluye audio, este se adjuntará al mismo stream
+                // Si el audio viene por separado, necesitas manejarlo.
+            } else { // Es un track de cámara
+                console.log(`[ontrack DEBUG] Recibiendo stream de CÁMARA de ${peerId} (Stream ID: ${incomingStream.id}, Track ID: ${track.id}).`);
+                updatedParticipant.cameraStream = incomingStream;
+                // Aquí podrías asegurar que el `videoEnabled` se actualice si el stream de cámara está presente
+                updatedParticipant.videoEnabled = true;
+            }
+        } else if (track.kind === 'audio') {
+            // El audio es más tricky. Asume que el primer audio es de la cámara.
+            // Si el audio de la pantalla viene en el mismo `incomingStream` que el video de pantalla,
+            // no necesitas una lógica separada para él aquí.
+            // Si llega un track de audio y el participante no tiene un `cameraStream` todavía,
+            // o si es un audio de un stream diferente que no es pantalla,
+            // puedes asignarlo al `cameraStream` o manejarlo aparte.
+            if (!updatedParticipant.cameraStream) { // Si aún no hay stream de cámara, asigna el audio aquí
+                // Crea un MediaStream solo para el audio si es necesario, o espera al video.
+                updatedParticipant.cameraStream = incomingStream; // O crea un nuevo MediaStream con solo este track de audio
+            }
+            updatedParticipant.micEnabled = true; // Asume que el micrófono está habilitado si hay audio
+        }
+
+        return {
+            ...prev,
+            [peerId]: updatedParticipant
+        };
+    });
+};
 
             // --- CAMBIO CLAVE: Manejo de onicecandidate ---
       // Dentro de pc.onicecandidate:
@@ -648,56 +701,116 @@ useEffect(() => {
     });
   };
 
-  const toggleScreenShare = async () => {
-    if (!localStream) return; // Asegúrate de tener el stream original
-   setIsSharingScreen(true);
-    try {
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); // Audio para compartir audio del sistema si se desea
-      const screenVideoTrack = screenStream.getVideoTracks()[0];
-      const screenAudioTrack = screenStream.getAudioTracks()[0]; // Si compartes audio del sistema
+ const toggleScreenShare = async () => {
+    if (!localStream) {
+        console.warn("localStream no está disponible. No se puede iniciar la compartición de pantalla.");
+        return;
+    }
 
-      // Reemplaza las pistas en todas las PeerConnections existentes
-      Object.values(peerConnectionsRef.current).forEach(pc => {
-        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
-        if (videoSender) {
-          videoSender.replaceTrack(screenVideoTrack);
+    if (isSharingScreen) {
+        // Lógica para detener la compartición de pantalla
+        if (screenShareStreamRef.current) {
+            screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+            screenShareStreamRef.current = null;
         }
-        const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
-        if (audioSender && screenAudioTrack) { // Solo si hay audio en la compartición de pantalla
-            audioSender.replaceTrack(screenAudioTrack);
-        }
-      });
 
-      // Cuando la compartición de pantalla termina (ej. el usuario hace clic en "Detener compartir")
-      screenVideoTrack.onended = () => {
-        // Vuelve a cambiar a la cámara original
-        const cameraVideoTrack = localStream.getVideoTracks()[0];
-        const cameraAudioTrack = localStream.getAudioTracks()[0];
-
+        // Eliminar los senders de pantalla compartida de todas las PeerConnections
         Object.values(peerConnectionsRef.current).forEach(pc => {
-          const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
-          if (videoSender) {
-            videoSender.replaceTrack(cameraVideoTrack);
-          }
-          const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
-          if (audioSender && cameraAudioTrack) {
-              audioSender.replaceTrack(cameraAudioTrack);
-          }
+            const screenVideoSender = pc.getSenders().find(s => s.track?.id === 'screen-video-track'); // Usamos un ID custom si lo asignamos
+            if (screenVideoSender) {
+                pc.removeTrack(screenVideoSender);
+                console.log(`[ScreenShare] Removed screen video track from PC for ${pc.remoteDescription?.sdp?.substring(0, 20)}...`);
+            }
+            const screenAudioSender = pc.getSenders().find(s => s.track?.id === 'screen-audio-track'); // Usamos un ID custom
+            if (screenAudioSender) {
+                pc.removeTrack(screenAudioSender);
+                console.log(`[ScreenShare] Removed screen audio track from PC for ${pc.remoteDescription?.sdp?.substring(0, 20)}...`);
+            }
+        });
+
+        // Asegúrate de que el localStream original (cámara/mic) siga enviándose
+        // Esto es importante si hubieras pausado tus tracks de cámara/mic
+        localStream.getTracks().forEach(track => {
+            track.enabled = true; // Asegúrate de que tus tracks locales estén habilitados
         });
         setVideoEnabled(true); // Tu cámara local debería estar visible de nuevo
-        setMicEnabled(cameraAudioTrack?.enabled || false); // Tu micrófono local debería estar habilitado de nuevo
-         setIsSharingScreen(false);
-      };
-      setVideoEnabled(false); // Tu cámara local debería ocultarse (solo se ve la pantalla compartida)
-      setMicEnabled(screenAudioTrack?.enabled || false); // El micrófono local debería deshabilitarse si se comparte audio del sistema
+        setMicEnabled(localStream?.getAudioTracks()[0]?.enabled || false); // Tu micrófono local debería estar habilitado de nuevo
+
+        setIsSharingScreen(false);
+        return;
+    }
+
+    // Lógica para iniciar la compartición de pantalla
+    setIsSharingScreen(true);
+    try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); // Audio para compartir audio del sistema si se desea
+        screenShareStreamRef.current = screenStream; // Guardamos la referencia
+
+        const screenVideoTrack = screenStream.getVideoTracks()[0];
+        const screenAudioTrack = screenStream.getAudioTracks()[0];
+
+        // Opcional: Asignar IDs únicos a los tracks para fácil identificación
+        // Esto no es estrictamente necesario ya que el stream ID ya es único,
+        // pero puede ayudar a la hora de buscar y remover senders específicos.
+        // screenVideoTrack.id = 'screen-video-track';
+        // if (screenAudioTrack) {
+        //     screenAudioTrack.id = 'screen-audio-track';
+        // }
+
+        // Añade las pistas de pantalla a TODAS las PeerConnections existentes
+        Object.values(peerConnectionsRef.current).forEach(pc => {
+            // Verifica si ya hay un sender para este track para evitar duplicados
+           // En toggleScreenShare, sección de añadir tracks:
+            const existingVideoSender = pc.getSenders().find(s => s.track === screenVideoTrack); // Comparar por referencia de objeto Track
+            if (!existingVideoSender) {
+                pc.addTrack(screenVideoTrack, screenStream);
+                console.log(`[ScreenShare] Added new screen video track to PC for ${pc.remoteDescription?.sdp?.substring(0, 20)}...`);
+            } else {
+                // Esto solo debería pasar si el mismo track ya estaba añadido, lo cual es raro para getDisplayMedia
+                // O si quieres reemplazar un track previamente enviado con este nuevo track de pantalla.
+                // Si la intención es AÑADIR la pantalla COMPARTIDA como un stream ADICIONAL,
+                // la lógica debería ser siempre pc.addTrack para un nuevo stream.
+                // Si solo quieres tener UN stream de video (cámara O pantalla), entonces usar `replaceTrack` en el sender de la cámara.
+                // Pero tu `participants` sugiere que quieres ambos.
+
+                // Para múltiples streams (cámara Y pantalla), siempre deberías hacer addTrack si el track es nuevo.
+                // Si el peerConnection ya tiene el track de pantalla, no lo añades de nuevo.
+                console.warn(`[ScreenShare] Screen video track already exists for PC via this specific track object.`);
+                // existingVideoSender.replaceTrack(screenVideoTrack); // Solo si realmente quieres reemplazar el mismo track
+            }
+
+            if (screenAudioTrack) {
+                const existingAudioSender = pc.getSenders().find(s => s.track?.id === screenAudioTrack.id);
+                if (!existingAudioSender) {
+                    pc.addTrack(screenAudioTrack, screenStream);
+                    console.log(`[ScreenShare] Added new screen audio track to PC for ${pc.remoteDescription?.sdp?.substring(0, 20)}...`);
+                } else {
+                    console.log(`[ScreenShare] Screen audio track already exists for PC.`);
+                    existingAudioSender.replaceTrack(screenAudioTrack);
+                }
+            }
+        });
+
+        // Cuando la compartición de pantalla termina (ej. el usuario hace clic en "Detener compartir")
+        screenVideoTrack.onended = () => {
+            console.log("[ScreenShare] Screen share ended by user.");
+            toggleScreenShare(); // Llama a la función de nuevo para ejecutar la lógica de "detener"
+        };
+
+        // No necesitas deshabilitar tu cámara local.
+        // Lo importante es que tu `localStream` original siga enviándose.
+        // Si quieres que TU PROPIA CÁMARA se "pause" mientras compartes, puedes hacerlo,
+        // pero la propuesta es que siempre se vea tu cámara Y la pantalla.
+        // setVideoEnabled(false); // Esto solo afectaría tu propio render, no lo que envías.
 
     } catch (error) {
-      console.error("Error sharing screen:", error);
-      // Vuelve al estado original si hay un error
-      setVideoEnabled(localStream?.getVideoTracks()[0]?.enabled || true);
-      setMicEnabled(localStream?.getAudioTracks()[0]?.enabled || true);
+        console.error("Error sharing screen:", error);
+        setIsSharingScreen(false);
+        // Vuelve al estado original si hay un error
+        setVideoEnabled(localStream?.getVideoTracks()[0]?.enabled || true);
+        setMicEnabled(localStream?.getAudioTracks()[0]?.enabled || true);
     }
-  };
+};
   
 const [roomParticipantId, setRoomParticipantId] = useState<number | null>(null);
 useEffect(() => {
@@ -790,40 +903,78 @@ if (!roomParticipantId) return;
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-6xl p-4">
 
             {/* Video local */}
-            <div
-  className={`
-    relative rounded-xl overflow-hidden border border-gray-700 shadow-lg aspect-video bg-black
-    ${isSharingScreen ? 'col-span-2 w-full' : ''}
-  `}
->
-  <video
-    ref={localVideoRef}
-    autoPlay
-    muted
-    className="w-full h-full object-contain" // usa contain si no querés recortar pantalla compartida
-  />
-  <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-3 py-1 text-sm rounded text-white">
-    {isSharingScreen ? 'Compartiendo pantalla' : 'Tú'}
-  </div>
-  {/* ... mic indicator */}
-</div>
-            
-            {/* ¡VIDEOS REMOTOS AHORA USANDO EL COMPONENTE REMOTEVIDEO! */}
-            {Object.values(participants).map(p => (
-              // Asegúrate de que 'p' no sea el usuario local si no quieres renderizar tu propio video dos veces
-              // Si tu `participants` ya excluye al usuario local, entonces no necesitas esta comprobación.
-              // Asumo que `p.id` es diferente de `currentUser?.id`.
-              p.id !== currentUser?.id && ( // Opcional: Asegura que no se renderice el video del usuario local aquí
-                <RemoteVideo
-                  key={p.id} // La `key` es CRÍTICA para el rendimiento de React en listas
-                  stream={p.stream} // ¡Aquí pasas el MediaStream al componente RemoteVideo!
-                  name={p.name}
-                  id={p.id}
-                  videoEnabled={p.videoEnabled}
-                  micEnabled={p.micEnabled}
-                />
-              )
-            ))}
+ <div className="relative bg-gray-800 rounded-lg overflow-hidden aspect-video flex items-center justify-center">
+        <video ref={localVideoRef} autoPlay muted className="w-full h-full object-cover"></video>
+        {/* Aquí puedes mostrar tu propia cámara */}
+        <div className="absolute bottom-2 left-2 text-white text-sm bg-black bg-opacity-50 px-2 py-1 rounded">
+            Tú ({currentUser?.name})
+        </div>
+        {/* Puedes añadir un pequeño video de tu propia pantalla compartida aquí si quieres */}
+        {/* {isSharingScreen && localScreenShareVideoRef.current && (
+            <div className="absolute top-2 right-2 w-1/4 h-1/4">
+                <video ref={localScreenShareVideoRef} autoPlay muted className="w-full h-full object-cover"></video>
+            </div>
+        )} */}
+    </div>  
+        {/* Tu propio video local (cámara) */}
+{localStream && !isSharingScreen && ( // Muestra tu cámara solo si no estás compartiendo pantalla
+    <RemoteVideo
+        stream={localStream}
+        participantId={currentUser?.id || 'local'}
+        participantName={`${currentUser?.name || 'Tú'} (Mi Cámara)`}
+        videoEnabled={videoEnabled}
+        micEnabled={micEnabled}
+        isLocal={true}
+        volume={volume}
+        isScreenShare={false}
+    />
+)}
+
+{/* Tu propia pantalla compartida */}
+{isSharingScreen && screenShareStreamRef.current && (
+    <RemoteVideo
+        stream={screenShareStreamRef.current}
+        participantId={currentUser?.id || 'local-screen'}
+        participantName={`${currentUser?.name || 'Tú'} (Mi Pantalla)`}
+        videoEnabled={true} // Siempre true si estás compartiendo
+        micEnabled={false} // El micrófono de la pantalla es diferente
+        isLocal={true} // Es tu stream, por lo que es local
+        volume={0} // No hay volumen de micrófono en la pantalla
+        isScreenShare={true} // Indicar que es pantalla
+    />
+)}
+
+{/* Videos de participantes remotos (cámara y pantalla) */}
+{Object.values(participants).map(participant => (
+    <React.Fragment key={participant.id}>
+        {/* Cámara del participante remoto */}
+        {participant.cameraStream && (
+            <RemoteVideo
+                stream={participant.cameraStream}
+                participantId={participant.id}
+                participantName={participant.name}
+                videoEnabled={participant.videoEnabled}
+                micEnabled={participant.micEnabled}
+                isLocal={false}
+                volume={0} // O tu lógica de volumen si aplica
+                isScreenShare={false}
+            />
+        )}
+        {/* Pantalla compartida del participante remoto */}
+        {participant.screenStream && (
+            <RemoteVideo
+                stream={participant.screenStream}
+                participantId={`${participant.id}-screen`} // ID único para el widget de pantalla
+                participantName={`${participant.name} (Pantalla)`}
+                videoEnabled={true} // Asumimos que si hay stream de pantalla, el video está activo
+                micEnabled={false} // El audio de la pantalla puede venir por separado o no tener icono de mic
+                isLocal={false}
+                volume={0} // El volumen de la pantalla no es el del micrófono
+                isScreenShare={true}
+            />
+        )}
+    </React.Fragment>
+))}
           </div>
         </div>
 
