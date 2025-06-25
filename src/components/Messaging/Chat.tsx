@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useAuth } from '../../contexts/AuthContext';
-import { Message, User } from '../../types';
+import { MessagePrivate, User } from '../../types';
 import { Send, Clock, Paperclip, Smile } from 'lucide-react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
@@ -16,7 +16,7 @@ interface ChatProps {
 
 const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   const { currentUser } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<MessagePrivate[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -33,7 +33,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
     const fetchMessages = async () => {
       try {
         const response = await fetch(
-          `${API_URL}/auth/messages?user_id=${currentUser.id}&recipient_id=${recipientId}`,
+          `${API_URL}/auth/privatechat?user_id=${currentUser.id}&contact_id=${recipientId}`,
           {
             method: 'GET',
             headers: {
@@ -53,7 +53,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
     fetchMessages();
 
     let channel: EchoChannel | null = null;
-    const reverbService = createReverbWebSocketService(currentUser.token);
+    const reverbService = createReverbWebSocketService(currentUser?.token);
 
     if (roomId) {
       reverbService
@@ -61,7 +61,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
         .then((chann) => {
           channel = chann;
           channel.listen('.messagecreated', (data: any) => {
-            const msg: Message = data.message;
+            const msg: MessagePrivate = data.message;
             setMessages((prev) => [...prev, msg]);
           });
         })
@@ -93,37 +93,42 @@ const sendMessage = async (e: React.FormEvent) => {
   if (!newMessage.trim() && !attachedFile) return;
 
   const formData = new FormData();
-  formData.append('sender_id', currentUser?.id);
-  formData.append('receiver_id', recipientId);
-  formData.append('content', newMessage.trim() || ''); // ✅ campo obligatorio
+  formData.append('user_id', currentUser?.id);        // antes: sender_id
+  formData.append('contact_id', recipientId);         // antes: receiver_id
+  formData.append('content', newMessage.trim() || '');
 
   if (attachedFile) {
     formData.append('file', attachedFile);
   }
 
   try {
-    const response = await fetch(`${API_URL}/auth/messages`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${currentUser?.token}`,
-        Accept: 'application/json', // ✅ evita respuestas HTML
-      },
-      body: formData,
-    });
+  const response = await fetch(`${API_URL}/auth/privatechat`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${currentUser?.token}`,
+      Accept: 'application/json',
+    },
+    body: formData,
+  });
 
-    const text = await response.text();
-    console.log('Respuesta del servidor:', text);
-    const data = JSON.parse(text);
+  const data = await response.json();
 
-    if (data?.data) {
-      setMessages((prev) => [...prev, data.data]);
-      setNewMessage('');
-      setAttachedFile(null);
-    }
-  } catch (error) {
-    console.error('Error al enviar mensaje:', error);
+  if (!response.ok) {
+    console.error('❌ Error de validación:', data);
+    return;
   }
+
+  if (data?.data) {
+    setMessages((prev) => [...prev, data.data]);
+    setNewMessage('');
+    setAttachedFile(null);
+  }
+} catch (error) {
+  console.error('Error al enviar mensaje:', error);
+}
+
 };
+
 
 
   if (loading) {
@@ -141,7 +146,7 @@ const sendMessage = async (e: React.FormEvent) => {
           {recipientData.name}
         </h2>
         <span className="text-sm text-gray-500 capitalize">
-          {recipientData.role_description}
+          {recipientData.role_id}
         </span>
       </div>
 
@@ -152,8 +157,9 @@ const sendMessage = async (e: React.FormEvent) => {
           </div>
         ) : (
           messages.map((message) => {
-            const sender = message.room_participant?.user;
-            const isOwnMessage = sender?.id === currentUser?.id;
+           const isOwnMessage = message.user_id === currentUser?.id;
+           const sender = message.sender; // viene del backend con with('sender')
+
 
             return (
               <div
@@ -167,11 +173,13 @@ const sendMessage = async (e: React.FormEvent) => {
                       : 'bg-white text-gray-800 border'
                   }`}
                 >
-                  {!isOwnMessage && (
-                    <div className="text-xs text-gray-500 mb-1">
-                      {sender?.name}
-                    </div>
-                  )}
+               {!isOwnMessage && (
+  <div className="text-xs text-gray-500 mb-1">
+    {sender?.name}
+  </div>
+)}
+
+        
                   <div className="text-sm break-words whitespace-pre-wrap">
                     {message.content}
                   </div>
@@ -187,7 +195,7 @@ const sendMessage = async (e: React.FormEvent) => {
                   )}
                   <div className="flex items-center justify-end mt-1">
                     <span className={`text-xs ${isOwnMessage ? 'text-blue-100' : 'text-gray-400'}`}>
-                      {new Date(message.timestamp).toLocaleTimeString('es-ES', {
+                      {new Date(message.created_at).toLocaleTimeString('es-ES', {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
