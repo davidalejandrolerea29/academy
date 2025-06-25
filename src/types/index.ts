@@ -19,6 +19,7 @@ export interface User {
   // email_verified_at?: string | null;
   // created_at?: string; // Opcional, ya que no siempre lo usarás directamente
   // updated_at?: string; // Opcional
+  must_change_password:Boolean;
 }
 
 

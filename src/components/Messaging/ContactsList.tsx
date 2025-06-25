@@ -24,6 +24,8 @@ const ContactsList: React.FC<ContactsListProps> = ({
 
   const fetchContacts = async () => {
   setLoading(true);
+   const token = localStorage.getItem('token'); 
+    console.log('Token dentro de fetchContacts:', token);
   try {
        const response = await fetch(`${API_URL}/auth/contacts`, {
         method: 'GET',
