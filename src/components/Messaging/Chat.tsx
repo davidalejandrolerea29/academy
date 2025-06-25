@@ -22,6 +22,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const token = localStorage.getItem('token');
 
   const markMessageAsRead = async (messageId: number) => {
     console.log('estoy andando como leido')
@@ -29,7 +30,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
     await fetch(`${API_URL}/auth/privatechat/${messageId}/read`, {
       method: 'PATCH',
       headers: {
-        Authorization: `Bearer ${currentUser?.token}`,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -47,13 +48,14 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
 };
 useEffect(() => {
   const unreadMessages = messages.filter(
-    (m) => m.user_id === recipientId && !m.read
+    (m) => m.user_id !== currentUser?.id && !m.read
   );
 
   if (unreadMessages.length > 0) {
     unreadMessages.forEach((msg) => markMessageAsRead(msg.id));
   }
-}, [messages, recipientId]);
+}, [messages]);
+
 
   const roomId = currentUser && recipientId
     ? [currentUser.id, recipientId].sort().join('-')
