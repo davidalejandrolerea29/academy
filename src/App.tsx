@@ -10,6 +10,7 @@ import VideoRoom from './components/VideoRoom/VideoRoom';
 import MessagingPage from './components/Messaging/MessagingPage';
 import UserManagement from './components/Admin/UserManagement';
 import RegisterPage from './components/Auth/RegisterPage';
+import ChangePasswordPage from './components/Auth/ChangePasswordPage';
 
 // Protected route component
 const ProtectedRoute: React.FC<{ 
@@ -50,6 +51,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
            <Route path="/register" element={<RegisterPage />} />
+           <Route path="/cambiar-password" element={<ChangePasswordPage />} />
           
           <Route 
             path="/" 

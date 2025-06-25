@@ -23,6 +23,38 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const markMessageAsRead = async (messageId: number) => {
+    console.log('estoy andando como leido')
+  try {
+    await fetch(`${API_URL}/auth/privatechat/${messageId}/read`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${currentUser?.token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+    });
+
+    // Actualiza el mensaje localmente
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId ? { ...msg, read: true } : msg
+      )
+    );
+  } catch (error) {
+    console.error('Error al marcar mensaje como leído:', error);
+  }
+};
+useEffect(() => {
+  const unreadMessages = messages.filter(
+    (m) => m.user_id === recipientId && !m.read
+  );
+
+  if (unreadMessages.length > 0) {
+    unreadMessages.forEach((msg) => markMessageAsRead(msg.id));
+  }
+}, [messages, recipientId]);
+
   const roomId = currentUser && recipientId
     ? [currentUser.id, recipientId].sort().join('-')
     : null;
@@ -76,6 +108,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
 
  const handleEmojiSelect = (emoji: any) => {
   setNewMessage((prev) => prev + emoji.native);
@@ -151,70 +184,62 @@ const sendMessage = async (e: React.FormEvent) => {
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto bg-gray-100">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500">
-            <p>No hay mensajes. ¡Envía el primero!</p>
+       {messages.map((message) => {
+  const isOwnMessage = message.user_id === currentUser?.id;
+  const sender = message.sender;
+
+  return (
+    <div
+      key={message.id}
+      className={`flex mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+    >
+      <div
+        className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-2xl shadow-sm ${
+          isOwnMessage ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'
+        }`}
+      >
+        {!isOwnMessage && (
+          <div className="text-xs text-gray-500 mb-1">
+            {sender?.name}
           </div>
-        ) : (
-          messages.map((message) => {
-           const isOwnMessage = message.user_id === currentUser?.id;
-           const sender = message.sender; // viene del backend con with('sender')
-
-
-            return (
-              <div
-                key={message.id}
-                className={`flex mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-2xl shadow-sm ${
-                    isOwnMessage
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white text-gray-800 border'
-                  }`}
-                >
-               {!isOwnMessage && (
-  <div className="text-xs text-gray-500 mb-1">
-    {sender?.name}
-  </div>
-)}
-
-        
-                  <div className="text-sm break-words whitespace-pre-wrap">
-                    {message.content}
-                  </div>
-                  {message.attachment_url && (
-                    <a
-                      href={message.attachment_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block mt-2 text-xs text-blue-200 underline"
-                    >
-                      Ver archivo adjunto
-                    </a>
-                  )}
-                  <div className="flex items-center justify-end mt-1">
-                    <span className={`text-xs ${isOwnMessage ? 'text-blue-100' : 'text-gray-400'}`}>
-                      {new Date(message.created_at).toLocaleTimeString('es-ES', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                    {isOwnMessage && (
-                      <span className="ml-1">
-                        {message.read ? (
-                          <span className="text-xs text-blue-100">✓✓</span>
-                        ) : (
-                          <Clock className="w-3 h-3 text-blue-100" />
-                        )}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })
         )}
+
+        <div className="text-sm break-words whitespace-pre-wrap">
+          {message.content}
+        </div>
+        {message.attachment_url && (
+          <a
+            href={message.attachment_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block mt-2 text-xs text-blue-200 underline"
+          >
+            Ver archivo adjunto
+          </a>
+        )}
+        <div className="flex items-center justify-end mt-1">
+          <span className={`text-xs ${isOwnMessage ? 'text-blue-100' : 'text-gray-400'}`}>
+            {new Date(message.created_at).toLocaleTimeString('es-ES', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+          {isOwnMessage && (
+            <span className="ml-1">
+              {message.read ? (
+                <span className="text-xs text-blue-100">✓✓</span>
+              ) : (
+                <Clock className="w-3 h-3 text-blue-100" />
+              )}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+})}
+
+       
         <div ref={messagesEndRef}></div>
       </div>
 

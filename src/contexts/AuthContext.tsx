@@ -100,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // const echo = createEcho(access_token);
 
-      setCurrentUser({
+     setCurrentUser({
   token: access_token,
   id: user.id,
   email: user.email,
@@ -109,12 +109,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   role: {
     id: user.role_id,
     description: user.role_description,
-    created_at: '', // o '2024-01-01' si querés evitar problemas
+    created_at: '',
     updated_at: '',
   },
   role_description: user.role_description,
+  must_change_password: user.must_change_password, // ✅ AÑADIR ESTA LÍNEA
 });
 
+console.log('el currente', setCurrentUser);
 
 console.log('respuesta de la api', data)
     } catch (err: any) {

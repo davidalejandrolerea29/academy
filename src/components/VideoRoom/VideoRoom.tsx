@@ -1074,4 +1074,5 @@ return (
   </div>
 );
 };
+
 export default VideoRoom;
