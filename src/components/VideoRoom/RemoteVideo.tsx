@@ -1,40 +1,41 @@
 // src/components/RemoteVideo.tsx
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Video, VideoOff, Mic, MicOff, ScreenShare } from 'lucide-react'; // Importa los íconos necesarios
+import { Video, VideoOff, Mic, MicOff, ScreenShare } from 'lucide-react';
 
 // Define las props que RemoteVideo espera recibir
 interface RemoteVideoProps {
   stream: MediaStream;
-  participantId: string; // Nuevo nombre
-  participantName: string; // Nuevo nombre
+  participantId: string;
+  participantName: string;
   videoEnabled: boolean;
   micEnabled: boolean;
   isLocal: boolean;
-  volume: number; // Para mostrar el volumen del micrófono
-  isScreenShare: boolean; // Nuevo prop
+  volume: number;
+  isScreenShare: boolean;
+  className?: string; // Permitir clases CSS adicionales para el contenedor
 }
 
 const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
   stream,
-  participantId,   // ¡AQUÍ ESTÁ EL CAMBIO!
-  participantName, // ¡AQUÍ ESTÁ EL CAMBIO!
+  participantId,
+  participantName,
   videoEnabled,
   micEnabled,
   isLocal,
   volume,
   isScreenShare,
+  className, // Aceptar className
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const showVideo = isScreenShare ? true : videoEnabled; // La pantalla siempre se muestra si está activa
-  const [isMuted, setIsMuted] = useState(false); // Puedes volver a true para que el autoplay funcione sin interacción
+  // showVideo ahora solo depende de videoEnabled (para cámara) o si es pantalla compartida
+  const showVideoContent = isScreenShare ? true : videoEnabled; // Determina si se muestra el video o el placeholder
+  const [isMuted, setIsMuted] = useState(isLocal); // Inicializa isMuted basado en isLocal
 
   // Log para ver cuándo se renderiza el componente
-  // Este log SÍ se imprimirá cada vez que se renderice, pero React.memo ayudará a controlarlo
   console.log(`[RemoteVideo RENDER] Componente RemoteVideo renderizando para ${participantName} (ID: ${participantId})`);
 
   useEffect(() => {
-    // AHORA USA participantName y participantId
     console.log(`[RemoteVideo DEBUG] --- INICIO useEffect para ${participantName} (ID: ${participantId}) ---`);
     console.log(`[RemoteVideo DEBUG] Prop 'stream' recibida:`, stream ? stream.id : 'null');
     console.log(`[RemoteVideo DEBUG] Prop 'videoEnabled' recibida:`, videoEnabled);
@@ -52,31 +53,12 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
       return;
     }
 
-    // El resto de tu lógica de useEffect...
-    console.log(`[RemoteVideo DEBUG] Tracks en el stream para ${participantName}:`, stream.getTracks().map(t => ({
-      kind: t.kind,
-      id: t.id,
-      label: t.label,
-      enabled: t.enabled,
-      readyState: t.readyState
-    })));
-
-    if (stream.getVideoTracks().length === 0) {
-      console.warn(`[RemoteVideo DEBUG] El stream para ${participantName} NO TIENE TRACKS DE VIDEO.`);
-    }
-    if (stream.getAudioTracks().length === 0) {
-      console.warn(`[RemoteVideo DEBUG] El stream para ${participantName} NO TIENE TRACKS DE AUDIO.`);
-    }
-
     videoRef.current.srcObject = stream;
-    // Esto es importante para el autoplay. Si quieres que se reproduzca audio, la primera vez DEBE estar muteado.
-    // Luego el usuario puede desmutearlo con el botón.
-    // videoRef.current.muted = isMuted; // Quita esto, ya lo controlas con el prop `muted={isLocal}`
+    videoRef.current.muted = isMuted; // Asigna el estado de mute basado en el estado interno
 
     console.log(`[RemoteVideo DEBUG] Asignando srcObject para ${participantName}. Tracks:`, stream.getTracks().map(t => t.kind));
 
     stream.getTracks().forEach(track => {
-      // AHORA USA participantName
       console.log(`[RemoteVideo Track Debug for ${participantName}] Kind: ${track.kind}, ID: ${track.id}, Label: ${track.label}, Enabled: ${track.enabled}, ReadyState: ${track.readyState}`);
       if (track.kind === 'video') {
         const settings = track.getSettings();
@@ -93,13 +75,11 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
 
     const checkVideoState = () => {
       if (videoRef.current) {
-        // AHORA USA participantName
         console.log(`[RemoteVideo State for ${participantName}] videoWidth: ${videoRef.current.videoWidth}, videoHeight: ${videoRef.current.videoHeight}, paused: ${videoRef.current.paused}, muted: ${videoRef.current.muted}, readyState: ${videoRef.current.readyState}, networkState: ${videoRef.current.networkState}`);
       }
     };
 
     videoRef.current.onloadedmetadata = () => {
-        // AHORA USA participantName y participantId
         console.log(`[RemoteVideo DEBUG] onloadedmetadata para ${participantName} DISPARADO.`);
         console.log(`[RemoteVideo DEBUG] onloadedmetadata - videoWidth: ${videoRef.current?.videoWidth}, videoHeight: ${videoRef.current?.videoHeight}`);
         checkVideoState();
@@ -112,31 +92,27 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
     };
 
     videoRef.current.onplay = () => {
-      // AHORA USA participantName
       console.log(`[RemoteVideo DEBUG] onplay para ${participantName} DISPARADO. El video ESTÁ INTENTANDO REPRODUCIRSE.`);
       checkVideoState();
     };
 
     videoRef.current.onplaying = () => {
-      // AHORA USA participantName
       console.log(`[RemoteVideo DEBUG] onplaying para ${participantName} DISPARADO. El video SE ESTÁ REPRODUCIENDO ACTIVAMENTE.`);
       checkVideoState();
     };
 
     videoRef.current.onpause = () => {
-      // AHORA USA participantName
       console.log(`[RemoteVideo DEBUG] onpause para ${participantName} DISPARADO. El video está PAUSADO.`);
       checkVideoState();
     };
 
     videoRef.current.onerror = (event) => {
-      // AHORA USA participantName y participantId
       console.error(`[RemoteVideo DEBUG] ERROR EN EL VIDEO DE ${participantName} (ID: ${participantId}):`, event);
       checkVideoState();
     };
 
+    // Intenta reproducir al montar o actualizar
     videoRef.current.play().catch(e => {
-      // AHORA USA participantName y participantId
       console.warn(`[RemoteVideo DEBUG] Error al intentar reproducir video de ${participantName} (ID: ${participantId}) en inicial:`, e);
       if (e.name === 'NotAllowedError') {
         console.log(`[RemoteVideo DEBUG] Autoplay bloqueado para ${participantName}.`);
@@ -153,7 +129,7 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
         currentVideoRef.onerror = null;
       }
     };
- }, [stream, participantName, participantId, isMuted, videoEnabled, micEnabled, isLocal, isScreenShare]); // <-- ELIMINA `volume` de aquí si no se usa para un efecto directo que requiera re-ejecución con cada cambio de volumen.
+  }, [stream, participantName, participantId, isMuted, videoEnabled, micEnabled, isLocal, isScreenShare]);
 
   const toggleMute = () => {
     if (videoRef.current) {
@@ -165,18 +141,21 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
     }
   };
 
-return (
-    <div className={`relative bg-gray-800 rounded-lg overflow-hidden aspect-video ${!showVideo ? 'hidden' : ''}`}>
+  return (
+    // Agrega `className` aquí para permitir estilos desde el padre
+    <div className={`relative bg-gray-800 rounded-lg overflow-hidden aspect-video ${className || ''}`}>
+      {/* El elemento video solo se muestra si showVideoContent es true */}
       <video
         ref={videoRef}
         autoPlay
         playsInline // Importante para iOS
-        muted={isLocal} // Controla la mutación inicial
+        muted={isLocal || isMuted} // Mutea si es local O si el usuario lo ha muteado manualmente
         className="w-full h-full object-cover"
-        style={{ display: showVideo ? 'block' : 'none' }} // Controla la visibilidad del elemento video
+        // La visibilidad se controla con Tailwind, no con style.display
       ></video>
 
-      {!showVideo && (
+      {/* Placeholder con ícono de VideoOff si el video no está habilitado y no es pantalla compartida */}
+      {!showVideoContent && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
           <VideoOff size={48} className="text-gray-500" />
         </div>
@@ -187,8 +166,9 @@ return (
         {participantName}
       </div>
 
-      {/* Botón de mute/unmute para el audio de los REMOTOS (no local, a menos que sea el stream local que quieres mutearte) */}
-      {!isLocal && ( // Solo muestra el botón de mute para streams remotos
+      {/* Botón de mute/unmute para el audio de los REMOTOS (no local) */}
+      {/* Solo se muestra si NO es pantalla compartida y NO es el stream local */}
+      {!isScreenShare && !isLocal && (
         <button
             onClick={toggleMute}
             className="absolute top-2 left-2 bg-gray-800 bg-opacity-70 text-white p-1 rounded-full text-xs z-10"
@@ -196,7 +176,6 @@ return (
             {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
         </button>
       )}
-
 
       {/* Iconos de micrófono y video */}
       <div className="absolute top-2 right-2 flex space-x-1">
@@ -216,8 +195,8 @@ return (
         )}
       </div>
 
-      {/* Barra de volumen (solo para el micrófono, no para la pantalla compartida) */}
-      {!isScreenShare && (
+      {/* Barra de volumen (solo para el micrófono de tu propio stream local) */}
+      {isLocal && !isScreenShare && ( // Solo para tu propio micrófono
         <div className="absolute bottom-2 right-2 w-16 h-1 bg-gray-600 rounded">
           <div
             className="h-full bg-blue-500 rounded"
@@ -238,8 +217,9 @@ const RemoteVideo = React.memo(RemoteVideoComponent, (prevProps, nextProps) => {
     prevProps.videoEnabled === nextProps.videoEnabled &&
     prevProps.micEnabled === nextProps.micEnabled &&
     prevProps.isLocal === nextProps.isLocal &&
-    // prevProps.volume === nextProps.volume && // <-- ELIMINA ESTA LÍNEA
-    prevProps.isScreenShare === nextProps.isScreenShare
+    prevProps.isScreenShare === nextProps.isScreenShare &&
+    prevProps.className === nextProps.className // También compara className
+    // No comparamos `volume` ni `isMuted` porque son manejados internamente o no requieren un re-render del video.
   );
 });
 
