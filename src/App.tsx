@@ -11,7 +11,7 @@ import MessagingPage from './components/Messaging/MessagingPage';
 import UserManagement from './components/Admin/UserManagement';
 import RegisterPage from './components/Auth/RegisterPage';
 import ChangePasswordPage from './components/Auth/ChangePasswordPage';
-
+import { CallProvider } from './contexts/CallContext';
 // Protected route component
 const ProtectedRoute: React.FC<{ 
   children: React.ReactNode;
@@ -48,48 +48,50 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-           <Route path="/register" element={<RegisterPage />} />
-           <Route path="/cambiar-password" element={<ChangePasswordPage />} />
-          
-          <Route 
-            path="/" 
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-           <Route index element={<Navigate to="/rooms" replace />} />
+        <CallProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/cambiar-password" element={<ChangePasswordPage />} />
             
             <Route 
-              path="rooms" 
-              element={<RoomManagementPage />} 
-            />
-            
-            <Route 
-              path="rooms/:roomId" 
-              element={<VideoRoom />} 
-            />
-            
-            <Route 
-              path="messages" 
-              element={<MessagingPage />} 
-            />
-            
-            <Route 
-              path="admin/users" 
+              path="/" 
               element={
-                <ProtectedRoute allowedRoles={['Admin']}>
-                  <UserManagement />
+                <ProtectedRoute>
+                  <Layout />
                 </ProtectedRoute>
-              } 
-            />
-          </Route>
-          
-          <Route path="*" element={<Navigate to="/rooms" replace />} />
-        </Routes>
+              }
+            >
+            <Route index element={<Navigate to="/rooms" replace />} />
+              
+              <Route 
+                path="rooms" 
+                element={<RoomManagementPage />} 
+              />
+              
+              {/* <Route 
+                path="rooms/:roomId" 
+                element={<VideoRoom />} 
+              />
+               */}
+              <Route 
+                path="messages" 
+                element={<MessagingPage />} 
+              />
+              
+              <Route 
+                path="admin/users" 
+                element={
+                  <ProtectedRoute allowedRoles={['Admin']}>
+                    <UserManagement />
+                  </ProtectedRoute>
+                } 
+              />
+            </Route>
+            
+            <Route path="*" element={<Navigate to="/rooms" replace />} />
+          </Routes>
+        </CallProvider>
       </AuthProvider>
     </BrowserRouter>
   );

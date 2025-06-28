@@ -1,6 +1,8 @@
+// src/components/RoomList.tsx
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+// import { Link } from 'react-router-dom'; // Ya no necesitas Link para unirte a la llamada
 import { useAuth } from '../../contexts/AuthContext';
+import { useCall } from '../../contexts/CallContext'; // <-- NUEVO: Importa useCall
 import { Room, User } from '../../types';
 import { supabase } from '../../lib/supabase';
 import {
@@ -18,81 +20,79 @@ const API_URL = import.meta.env.VITE_API_URL;
 
 const RoomList: React.FC = () => {
   const { currentUser } = useAuth();
+  const { startCall } = useCall(); // <-- NUEVO: Obtiene la función startCall
   const [rooms, setRooms] = useState<Room[]>([]);
-
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming');
 
   useEffect(() => {
-  if (!currentUser) return;
+    if (!currentUser) return;
 
-  const fetchRooms = async () => {
-    setLoading(true);
+    const fetchRooms = async () => {
+      setLoading(true);
+      try {
+        const userId = currentUser.id;
+        const token = localStorage.getItem('token');
+        console.log('estoviene en user id', userId)
+        const response = await fetch(`${API_URL}/auth/rooms?user_id=${userId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+        });
+
+        if (!response.ok) throw new Error('Error al obtener las salas');
+
+        const data = await response.json();
+
+        const mappedRooms = data.map((room: any) => ({
+          ...room,
+          start_time: new Date(room.start_time),
+          end_time: new Date(room.end_time),
+        }));
+        console.log('mappedRooms', mappedRooms);
+        setRooms(mappedRooms);
+      } catch (error) {
+        console.error('Error fetching rooms:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRooms();
+
+  }, [currentUser]);
+
+
+  const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
+    if (currentUser?.role.description !== 'Admin' && currentUser?.role.description !== 'Teacher') return;
+
+    const token = localStorage.getItem('token');
+
     try {
-      const userId = currentUser.id;
-      const token = localStorage.getItem('token');
-     console.log('estoviene en user id', userId)
-      const response = await fetch(`${API_URL}/auth/rooms?user_id=${userId}`, {
-        method: 'GET',
+      const response = await fetch(`${API_URL}/auth/rooms/${roomId}/toggle`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
         },
+        body: JSON.stringify({
+          is_active: !currentStatus,
+        }),
       });
 
-      if (!response.ok) throw new Error('Error al obtener las salas');
+      if (!response.ok) {
+        throw new Error('Error al actualizar la sala');
+      }
 
-      const data = await response.json();
-
-      const mappedRooms = data.map((room: any) => ({
-        ...room,
-        start_time: new Date(room.start_time),
-        end_time: new Date(room.end_time),
-      }));
-      console.log('mappedRooms', mappedRooms);
-      setRooms(mappedRooms);
+      console.log(`Sala ${roomId} actualizada con éxito.`);
+      // Si querés refrescar las salas después de esto:
+      //   fetchRooms(); // Asegurate de que esta función esté accesible en el contexto
     } catch (error) {
-      console.error('Error fetching rooms:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error actualizando la sala:', error);
     }
-   
-
   };
-
-  fetchRooms();
- 
-}, [currentUser]);
-
-
-const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
-  if (currentUser?.role.description !== 'Admin' && currentUser?.role.description !== 'Teacher') return;
-
-  const token = localStorage.getItem('token');
-
-  try {
-    const response = await fetch(`${API_URL}/auth/rooms/${roomId}/toggle`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        is_active: !currentStatus,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error('Error al actualizar la sala');
-    }
-
-    console.log(`Sala ${roomId} actualizada con éxito.`);
-    // Si querés refrescar las salas después de esto:
- //   fetchRooms(); // Asegurate de que esta función esté accesible en el contexto
-  } catch (error) {
-    console.error('Error actualizando la sala:', error);
-  }
-};
 
 
   const formatDate = (date: Date) =>
@@ -132,8 +132,8 @@ const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
           <button
             onClick={() => setFilter('upcoming')}
             className={`px-3 py-1 rounded-md text-sm ${
-              filter === 'upcoming' 
-                ? 'bg-blue-500 text-white' 
+              filter === 'upcoming'
+                ? 'bg-blue-500 text-white'
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
@@ -142,8 +142,8 @@ const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
           <button
             onClick={() => setFilter('past')}
             className={`px-3 py-1 rounded-md text-sm ${
-              filter === 'past' 
-                ? 'bg-blue-500 text-white' 
+              filter === 'past'
+                ? 'bg-blue-500 text-white'
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
@@ -152,8 +152,8 @@ const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
           <button
             onClick={() => setFilter('all')}
             className={`px-3 py-1 rounded-md text-sm ${
-              filter === 'all' 
-                ? 'bg-blue-500 text-white' 
+              filter === 'all'
+                ? 'bg-blue-500 text-white'
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
@@ -167,10 +167,10 @@ const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
           <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h2 className="text-xl font-medium text-gray-700 mb-2">No hay salas disponibles</h2>
           <p className="text-gray-500">
-            {filter === 'upcoming' 
-              ? 'No hay salas programadas próximamente.' 
-              : filter === 'past' 
-              ? 'No hay salas pasadas.' 
+            {filter === 'upcoming'
+              ? 'No hay salas programadas próximamente.'
+              : filter === 'past'
+              ? 'No hay salas pasadas.'
               : 'No hay salas creadas.'}
           </p>
         </div>
@@ -181,23 +181,22 @@ const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
             const StatusIcon = status.icon;
             const now = new Date();
             const isLive = room.start_time <= now && room.end_time >= now && room.is_active;
-           // const teacher = teachers[room.teacher_id];
-            
+
             return (
               <div key={room.id} className="bg-white rounded-lg shadow overflow-hidden">
                 <div className="p-5">
                   <div className="flex justify-between items-start mb-3">
                     <h2 className="text-lg font-semibold text-gray-800 flex-1">{room.name}</h2>
-                    <span 
+                    <span
                       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-${status.color}-100 text-${status.color}-800`}
                     >
                       <StatusIcon className={`w-3 h-3 mr-1 text-${status.color}-500`} />
                       {status.label}
                     </span>
                   </div>
-                  
+
                   <p className="text-gray-600 text-sm mb-4">{room.description}</p>
-                  
+
                   <div className="space-y-2 mb-4">
                     <div className="flex items-center text-sm text-gray-500">
                       <Calendar className="w-4 h-4 mr-2" />
@@ -207,13 +206,12 @@ const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
                       <Clock className="w-4 h-4 mr-2" />
                       {formatTime(room.start_time)} - {formatTime(room.end_time)}
                     </div>
-                {room.teacher_id && (
-  <div className="flex items-center text-sm text-gray-500">
-    <UserIcon className="w-4 h-4 mr-2" />
-    {room.teacher_id}
-  </div>
-)}
-
+                    {room.teacher_id && (
+                      <div className="flex items-center text-sm text-gray-500">
+                        <UserIcon className="w-4 h-4 mr-2" />
+                        {room.teacher_id}
+                      </div>
+                    )}
 
 
                     <div className="flex items-center text-sm text-gray-500">
@@ -221,30 +219,30 @@ const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
                       {room.participants.length} participantes
                     </div>
                   </div>
-                  
+
                   <div className="flex justify-between items-center">
                     {isLive ? (
-                      <Link
-                        to={`/rooms/${room.id}`}
+                      <button // <-- CAMBIO: De Link a button
+                        onClick={() => startCall(String(room.id))} // <-- NUEVO: Llama a startCall
                         className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md flex items-center transition-colors"
                       >
                         <Video className="w-4 h-4 mr-2" />
                         Unirse ahora
-                      </Link>
+                      </button>
                     ) : room.start_time <= now && room.end_time >= now ? (
-                      <Link
-                        to={`/rooms/${room.id}`}
+                      <button // <-- CAMBIO: De Link a button
+                        onClick={() => startCall(String(room.id))} // <-- NUEVO: Llama a startCall
                         className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center transition-colors"
                       >
                         <Video className="w-4 h-4 mr-2" />
                         Ver sala
-                      </Link>
+                      </button>
                     ) : (
                       <span className="text-sm text-gray-500">
                         {room.start_time > now ? 'Próximamente' : 'Finalizada'}
                       </span>
                     )}
-                    
+
                     {(currentUser?.role_description === 'Admin' || (currentUser?.role_description === 'Teacher' && room.teacher_id === currentUser.id)) && (
                       <button
                         onClick={() => toggleRoomActive(room.id, room.is_active)}

@@ -1,23 +1,30 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
-import { useParams, useNavigate } from 'react-router-dom';
+// import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase'; // Asumo que esto es relevante para otras partes de tu app
 import { Room } from '../../types'; // Asumo que este tipo está definido
 import { useMicVolume } from '../../hooks/useMicVolume'; // Asumo que tu hook está bien
-
-import { Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle, MessageSquare, PhoneOff } from 'lucide-react';
-
+import { useCall } from '../../contexts/CallContext';
+import {
+  Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle,
+  MessageSquare, PhoneOff, Minimize2, Maximize2, Users // <-- NUEVO: Íconos de minimizar/maximizar
+} from 'lucide-react';
+interface VideoRoomProps {
+  roomId: string;
+  onCallEnded: () => void;
+}
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
 import RemoteVideo from './RemoteVideo'; // Ajusta la ruta si RemoteVideo.tsx está en otro lugar
 import ChatBox from './ChatBox';
 
-const VideoRoom: React.FC = () => {
+const VideoRoom: React.FC<VideoRoomProps> = ({ roomId, onCallEnded }) => {
   const API_URL = import.meta.env.VITE_API_URL;
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
   const iceCandidatesQueueRef = useRef<Record<string, RTCIceCandidate[]>>({});
-  const { roomId } = useParams<{ roomId: string }>();
+  const { isCallMinimized, toggleMinimizeCall } = useCall(); 
+  // const { roomId } = useParams<{ roomId: string }>();
   const { currentUser } = useAuth(); // Asegúrate de que `currentUser.id` y `currentUser.name` existan
   const [room, setRoom] = useState<Room | null>(null); // Estado para la información de la sala (si es necesario)
   const [loading, setLoading] = useState(false);
@@ -98,6 +105,66 @@ const [participants, setParticipants] = useState<Record<string, {
       clearInterval(intervalId); // Limpiar el intervalo al desmontar
     };
   }, []); // Dependencia vacía para que se ejecute una vez y establezca el intervalo
+  const stopLocalStream = useCallback(() => {
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    setLocalStream(null);
+  }
+}, [localStream]);
+  const stopScreenShare = useCallback(() => {
+  if (screenShareStreamRef.current) {
+    screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+    screenShareStreamRef.current = null;
+    setIsSharingScreen(false);
+
+    Object.values(peerConnectionsRef.current).forEach(pc => {
+      const videoSender = pc.getSenders().find(sender => sender.track?.kind === 'video');
+      if (videoSender && localStream) {
+        const cameraVideoTrack = localStream.getVideoTracks()[0];
+        if (cameraVideoTrack) {
+          videoSender.replaceTrack(cameraVideoTrack);
+        } else {
+          pc.removeTrack(videoSender);
+        }
+      }
+      const audioSender = pc.getSenders().find(sender => sender.track?.kind === 'audio');
+      if (audioSender && localStream) {
+        const cameraAudioTrack = localStream.getAudioTracks()[0];
+        if (cameraAudioTrack) {
+          audioSender.replaceTrack(cameraAudioTrack);
+        } else {
+          pc.removeTrack(audioSender);
+        }
+      }
+    });
+    console.log("Compartir pantalla detenido.");
+  }
+}, [localStream]);
+const handleCallCleanup = useCallback(() => {
+    console.log('[VideoRoom Cleanup] Iniciando limpieza de la llamada...');
+    stopLocalStream();
+    stopScreenShare();
+
+    // Cierra todas las PeerConnections
+    Object.values(peerConnectionsRef.current).forEach(pc => {
+      pc.close();
+    });
+    peerConnectionsRef.current = {}; // Reinicia el objeto de PeerConnections
+
+    setParticipants({}); // Limpia los participantes
+
+    if (channelRef.current) {
+      console.log(`[VideoRoom Cleanup] Dejando canal ${channelRef.current.name}`);
+      // CAMBIO AQUÍ: Llamar al método leave() del propio objeto channel
+      channelRef.current.leave(); // Esto enviará la señal de UNSUBSCRIBE y limpiará el canal internamente
+      channelRef.current = null; // Limpiar la referencia al canal después de dejarlo
+    }
+    setHasJoinedChannel(false);
+
+    // Notifica al padre (Layout) que la llamada ha terminado
+    onCallEnded(); // Esto debería activar el desmontaje de VideoRoom en Layout
+    console.log('[VideoRoom Cleanup] Limpieza completa. Notificando a Layout.');
+  }, [stopLocalStream, stopScreenShare, onCallEnded]);
 
   // Dentro de tu función sendSignal:
   const sendSignal = useCallback(async (toPeerId: string, signalData: any) => {
@@ -479,7 +546,24 @@ useEffect(() => {
           setLoading(false);
           setHasJoinedChannel(false);
         });
+        joinedChannel.leaving((member: any) => {
+          console.log(`Usuario ${member.info.name || member.id} (${member.id}) ha abandonado la sala.`);
+          const memberId = String(member.id);
 
+          // Cierra la PeerConnection asociada con el miembro que se fue
+          if (peerConnectionsRef.current[memberId]) {
+              console.log(`Cerrando PeerConnection con ${memberId}.`);
+              peerConnectionsRef.current[memberId].close();
+              delete peerConnectionsRef.current[memberId];
+          }
+
+          // Elimina al participante del estado para que su widget desaparezca
+          setParticipants(prev => {
+              const newParticipants = { ...prev };
+              delete newParticipants[memberId];
+              return newParticipants;
+          });
+        });
 
         // --- Listener para señales WebRTC (Ofertas, Respuestas, Candidatos ICE) ---
        joinedChannel.listenForWhisper('Signal', async ({ to, from, data }: { to: string; from: string; data: any }) => {
@@ -623,21 +707,43 @@ useEffect(() => {
 
     // Función de limpieza al desmontar o cuando las dependencias cambien
     return () => {
-      //console.log("Limpiando useEffect de conexión al canal.");
+      console.log("Limpiando useEffect de conexión al canal al desmontar/re-ejecutar.");
+
+      // Detén los streams locales SIEMPRE que el componente se desmonte o el efecto se limpie.
+      // Esto es crucial para la cámara/micrófono de la pestaña del navegador.
+      stopLocalStream();
+      stopScreenShare();
+
+      // Si hay una instancia de canal activa, asegúrate de dejarla.
+      //currentChannelInstance es la referencia al canal del efecto actual.
       if (currentChannelInstance) {
-        currentChannelInstance.leave(); // Deja el canal de Echo/Reverb
-        setHasJoinedChannel(false);
+        console.log(`Dejando canal activo de useEffect: ${currentChannelInstance.name}`);
+        currentChannelInstance.leave(); // Esto enviará el unsubscribe y limpiará el mapa interno
       }
-      // Cierra todas las PeerConnections
+
+      // Cierra todas las PeerConnections restantes.
       Object.values(peerConnectionsRef.current).forEach(pc => {
-          if (pc.connectionState !== 'closed') pc.close();
+          if (pc.connectionState !== 'closed') {
+              console.log("Cerrando PC restante al desmontar.");
+              pc.close();
+          }
       });
       peerConnectionsRef.current = {}; // Limpia el ref explícitamente
-      setParticipants({}); // Limpia los participantes
-      channelRef.current = null; // Limpia el ref del canal
-    };
-  }, [roomId, currentUser, localStream, sendSignal, getOrCreatePeerConnection]); // Añadido getOrCreatePeerConnection
 
+      // Limpia los estados de React
+      setParticipants({});
+      setHasJoinedChannel(false);
+      channelRef.current = null; // Asegúrate de que el ref global del canal también esté nulo
+    };
+  }, [
+    roomId,
+    currentUser,
+    localStream,
+    sendSignal,
+    getOrCreatePeerConnection,
+    stopLocalStream, // Añadir como dependencia para que el linter no se queje
+    stopScreenShare  // Añadir como dependencia para que el linter no se queje
+  ]);
   // --- Listeners para Whispers de estado de video/micrófono ---
   useEffect(() => {
     
@@ -812,7 +918,7 @@ useEffect(() => {
         setMicEnabled(localStream?.getAudioTracks()[0]?.enabled || true);
     }
 };
-  
+
 const [roomParticipantId, setRoomParticipantId] = useState<number | null>(null);
 useEffect(() => {
   const fetchRoomParticipantId = async () => {
@@ -898,139 +1004,226 @@ if (!roomParticipantId) return;
 
 // ... (imports y hooks se mantienen igual) ...
 // ... (resto del código) ...
+  const remoteScreenShareActive = Object.values(participants).some(p => p.screenStream);
+  const isAnyScreenSharing = isSharingScreen || remoteScreenShareActive;
+ 
 
-return (
-  <div className="flex h-screen bg-black text-white">
-    <div className="flex flex-col flex-1 relative">
-      {/* Contenedor principal de videos: ajustado para centrar contenido verticalmente */}
-      <div className="flex-1 flex flex-col bg-gray-950 p-4">
-        {/* Lógica para determinar si hay alguna pantalla compartida */}
-        {(() => {
-          const remoteScreenShareActive = Object.values(participants).some(p => p.screenStream);
-          const isAnyScreenSharing = isSharingScreen || remoteScreenShareActive;
-
-          if (isAnyScreenSharing) {
-            return (
-              <>
-                {/* 1. Área Principal para la Pantalla Compartida (si está activa) */}
-                <div className="w-full flex-grow flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden mb-4">
-                  {isSharingScreen && screenShareStreamRef.current ? (
-                    <RemoteVideo
-                      stream={screenShareStreamRef.current}
-                      participantId={currentUser?.id || 'local-screen'}
-                      participantName={`${currentUser?.name || 'Tú'} (Mi Pantalla)`}
-                      videoEnabled={true}
-                      micEnabled={false}
-                      isLocal={true}
-                      volume={0}
-                      isScreenShare={true}
-                    />
-                  ) : (
-                    (() => {
-                      const remoteScreenShare = Object.values(participants).find(p => p.screenStream);
-                      if (remoteScreenShare) {
-                        return (
-                          <RemoteVideo
-                            stream={remoteScreenShare.screenStream!}
-                            participantId={`${remoteScreenShare.id}-screen`}
-                            participantName={`${remoteScreenShare.name} (Pantalla)`}
-                            videoEnabled={true}
-                            micEnabled={false}
+  return (
+    // ... (El resto del JSX es el mismo, no hay cambios aquí a menos que quieras más detalles en la UI)
+    <div className={`flex bg-black text-white ${isCallMinimized ? 'h-full w-full flex-col' : 'h-screen flex-row'}`}>
+      {/* Contenedor principal de videos (Maximizada) */}
+      {!isCallMinimized && (
+        <div className="flex flex-col flex-1 relative p-4 bg-gray-950">
+          {(() => {
+            if (isAnyScreenSharing) {
+              return (
+                <>
+                  <div className="w-full flex-grow flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden mb-4">
+                    {isSharingScreen && screenShareStreamRef.current ? (
+                      <RemoteVideo
+                        stream={screenShareStreamRef.current}
+                        participantId={currentUser?.id || 'local-screen'}
+                        participantName={`${currentUser?.name || 'Tú'} (Mi Pantalla)`}
+                        videoEnabled={true}
+                        micEnabled={false}
+                        isLocal={true}
+                        volume={0}
+                        isScreenShare={true}
+                      />
+                    ) : (
+                      (() => {
+                        const remoteScreenShare = Object.values(participants).find(p => p.screenStream);
+                        if (remoteScreenShare) {
+                          return (
+                            <RemoteVideo
+                              stream={remoteScreenShare.screenStream!}
+                              participantId={`${remoteScreenShare.id}-screen`}
+                              participantName={`${remoteScreenShare.name} (Pantalla)`}
+                              videoEnabled={true}
+                              micEnabled={false}
+                              isLocal={false}
+                              volume={0}
+                              isScreenShare={true}
+                            />
+                          );
+                        }
+                        return null;
+                      })()
+                    )}
+                  </div>
+                  <div className="w-full grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 flex-shrink-0">
+                    {localStream && (
+                      <RemoteVideo
+                        stream={localStream}
+                        participantId={currentUser?.id || 'local'}
+                        participantName={`${currentUser?.name || 'Tú'} (Yo)`}
+                        videoEnabled={videoEnabled}
+                        micEnabled={micEnabled}
+                        isLocal={true}
+                        volume={volume}
+                        isScreenShare={false}
+                      />
+                    )}
+                    {/* Filtra aquí para solo mostrar participantes con cameraStream */}
+                    {Object.values(participants)
+                        .filter(p => p.cameraStream) // Solo muestra si hay un stream de cámara
+                        .map(participant => (
+                        <RemoteVideo
+                            key={participant.id} // Asegúrate de usar una key única
+                            stream={participant.cameraStream!}
+                            participantId={participant.id}
+                            participantName={participant.name}
+                            videoEnabled={participant.videoEnabled}
+                            micEnabled={participant.micEnabled}
                             isLocal={false}
                             volume={0}
-                            isScreenShare={true}
-                          />
-                        );
-                      }
-                      return null; // No debería llegar aquí si isAnyScreenSharing es true
-                    })()
-                  )}
-                </div>
-
-                {/* 2. Área de Cámaras (Miniaturas) - siempre se muestra aquí debajo de la pantalla grande */}
-                <div className="w-full grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 flex-shrink-0">
-                  {/* Tu propia cámara */}
-                  {localStream && (
-                    <RemoteVideo
-                      stream={localStream}
-                      participantId={currentUser?.id || 'local'}
-                      participantName={`${currentUser?.name || 'Tú'} (Yo)`}
-                      videoEnabled={videoEnabled}
-                      micEnabled={micEnabled}
-                      isLocal={true}
-                      volume={volume}
-                      isScreenShare={false}
-                    />
-                  )}
-
-                  {/* Cámaras de participantes remotos */}
-                  {Object.values(participants).map(participant => (
-                    <React.Fragment key={participant.id}>
-                      {participant.cameraStream && (
-                        <RemoteVideo
-                          stream={participant.cameraStream}
-                          participantId={participant.id}
-                          participantName={participant.name} // Usar participant.name aquí
-                          videoEnabled={participant.videoEnabled}
-                          micEnabled={participant.micEnabled}
-                          isLocal={false}
-                          volume={0}
-                          isScreenShare={false}
+                            isScreenShare={false}
                         />
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-              </>
-            );
-          } else {
-            // Caso donde NO hay pantalla compartida: centrar las cámaras
-            return (
-              <div className="flex-1 flex items-center justify-center"> {/* Ocupa el espacio y centra */}
-                <div className="w-full grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"> {/* Quité flex-shrink-0 */}
-                  {/* Tu propia cámara */}
-                  {localStream && (
-                    <RemoteVideo
-                      stream={localStream}
-                      participantId={currentUser?.id || 'local'}
-                      participantName={`${currentUser?.name || 'Tú'} (Yo)`}
-                      videoEnabled={videoEnabled}
-                      micEnabled={micEnabled}
-                      isLocal={true}
-                      volume={volume}
-                      isScreenShare={false}
-                    />
-                  )}
-
-                  {/* Cámaras de participantes remotos */}
-                  {Object.values(participants).map(participant => (
-                    <React.Fragment key={participant.id}>
-                      {participant.cameraStream && (
+                    ))}
+                  </div>
+                </>
+              );
+            } else {
+              return (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="w-full grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {localStream && (
+                      <RemoteVideo
+                        stream={localStream}
+                        participantId={currentUser?.id || 'local'}
+                        participantName={`${currentUser?.name || 'Tú'} (Yo)`}
+                        videoEnabled={videoEnabled}
+                        micEnabled={micEnabled}
+                        isLocal={true}
+                        volume={volume}
+                        isScreenShare={false}
+                      />
+                    )}
+                    {Object.values(participants)
+                        .filter(p => p.cameraStream) // Solo muestra si hay un stream de cámara
+                        .map(participant => (
                         <RemoteVideo
-                          stream={participant.cameraStream}
-                          participantId={participant.id}
-                          participantName={participant.name} // Usar participant.name aquí
-                          videoEnabled={participant.videoEnabled}
-                          micEnabled={participant.micEnabled}
-                          isLocal={false}
-                          volume={0}
-                          isScreenShare={false}
+                            key={participant.id} // Asegúrate de usar una key única
+                            stream={participant.cameraStream!}
+                            participantId={participant.id}
+                            participantName={participant.name}
+                            videoEnabled={participant.videoEnabled}
+                            micEnabled={participant.micEnabled}
+                            isLocal={false}
+                            volume={0}
+                            isScreenShare={false}
                         />
-                      )}
-                    </React.Fragment>
-                  ))}
+                    ))}
+                  </div>
                 </div>
+              );
+            }
+          })()}
+        </div>
+      )}
+
+      {/* Vista Minimizada - Muestra solo si isCallMinimized es true */}
+      {isCallMinimized && (
+        <div className="flex-1 flex flex-col bg-gray-950 rounded-lg overflow-hidden p-2">
+          {/* Pantalla compartida principal en miniatura (si aplica) */}
+          {isAnyScreenSharing && (
+            <div className="w-full h-3/4 mb-2 bg-gray-800 rounded-md flex items-center justify-center overflow-hidden">
+              {isSharingScreen && screenShareStreamRef.current ? (
+                <RemoteVideo
+                  stream={screenShareStreamRef.current}
+                  participantId={currentUser?.id || 'local-screen-mini'}
+                  participantName={`${currentUser?.name || 'Tú'} (Mi Pantalla)`}
+                  videoEnabled={true}
+                  micEnabled={false}
+                  isLocal={true}
+                  volume={0}
+                  isScreenShare={true}
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                (() => {
+                  const remoteScreenShare = Object.values(participants).find(p => p.screenStream);
+                  if (remoteScreenShare) {
+                    return (
+                      <RemoteVideo
+                        stream={remoteScreenShare.screenStream!}
+                        participantId={`${remoteScreenShare.id}-screen-mini`}
+                        participantName={`${remoteScreenShare.name} (Pantalla)`}
+                        videoEnabled={true}
+                        micEnabled={false}
+                        isLocal={false}
+                        volume={0}
+                        isScreenShare={true}
+                        className="w-full h-full object-contain"
+                      />
+                    );
+                  }
+                  return (
+                      <div className="text-gray-500 text-center">
+                          <ScreenShare className="w-8 h-8 mx-auto mb-1" />
+                          <p className="text-sm">Compartiendo pantalla</p>
+                      </div>
+                  );
+                })()
+              )}
+            </div>
+          )}
+
+          {/* Miniaturas de cámaras de participantes (local + remotos) */}
+          <div className={`w-full ${isAnyScreenSharing ? 'h-1/4' : 'flex-grow'} grid grid-cols-2 gap-1 overflow-y-auto`}>
+            {/* Tu propia cámara */}
+            {localStream && (
+              <RemoteVideo
+                stream={localStream}
+                participantId={currentUser?.id || 'local-mini'}
+                participantName={`${currentUser?.name || 'Tú'}`}
+                videoEnabled={videoEnabled}
+                micEnabled={micEnabled}
+                isLocal={true}
+                volume={volume}
+                isScreenShare={false}
+                className="w-full h-full object-cover rounded-sm"
+              />
+            )}
+
+            {/* Cámaras de participantes remotos */}
+            {Object.values(participants)
+              .filter(p => p.cameraStream) // Asegúrate de que solo se rendericen si tienen un stream
+              .map(participant => (
+                <RemoteVideo
+                  key={participant.id + '-mini'}
+                  stream={participant.cameraStream!}
+                  participantId={participant.id}
+                  participantName={participant.name}
+                  videoEnabled={participant.videoEnabled}
+                  micEnabled={participant.micEnabled}
+                  isLocal={false}
+                  volume={0}
+                  isScreenShare={false}
+                  className="w-full h-full object-cover rounded-sm"
+                />
+              ))}
+
+            {/* Placeholder si no hay cámaras para mostrar */}
+            {!localStream && Object.values(participants).filter(p => p.cameraStream).length === 0 && !isAnyScreenSharing && (
+              <div className="col-span-full flex flex-col items-center justify-center text-gray-500">
+                <Users className="w-12 h-12 mb-2" />
+                <p className="text-sm text-center">Nadie con cámara activa.</p>
               </div>
-            );
-          }
-        })()}
-      </div>
+            )}
+          </div>
+        </div>
+      )}
 
-      {/* ... (Controles y Chat lateral se mantienen igual) ... */}
-      <div className="flex justify-center gap-4 p-4 border-t border-gray-700 bg-black bg-opacity-80">
+      {/* Controles de la llamada - Secciones diferentes para maximizado y minimizado */}
+      <div className={`flex justify-center gap-2 p-3 bg-black bg-opacity-80
+        ${isCallMinimized ? 'w-full flex-wrap' : 'border-t border-gray-700'}`}>
+
+        {/* Botones de control (Mic, Video) - Comunes y siempre visibles */}
         <button
           onClick={toggleMic}
           className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+          title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
         >
           {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
         </button>
@@ -1038,41 +1231,60 @@ return (
         <button
           onClick={toggleVideo}
           className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+          title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
         >
           {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
         </button>
 
-        <button
-          onClick={toggleScreenShare}
-          className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-        >
-          <ScreenShare size={20} />
-        </button>
+        {/* Botón de Compartir Pantalla y Grabar (solo en vista maximizada) */}
+        {!isCallMinimized && (
+          <>
+            <button
+              onClick={toggleScreenShare}
+              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+              title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
+            >
+              <ScreenShare size={20} />
+            </button>
 
-        {isTeacher && (
-          <button
-            onClick={toggleRecording}
-            className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-          >
-            <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
-          </button>
+            {isTeacher && (
+              <button
+                onClick={toggleRecording}
+                className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+                title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
+              >
+                <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
+              </button>
+            )}
+          </>
         )}
 
+        {/* Botón de Minimizar/Maximizar: SIEMPRE VISIBLE */}
         <button
-          onClick={endCall}
+          onClick={toggleMinimizeCall}
+          className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+          title={isCallMinimized ? 'Maximizar llamada' : 'Minimizar llamada'}
+        >
+          {isCallMinimized ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
+        </button>
+
+        {/* Botón de Colgar: SIEMPRE VISIBLE */}
+        <button
+          onClick={handleCallCleanup} // Llama a la nueva función de limpieza
           className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+          title="Colgar"
         >
           <PhoneOff size={20} />
         </button>
       </div>
-    </div>
 
-    {/* Chat lateral */}
-    <div className="w-80 border-l border-gray-700 bg-gray-900 flex flex-col flex-2 py-8 justify-end">
-      {roomId && <ChatBox roomId={roomId} />}
+      {/* Chat lateral - Oculta si minimizado */}
+      <div className={`w-80 border-l border-gray-700 bg-gray-900 flex flex-col flex-2 py-8 justify-end
+        ${isCallMinimized ? 'hidden' : ''}`}>
+        {roomId && <ChatBox roomId={roomId} />}
+      </div>
     </div>
-  </div>
-);
+  );
 };
 
 export default VideoRoom;

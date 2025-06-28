@@ -219,43 +219,36 @@ private dispatchToChannelListeners(message: any) {
         // Manejar eventos internos de presencia
         if (message.event === 'pusher_internal:subscription_succeeded') {
             const data = JSON.parse(message.data);
-            //console.log('ReverbWebSocketService: pusher_internal:subscription_succeeded data:', data);
-
-           if (data.presence && data.presence.data) {
-                // Agrega este log para ver el contenido real
-                //console.log('ReverbWebSocketService: Contenido de data.presence.data:', data.presence.data);
+            if (data.presence && data.presence.data) {
                 const members = new Map<string, any>();
                 for (const userId in data.presence.data) {
                     const memberInfo = data.presence.data[userId];
                     members.set(String(memberInfo.id), memberInfo);
                 }
                 channelData.presenceMembers = members;
-                //console.log(`ReverbWebSocketService: Miembros de presencia populados: ${members.size} miembros. (Después de populación)`);
             } else {
-                //console.log('ReverbWebSocketService: pusher_internal:subscription_succeeded no contiene datos de presencia o está vacío.');
                 channelData.presenceMembers = new Map();
             }
-
-            // SEGUNDO: Disparar el evento 'subscribed' (confirmación de suscripción)
             channelData.listeners.get('subscribed')?.forEach(cb => cb());
-
-            // TERCERO: Disparar el evento que informa al 'here' que los miembros están listos.
-            // Esto se hace DESPUÉS de que channelData.presenceMembers ha sido definitivamente populado.
             channelData.listeners.get('subscribed_and_ready_for_here')?.forEach(cb => cb());
-
 
         } else if (message.event === 'pusher_internal:member_added') {
             const data = JSON.parse(message.data);
-            //console.log('ReverbWebSocketService: pusher_internal:member_added data:', data);
-
             const newMember = data.user_info;
             if (channelData.presenceMembers && newMember && newMember.id) {
                 channelData.presenceMembers.set(String(newMember.id), newMember);
             }
+            // ¡Aquí se dispara el listener 'joining' del EchoChannel!
             channelData.listeners.get('joining')?.forEach(cb => cb(newMember));
 
         } else if (message.event === 'pusher_internal:member_removed') {
-            // ... (sin cambios) ...
+            const data = JSON.parse(message.data);
+            const removedMember = data.user_info;
+            if (channelData.presenceMembers && removedMember && removedMember.id) {
+                channelData.presenceMembers.delete(String(removedMember.id));
+            }
+            // ¡AGREGADO! Aquí se dispara el listener 'leaving' del EchoChannel
+            channelData.listeners.get('leaving')?.forEach(cb => cb(removedMember));
         }
     }
 }

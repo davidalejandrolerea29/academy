@@ -1,12 +1,16 @@
+// src/components/Layout.tsx
+
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { 
-  Video, 
-  MessageSquare, 
-  Users, 
-  LogOut, 
-  Menu, 
+import { useCall } from '../../contexts/CallContext';
+import VideoRoom from '../VideoRoom/VideoRoom'; // Asegúrate de que la importación sea correcta
+import {
+  Video,
+  MessageSquare,
+  Users,
+  LogOut,
+  Menu,
   X,
   UserCircle
 } from 'lucide-react';
@@ -16,9 +20,15 @@ const Layout: React.FC = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // activeRoomId es la clave para montar/desmontar VideoRoom
+  const { activeRoomId, endCall, isCallMinimized } = useCall();
 
   const handleLogout = async () => {
     try {
+      // Si hay una llamada activa al cerrar sesión, asegúrate de terminarla
+      if (activeRoomId) {
+        endCall(); // Esto limpiará activeRoomId y navegará
+      }
       await logout();
       navigate('/login');
     } catch (error) {
@@ -34,8 +44,8 @@ const Layout: React.FC = () => {
     if (!currentUser) return '';
     switch (currentUser.role_description) {
       case 'Admin': return 'Administrador';
-      case 'teacher': return 'Profesor';
-      case 'alumno': return 'Alumno';
+      case 'Teacher': return 'Profesor';
+      case 'Student': return 'Alumno';
       default: return currentUser.role_description;
     }
   };
@@ -44,47 +54,46 @@ const Layout: React.FC = () => {
     <div className="flex h-screen bg-gray-50">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-20 bg-gray-900 bg-opacity-50 lg:hidden"
           onClick={closeSidebar}
         ></div>
       )}
 
       {/* Sidebar */}
-      <aside 
+      <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-30
           w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
-       <div className="flex flex-col h-full">
-  <div className="flex flex-col items-center justify-center p-4 border-b text-center relative">
-    <img
-      src={logo}
-      alt="Logo English New Path"
-      className="h-16 w-16 object-contain mb-2"
-    />
-    <h1 className="text-sm font-semibold text-gray-700 leading-tight">
-      English New Path<br />Academia de Inglés online
-    </h1>
-    <button
-      className="absolute right-4 top-4 lg:hidden text-gray-500 hover:text-gray-700"
-      onClick={closeSidebar}
-    >
-      <X className="w-6 h-6" />
-    </button>
-  </div>
+        <div className="flex flex-col h-full">
+          <div className="flex flex-col items-center justify-center p-4 border-b text-center relative">
+            <img
+              src={logo}
+              alt="Logo English New Path"
+              className="h-16 w-16 object-contain mb-2"
+            />
+            <h1 className="text-sm font-semibold text-gray-700 leading-tight">
+              English New Path<br />Academia de Inglés online
+            </h1>
+            <button
+              className="absolute right-4 top-4 lg:hidden text-gray-500 hover:text-gray-700"
+              onClick={closeSidebar}
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
 
 
-          
           {currentUser && (
             <>
               <div className="p-4 border-b">
                 <div className="flex items-center">
                   {currentUser.photo_url ? (
-                    <img 
-                      src={currentUser.photo_url} 
+                    <img
+                      src={currentUser.photo_url}
                       alt={currentUser.name}
                       className="w-10 h-10 rounded-full mr-3"
                     />
@@ -97,14 +106,14 @@ const Layout: React.FC = () => {
                   </div>
                 </div>
               </div>
-              
+
               <nav className="flex-1 p-4 space-y-1">
                 <NavLink
                   to="/rooms"
                   className={({ isActive }) => `
                     flex items-center px-4 py-2 rounded-md text-sm font-medium
-                    ${isActive 
-                      ? 'bg-blue-50 text-blue-700' 
+                    ${isActive
+                      ? 'bg-blue-50 text-blue-700'
                       : 'text-gray-700 hover:bg-gray-100'}
                   `}
                   onClick={closeSidebar}
@@ -112,13 +121,13 @@ const Layout: React.FC = () => {
                   <Video className="w-5 h-5 mr-3" />
                   Salas de Clase
                 </NavLink>
-                
+
                 <NavLink
                   to="/messages"
                   className={({ isActive }) => `
                     flex items-center px-4 py-2 rounded-md text-sm font-medium
-                    ${isActive 
-                      ? 'bg-blue-50 text-blue-700' 
+                    ${isActive
+                      ? 'bg-blue-50 text-blue-700'
                       : 'text-gray-700 hover:bg-gray-100'}
                   `}
                   onClick={closeSidebar}
@@ -126,14 +135,14 @@ const Layout: React.FC = () => {
                   <MessageSquare className="w-5 h-5 mr-3" />
                   Mensajes
                 </NavLink>
-                
+
                 {currentUser.role_description === 'Admin' && (
                   <NavLink
                     to="/admin/users"
                     className={({ isActive }) => `
                       flex items-center px-4 py-2 rounded-md text-sm font-medium
-                      ${isActive 
-                        ? 'bg-blue-50 text-blue-700' 
+                      ${isActive
+                        ? 'bg-blue-50 text-blue-700'
                         : 'text-gray-700 hover:bg-gray-100'}
                     `}
                     onClick={closeSidebar}
@@ -143,7 +152,7 @@ const Layout: React.FC = () => {
                   </NavLink>
                 )}
               </nav>
-              
+
               <div className="p-4 border-t mt-auto">
                 <button
                   onClick={handleLogout}
@@ -169,7 +178,7 @@ const Layout: React.FC = () => {
             >
               <Menu className="w-6 h-6" />
             </button>
-            
+
             <div className="flex-1 flex justify-center lg:justify-start">
               <h1 className="text-lg font-semibold text-gray-800 lg:hidden">EduVídeo</h1>
             </div>
@@ -183,6 +192,24 @@ const Layout: React.FC = () => {
           </div>
         </main>
       </div>
+
+      {/* VideoRoom rendered here, outside the Outlet */}
+      {/* Si activeRoomId es null, el componente VideoRoom no se montará */}
+      {activeRoomId && (
+        <div className={`
+          fixed bg-black bg-opacity-75 z-40
+          transition-all duration-300 ease-in-out
+          ${isCallMinimized
+            ? 'bottom-4 right-4 w-[320px] h-[400px] rounded-lg shadow-xl overflow-hidden'
+            : 'inset-0 flex items-center justify-center'
+          }
+        `}>
+          <VideoRoom
+            roomId={activeRoomId}
+            onCallEnded={endCall} // onCallEnded es el mismo endCall del CallContext
+          />
+        </div>
+      )}
     </div>
   );
 };
