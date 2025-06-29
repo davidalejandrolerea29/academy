@@ -1,5 +1,5 @@
 // imports
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useAuth } from '../../contexts/AuthContext';
 import { MessagePrivate, User } from '../../types';
@@ -58,7 +58,19 @@ useEffect(() => {
   const roomId = currentUser && recipientId
     ? [currentUser.id, recipientId].sort().join('-')
     : null;
-
+    const handleNewMessage = useCallback((data: any) => {
+      console.log('📬 Chat: Mensaje recibido vía WebSocket:', data);
+      const msg: MessagePrivate = data.message;
+      setMessages((prev) => {
+        // Opcional: Evitar duplicados si la red es inestable
+        // Esto es una medida de seguridad, pero la causa raíz debe ser el listener.
+        if (prev.some(m => m.id === msg.id)) {
+            console.warn('Chat: Mensaje duplicado detectado, ignorando.');
+            return prev;
+        }
+        return [...prev, msg];
+      });
+    }, []);
   useEffect(() => {
     if (!currentUser?.id || !recipientId) return;
 
@@ -85,25 +97,35 @@ useEffect(() => {
     fetchMessages();
 
     let channel: EchoChannel | null = null;
+    // Asegúrate de que reverbService se obtenga solo una vez por mount
     const reverbService = createReverbWebSocketService(currentUser?.token);
 
     if (roomId) {
+      const channelName = `private-room.${roomId}`;
       reverbService
-        .private(`room.${roomId}`)
+        .private(channelName)
         .then((chann) => {
           channel = chann;
-          channel.listen('.messagecreated', (data: any) => {
-            const msg: MessagePrivate = data.message;
-            setMessages((prev) => [...prev, msg]);
+
+          console.log(`✅ Chat: Intentando escuchar canal "${channelName}".`);
+
+          channel.subscribed(() => {
+            console.log(`✨ Chat: Autenticado y suscrito exitosamente al canal: "${channelName}"`);
           });
+
+          // Usa el callback memorizado aquí
+          channel.listen('.messagecreatedprivate', handleNewMessage);
         })
-        .catch((err) => console.error('❌ Error canal:', err));
+        .catch((err) => console.error(`❌ Chat: Error al intentar suscribirse o autenticar el canal "${channelName}":`, err));
 
       return () => {
-        if (channel) channel.leave();
+        if (channel) {
+          console.log(`👋 Chat: Dejando el canal "${channelName}".`);
+          channel.leave();
+        }
       };
     }
-  }, [currentUser, recipientId, roomId]);
+  }, [currentUser, recipientId, roomId, handleNewMessage]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -121,13 +143,15 @@ useEffect(() => {
     }
   };
 
+// Chat.tsx (solo la función sendMessage)
+
 const sendMessage = async (e: React.FormEvent) => {
   e.preventDefault();
   if (!newMessage.trim() && !attachedFile) return;
 
   const formData = new FormData();
-  formData.append('user_id', currentUser?.id);        // antes: sender_id
-  formData.append('contact_id', recipientId);         // antes: receiver_id
+  formData.append('user_id', currentUser?.id);
+  formData.append('contact_id', recipientId);
   formData.append('content', newMessage.trim() || '');
 
   if (attachedFile) {
@@ -135,31 +159,40 @@ const sendMessage = async (e: React.FormEvent) => {
   }
 
   try {
-  const response = await fetch(`${API_URL}/auth/privatechat`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${currentUser?.token}`,
-      Accept: 'application/json',
-    },
-    body: formData,
-  });
+    const response = await fetch(`${API_URL}/auth/privatechat`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${currentUser?.token}`,
+        Accept: 'application/json',
+      },
+      body: formData,
+    });
 
-  const data = await response.json();
+    const data = await response.json();
 
-  if (!response.ok) {
-    console.error('❌ Error de validación:', data);
-    return;
-  }
+    if (!response.ok) {
+      console.error('❌ Error de validación:', data);
+      return;
+    }
 
-  if (data?.data) {
-    setMessages((prev) => [...prev, data.data]);
+    // ELIMINA O COMENTA ESTA LÍNEA:
+    // if (data?.data) {
+    //   setMessages((prev) => [...prev, data.data]); // ESTA LÍNEA ES LA CAUSA DE LA DUPLICACIÓN PARA EL REMITENTE
+    //   setNewMessage('');
+    //   setAttachedFile(null);
+    // }
+
+    // En su lugar, simplemente limpia los campos después del envío exitoso
     setNewMessage('');
     setAttachedFile(null);
-  }
-} catch (error) {
-  console.error('Error al enviar mensaje:', error);
-}
 
+    // El mensaje será añadido a `setMessages` cuando se reciba por el WebSocket
+    // a través del `channel.listen('.messagecreatedprivate', handleNewMessage)`
+    // del mismo remitente y de los receptores.
+
+  } catch (error) {
+    console.error('Error al enviar mensaje:', error);
+  }
 };
 
 

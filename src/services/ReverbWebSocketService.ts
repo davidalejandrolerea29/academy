@@ -209,20 +209,21 @@ constructor(options: WebSocketServiceOptions) {
 
 // src/services/ReverbWebSocketService.ts (dentro de dispatchToChannelListeners)
 
+
 private dispatchToChannelListeners(message: any) {
     if (message.channel && this.channels.has(message.channel)) {
         const channelData = this.channels.get(message.channel)!;
 
-        // Notificar listeners de eventos específicos (primero los eventos directos del mensaje)
-        channelData.listeners.get(message.event)?.forEach(cb => cb(message.data));
+        const parsedData = typeof message.data === 'string' ? JSON.parse(message.data) : message.data;
 
-        // Manejar eventos internos de presencia
+        // --- MANEJO DE EVENTOS INTERNOS DE REVERB/PUSHER ---
+        // Estos eventos tienen prioridad y son manejados por su nombre exacto.
         if (message.event === 'pusher_internal:subscription_succeeded') {
-            const data = JSON.parse(message.data);
-            if (data.presence && data.presence.data) {
+            // console.log(`ReverbWebSocketService: Recibido pusher_internal:subscription_succeeded para canal: ${message.channel}`);
+            if (parsedData.presence && parsedData.presence.data) {
                 const members = new Map<string, any>();
-                for (const userId in data.presence.data) {
-                    const memberInfo = data.presence.data[userId];
+                for (const userId in parsedData.presence.data) {
+                    const memberInfo = parsedData.presence.data[userId];
                     members.set(String(memberInfo.id), memberInfo);
                 }
                 channelData.presenceMembers = members;
@@ -231,24 +232,60 @@ private dispatchToChannelListeners(message: any) {
             }
             channelData.listeners.get('subscribed')?.forEach(cb => cb());
             channelData.listeners.get('subscribed_and_ready_for_here')?.forEach(cb => cb());
+            
+            // Si el canal es de presencia, dispara el evento 'here' aquí, después de que los miembros se hayan establecido
+            // Esto es crucial para que `here` reciba la lista inicial
+            if (message.channel.startsWith('presence-') && channelData.listeners.has('here')) {
+                 // console.log(`ReverbWebSocketService: Disparando 'here' para canal: ${message.channel}`);
+                 channelData.listeners.get('here')?.forEach(cb => cb(Array.from(channelData.presenceMembers!.values())));
+             }
 
         } else if (message.event === 'pusher_internal:member_added') {
-            const data = JSON.parse(message.data);
-            const newMember = data.user_info;
+            // console.log(`ReverbWebSocketService: Recibido pusher_internal:member_added para canal: ${message.channel}`);
+            const newMember = parsedData.user_info;
             if (channelData.presenceMembers && newMember && newMember.id) {
                 channelData.presenceMembers.set(String(newMember.id), newMember);
             }
-            // ¡Aquí se dispara el listener 'joining' del EchoChannel!
             channelData.listeners.get('joining')?.forEach(cb => cb(newMember));
 
         } else if (message.event === 'pusher_internal:member_removed') {
-            const data = JSON.parse(message.data);
-            const removedMember = data.user_info;
+            // console.log(`ReverbWebSocketService: Recibido pusher_internal:member_removed para canal: ${message.channel}`);
+            const removedMember = parsedData.user_info;
             if (channelData.presenceMembers && removedMember && removedMember.id) {
                 channelData.presenceMembers.delete(String(removedMember.id));
             }
-            // ¡AGREGADO! Aquí se dispara el listener 'leaving' del EchoChannel
             channelData.listeners.get('leaving')?.forEach(cb => cb(removedMember));
+
+        } else if (message.event.startsWith('client-')) {
+            // Estos son los whispers. Se registran con 'client-' prefix.
+            // console.log(`ReverbWebSocketService: Recibido client-whisper para canal: ${message.channel}, evento: ${message.event}`);
+            channelData.listeners.get(message.event)?.forEach(cb => cb(parsedData));
+
+        } else {
+            // --- MANEJO DE EVENTOS DE APLICACIÓN PERSONALIZADOS ---
+            // Intenta buscar el listener con el nombre de evento EXACTO (sin punto).
+            // Esto cubre casos como 'GroupMessageSent' o 'CallSignal' donde el frontend no usa '.'.
+            let dispatched = false;
+            if (channelData.listeners.has(message.event)) {
+                // console.log(`ReverbWebSocketService: Disparando evento de APP (sin punto) para canal "${message.channel}", evento "${message.event}"`);
+                channelData.listeners.get(message.event)?.forEach(cb => cb(parsedData));
+                dispatched = true;
+            }
+
+            // Si no se despachó y el evento no empieza con punto, intenta con el punto.
+            // Esto cubre casos como '.messagecreatedprivate' donde el frontend sí usa '.'.
+            if (!dispatched && !message.event.startsWith('.')) {
+                const eventWithDot = `.${message.event}`;
+                if (channelData.listeners.has(eventWithDot)) {
+                    // console.log(`ReverbWebSocketService: Disparando evento de APP (con punto) para canal "${message.channel}", evento "${eventWithDot}"`);
+                    channelData.listeners.get(eventWithDot)?.forEach(cb => cb(parsedData));
+                    dispatched = true;
+                }
+            }
+            // Opcional: Log si un evento no se despachó para depuración
+            // if (!dispatched) {
+            //     console.warn(`ReverbWebSocketService: Evento no despachado para canal "${message.channel}", evento "${message.event}". No hay listener registrado para este formato.`);
+            // }
         }
     }
 }
