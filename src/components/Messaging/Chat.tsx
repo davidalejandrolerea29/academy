@@ -269,7 +269,7 @@ const sendMessage = async (e: React.FormEvent) => {
 
 
 
-  if (loading) {
+ if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
@@ -289,72 +289,64 @@ const sendMessage = async (e: React.FormEvent) => {
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto bg-gray-100">
-       // En tu JSX, dentro del map:
-{messages.map((message) => {
-  // Aseguramos que ambos IDs sean del mismo tipo para la comparación
-  const isOwnMessage = String(message.user_id) === String(currentUser?.id);
-  const sender = message.sender; // Ya tienes esto
-
-  return (
-    <div
-      key={message.id}
-      className={`flex mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
-    >
-      <div
-        className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-2xl shadow-sm ${
-          isOwnMessage ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'
-        }`}
-      >
-        {!isOwnMessage && (
-          <div className="text-xs text-gray-500 mb-1">
-            {sender?.name || 'Usuario desconocido'} {/* Añadido fallback */}
+        {/* Aquí va el cambio para mostrar el mensaje si no hay mensajes */}
+        {messages.length === 0 && !loading ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 text-center">
+            <p className="text-lg font-semibold mb-2">¡Es hora de conectar!</p>
+            <p className="text-sm">Envía tu primer mensaje para iniciar la conversación.</p>
           </div>
-        )}
+        ) : (
+          // Si hay mensajes, los mapeamos como antes
+          messages.map((message) => {
+            const isOwnMessage = String(message.user_id) === String(currentUser?.id);
+            const sender = message.sender;
 
-        <div className="text-sm break-words whitespace-pre-wrap">
-          {message.content}
-        </div>
-        {message.attachment_url && (
-          <a
-            href={message.attachment_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block mt-2 text-xs text-blue-200 underline"
-          >
-            Ver archivo adjunto
-          </a>
-        )}
-        <div className="flex items-center justify-end mt-1">
-          <span className={`text-xs ${isOwnMessage ? 'text-blue-100' : 'text-gray-400'}`}>
-            {new Date(message.created_at).toLocaleTimeString('es-ES', {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </span>
-          {/* {isOwnMessage && (
-            <span className="ml-1 flex items-center"> 
-              {message.status === 'sending' && (
-                <Clock className="w-3 h-3 text-blue-100" />
-              )}
-              {message.status === 'sent' && (
-                // Una sola palomita para enviado al servidor/entregado
-                <Check className="w-3 h-3 text-blue-100" />
-              )}
-             {message.status === 'read' && (
-                <CheckCheck className="w-3 h-3 text-blue-100" />
-              )}
-            </span>
-          )} */}
-        </div>
-      </div>
-    </div>
-  );
-})}
+            return (
+              <div
+                key={message.id}
+                className={`flex mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-2xl shadow-sm ${
+                    isOwnMessage ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'
+                  }`}
+                >
+                  {!isOwnMessage && (
+                    <div className="text-xs text-gray-500 mb-1">
+                      {sender?.name || 'Usuario desconocido'}
+                    </div>
+                  )}
 
-       
+                  <div className="text-sm break-words whitespace-pre-wrap">
+                    {message.content}
+                  </div>
+                  {message.attachment_url && (
+                    <a
+                      href={message.attachment_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block mt-2 text-xs text-blue-200 underline"
+                    >
+                      Ver archivo adjunto
+                    </a>
+                  )}
+                  <div className="flex items-center justify-end mt-1">
+                    <span className={`text-xs ${isOwnMessage ? 'text-blue-100' : 'text-gray-400'}`}>
+                      {new Date(message.created_at).toLocaleTimeString('es-ES', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
         <div ref={messagesEndRef}></div>
       </div>
 
+      {/* ... (tu formulario de envío de mensaje existente) */}
       <form onSubmit={sendMessage} className="p-4 bg-white border-t">
         <div className="flex items-center space-x-2">
           <div className="relative">
