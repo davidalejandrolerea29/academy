@@ -23,7 +23,7 @@ const handleSelectContact = (userId: number, userData: User) => {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-screen">
       <div className="bg-white shadow p-4 border-b">
         <h1 className="text-xl font-semibold text-gray-800 flex items-center">
           <MessageSquare className="w-6 h-6 mr-2 text-blue-500" />
@@ -71,10 +71,10 @@ const handleSelectContact = (userId: number, userData: User) => {
         </div>
 
         {/* Chat area - hidden on mobile when contacts are active */}
-        <div 
+        <div
           className={`
-            ${mobileView === 'chat' ? 'block' : 'hidden'} 
-            lg:block lg:w-2/3
+            ${mobileView === 'chat' ? 'block' : 'hidden'}
+            lg:block lg:w-2/3 flex flex-col h-full {/* AGREGADO: flex flex-col h-full para que el Chat interno use el espacio */}
           `}
         >
           {selectedContactId && selectedContactData ? (
