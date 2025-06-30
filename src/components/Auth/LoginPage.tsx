@@ -15,21 +15,30 @@ const LoginPage: React.FC = () => {
 
   // Redirigir cuando el usuario ya esté cargado y logueado
 useEffect(() => {
-  console.log('currentUser actualizado:', currentUser);
-  if (currentUser) {
-    switch(currentUser.role) {
-      case 'admin':
-        navigate('/admin');
-        break;
-      case 'teacher':
-      case 'alumno':
-        navigate('/rooms');
-        break;
-      default:
-        navigate('/');
-    }
+  console.log('currentUser en useEffect:', currentUser); // 🔍
+
+  if (!currentUser || !currentUser.role) return;
+
+  if (currentUser.must_change_password) {
+    console.log('hola, funciono', currentUser);
+    navigate('/cambiar-password');
+    return;
+  }
+
+  const role = currentUser.role.description;
+  switch (role) {
+    case 'Admin':
+      navigate('/admin');
+      break;
+    case 'Teacher':
+    case 'Student':
+      navigate('/rooms');
+      break;
+    default:
+      navigate('/');
   }
 }, [currentUser, navigate]);
+
 
 
 

@@ -1,18 +1,33 @@
-export type UserRole = 'alumno' | 'teacher' | 'admin';
+export type UserRole = 'Student' | 'Teacher' | 'Admin';
 
-export interface User {
-  id: string;
-  email: string;
-  display_name: string;
-  role: UserRole;
-  photo_url?: string;
+export interface Role {
+  id: number;
+  description: UserRole;
+  created_at: string;
+  updated_at: string;
 }
 
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+  role_id: number;
+  role: Role; // Asegúrate de que esta propiedad exista y sea del tipo Role
+  token?: string; // Hice token opcional ya que no siempre estará presente
+  // Quité role_description ya que `user.role.description` ya lo provee
+  // photo_url?: string | null;
+  // email_verified_at?: string | null;
+  // created_at?: string; // Opcional, ya que no siempre lo usarás directamente
+  // updated_at?: string; // Opcional
+  must_change_password:Boolean;
+}
+
+
 export interface Room {
-  id: string;
+  id: number;
   name: string;
   description: string;
-  teacher_id: string;
+  teacher_id: number;
   start_time: Date;
   end_time: Date;
   is_active: boolean;
@@ -22,16 +37,36 @@ export interface Room {
 }
 
 export interface Message {
-  id: string;
-  sender_id: string;
-  receiver_id: string;
+  id: number;
   content: string;
-  timestamp: Date;
+  timestamp: string;
+  sender_id: number;
+  receiver_id: number;
   read: boolean;
+  room_participant: {
+    user: {
+      id: number;
+      name: string;
+    };
+  };
 }
 
+export interface MessagePrivate {
+  id: number;
+  user_id: number;
+  contact_id: number;
+  content: string;
+  read: boolean;
+  created_at: string;
+  attachment_url?: string;
+  sender?: User; // <- relación cargada por Laravel
+}
+
+
+
+
 export interface RoomParticipant {
-  userId: string;
+  userId: number;
   displayName: string;
   role: UserRole;
   joinTime: Date;

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-
 import {
   Users,
   UserCircle,
@@ -8,164 +7,215 @@ import {
   Search,
   FilterX,
   UserPlus,
+  Check,
+  X,
 } from 'lucide-react';
+import { User, UserRole, Role } from '../../types';
+import { useAuth } from '../../contexts/AuthContext'; // Importa useAuth
 
-import { User, UserRole } from '../../types';
-import { supabase } from '../../lib/supabase'; // 👈 Importa tu cliente Supabase desde tu módulo
+const API_URL = import.meta.env.VITE_API_URL;
+
+interface StudentOption {
+  id: number;
+  name: string;
+}
 
 const UserManagement: React.FC = () => {
+  // --- ¡AQUÍ ESTÁ LA CLAVE! Desestructuramos currentUser y loading del objeto que useAuth devuelve.
+  const { currentUser, loading: authLoading } = useAuth();
+  // ---
+
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Este es tu loading para fetching de usuarios/estudiantes
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
+  const [roleFilter, setRoleFilter] = useState<string | 'all'>('all');
+
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [editRole, setEditRole] = useState<UserRole>('alumno');
+  const [editRole, setEditRole] = useState<UserRole>('Teacher');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newUser, setNewUser] = useState({
     email: '',
     password: '',
-    display_name: '',
-    role: 'alumno' as UserRole,
+    name: '',
+    role: 'Student' as UserRole,
+    role_id: 3,
+    assigned_student_ids: [] as number[],
   });
+
   const [createError, setCreateError] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const token = localStorage.getItem('token');
+  
+  // Ahora currentUserId se obtiene correctamente del objeto currentUser desestructurado
+  const currentUserId = currentUser ? currentUser.id : null;
+  
+  // Para depuración, puedes ver el ID en la consola
+  console.log('Current User ID:', currentUserId);
 
-  useEffect(() => {
-    const fetchCurrentUser = async () => {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
-      if (error) {
-        console.error('Error fetching current user:', error);
-        setCurrentUser(null);
-      } else if (user) {
-       const { data, error: roleError } = await supabase
-  .from('usuarios')
-  .select('id, email, display_name, role')
-  .eq('id', user.id)
-  .maybeSingle(); 
+  const [availableStudents, setAvailableStudents] = useState<StudentOption[]>([]);
+  const [fetchingStudents, setFetchingStudents] = useState(false);
 
-if (roleError) {
-  console.error('Error fetching user role:', roleError);
-  setCurrentUser(null);
-} else if (!data) {
-  console.warn('No existe el usuario en la tabla "user" con ese ID');
-  setCurrentUser(null);
-} else {
-  setCurrentUser(data as User);
-}
-
-
-      }
-    };
-    fetchCurrentUser();
-  }, []);
-
-  useEffect(() => {
-    const fetchUsers = async () => {
-      
-
-      try {
-        const { data, error } = await supabase
-          .from<User>('usuarios')
-          .select('id, email, display_name, role')
-          .order('display_name', { ascending: true });
-
-        if (error) {
-          console.error('Error fetching users:', error);
-        } else if (data) {
-          setUsers(data);
+  const fetchStudents = async () => {
+    setFetchingStudents(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/students`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         }
-      } catch (error) {
-        console.error('Error fetching users:', error);
-      } finally {
-        setLoading(false);
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al obtener la lista de estudiantes');
       }
-    };
 
-    fetchUsers();
-  }, [currentUser]);
+      const result = await response.json();
+      setAvailableStudents(result.data.map((student: any) => ({
+        id: student.id,
+        name: student.name,
+      })));
+    } catch (error) {
+      console.error('Error fetching students:', error);
+    } finally {
+      setFetchingStudents(false);
+    }
+  };
 
-  const createUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-   
+
+  const fetchUsers = async () => {
+    setLoading(true);
 
     try {
-      setCreateError(null);
-      setLoading(true);
-
-      const { data, error } = await supabase.auth.signUp({
-        email: newUser.email,
-        password: newUser.password,
+      const response = await fetch(`${API_URL}/auth/users`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
       });
-
-      if (error) throw error;
-      if (!data.user) throw new Error('No user returned');
-
-      const { error: insertError } = await supabase.from('usuarios').insert({
-        id: data.user.id,
-        email: newUser.email,
-        display_name: newUser.display_name,
-        role: newUser.role,
-        created_at: new Date().toISOString(),
-      });
-
-      if (insertError) throw insertError;
-
-      setUsers((prev) => [
-        ...prev,
-        {
-          id: data.user.id,
-          email: newUser.email,
-          display_name: newUser.display_name,
-          role: newUser.role,
-        },
-      ]);
-
-      setNewUser({ email: '', password: '', display_name: '', role: 'alumno' });
-      setShowCreateForm(false);
-    } catch (error: any) {
-      console.error('Error creating user:', error);
-      setCreateError(
-        error.status === 400 && error.message.includes('already registered')
-          ? 'El correo electrónico ya está en uso'
-          : 'Error al crear el usuario'
-      );
+      if (!response.ok) throw new Error('Error al obtener los usuarios');
+      const data = await response.json();
+      setUsers(data);
+    } catch (error) {
+      console.error('Error fetching users:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRoleChange = async (userId: string, newRole: UserRole) => {
+  useEffect(() => {
+    if (currentUser && !authLoading) {
+      fetchUsers();
+      fetchStudents();
+    }
+  }, [currentUser, authLoading]);
 
+  const createUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError(null);
+    setLoading(true);
+
+    if (currentUserId === null) {
+        setCreateError("No se pudo obtener el ID del usuario actual para asignar. Intente recargar la página o iniciar sesión nuevamente.");
+        setLoading(false);
+        return;
+    }
+
+    const userData: any = {
+      email: newUser.email,
+      password: newUser.password,
+      name: newUser.name,
+      role_id: newUser.role_id,
+      assigned_by: currentUserId, // Usar el ID del usuario actual del hook
+    };
+
+    if (newUser.role_id === UserRoleEnum.Teacher && newUser.assigned_student_ids.length > 0) {
+      userData.assigned_student_ids = newUser.assigned_student_ids;
+    }
 
     try {
-      const { error } = await supabase
-        .from('usuarios')
-        .update({ role: newRole, updated_at: new Date().toISOString() })
-        .eq('id', userId);
+      const response = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(userData),
+      });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (errorData.message?.includes('already registered')) {
+          setCreateError('El correo electrónico ya está en uso');
+        } else {
+          setCreateError('Error al crear el usuario');
+        }
+        return;
+      }
+
+      await fetchUsers();
+      setNewUser({
+        email: '',
+        password: '',
+        name: '',
+        role: 'Student',
+        role_id: 3,
+        assigned_student_ids: [],
+      });
+      setShowCreateForm(false);
+    } catch (error) {
+      console.error('Error creating user:', error);
+      setCreateError('Error al crear el usuario');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRoleChange = async (userId: number, newRole: UserRole) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ role_id: getRoleIdFromDescription(newRole) }),
+      });
+
+      if (!response.ok) throw new Error('Error actualizando el rol');
 
       setUsers((prevUsers) =>
         prevUsers.map((user) =>
-          user.id === userId ? { ...user, role: newRole } : user
+          user.id === userId
+            ? {
+              ...user,
+              role: {
+                ...user.role,
+                description: newRole,
+              },
+            }
+            : user
         )
       );
+
       setEditingUser(null);
     } catch (error) {
       console.error('Error updating user role:', error);
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-   
+  const handleDeleteUser = async (userId: number) => {
     if (!confirm('¿Estás seguro de que deseas eliminar este usuario?')) return;
 
     try {
-      const { error } = await supabase.from('usuarios').delete().eq('id', userId);
-      if (error) throw error;
+      const response = await fetch(`${API_URL}/auth/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Error al eliminar el usuario');
 
       setUsers((prevUsers) => prevUsers.filter((user) => user.id !== userId));
     } catch (error) {
@@ -173,191 +223,251 @@ if (roleError) {
     }
   };
 
-  const startEditingUser = (user: User) => {
-    setEditingUser(user);
-    setEditRole(user.role);
-  };
-
-  const cancelEditing = () => {
-    setEditingUser(null);
-  };
-
-  const getRoleLabel = (role: UserRole) => {
+  function getRoleLabel(role: string) {
     switch (role) {
-      case 'teacher':
-        return 'Profesor';
-      case 'alumno':
-        return 'Alumno';
-      case 'admin':
+      case 'Admin':
         return 'Administrador';
+      case 'Teacher':
+        return 'Profesor';
+      case 'Student':
+        return 'Alumno';
       default:
         return role;
     }
+  }
+
+  const getRoleIdFromDescription = (role: UserRole): number => {
+    switch (role) {
+      case 'Admin':
+        return 1;
+      case 'Teacher':
+        return 2;
+      case 'Student':
+        return 3;
+      default:
+        return 3;
+    }
+  };
+
+  const handleNewUserRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newRoleId = parseInt(e.target.value);
+    const newRoleDesc = Object.keys(UserRoleEnum).find(key => UserRoleEnum[key as keyof typeof UserRoleEnum] === newRoleId) as UserRole;
+
+    setNewUser(prev => ({
+      ...prev,
+      role_id: newRoleId,
+      role: newRoleDesc || 'Student',
+      assigned_student_ids: newRoleId === UserRoleEnum.Teacher ? prev.assigned_student_ids : [],
+    }));
+  };
+
+  const handleStudentToggle = (studentId: number) => {
+    setNewUser(prev => {
+      const currentSelections = prev.assigned_student_ids;
+      if (currentSelections.includes(studentId)) {
+        return {
+          ...prev,
+          assigned_student_ids: currentSelections.filter(id => id !== studentId),
+        };
+      } else {
+        return {
+          ...prev,
+          assigned_student_ids: [...currentSelections, studentId],
+        };
+      }
+    });
   };
 
   const filteredUsers = users.filter((user) => {
     const matchesSearch =
-      user.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+    const matchesRole =
+      roleFilter === 'all' || user.role.description === roleFilter;
 
     return matchesSearch && matchesRole;
   });
 
+  const UserRoleEnum = {
+    Admin: 1,
+    Teacher: 2,
+    Student: 3,
+  };
 
 
-  if (loading) {
+  if (loading || fetchingStudents || authLoading) {
     return (
       <div className="flex justify-center items-center p-8">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500" />
       </div>
     );
   }
 
+  if (!currentUser) {
+      return <p className="text-red-500 text-center p-8">Error: No hay usuario autenticado. Por favor, inicie sesión.</p>;
+  }
+
+
   return (
     <div className="container mx-auto py-6 px-4">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-        <div className="flex items-center mb-4 md:mb-0">
+      {/* Encabezado */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center">
           <Users className="w-8 h-8 text-blue-500 mr-3" />
           <h1 className="text-2xl font-bold text-gray-800">Gestión de Usuarios</h1>
         </div>
-
         <button
           onClick={() => setShowCreateForm(!showCreateForm)}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center transition-colors"
+          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center"
         >
           <UserPlus className="w-5 h-5 mr-2" />
           Crear Usuario
         </button>
       </div>
 
+      {/* Formulario de creación */}
       {showCreateForm && (
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-700 mb-4">Crear Nuevo Usuario</h2>
+        <div className="bg-white rounded shadow p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-4">Crear Nuevo Usuario</h2>
           <form onSubmit={createUser} className="space-y-4">
-            <div>
-              <label className="block mb-1 font-medium">Nombre Completo</label>
-              <input
-                type="text"
-                required
-                value={newUser.display_name}
-                onChange={(e) => setNewUser((prev) => ({ ...prev, display_name: e.target.value }))}
-                className="w-full border rounded px-3 py-2"
-                placeholder="Juan Pérez"
-              />
-            </div>
-            <div>
-              <label className="block mb-1 font-medium">Correo Electrónico</label>
-              <input
-                type="email"
-                required
-                value={newUser.email}
-                onChange={(e) => setNewUser((prev) => ({ ...prev, email: e.target.value }))}
-                className="w-full border rounded px-3 py-2"
-                placeholder="correo@ejemplo.com"
-              />
-            </div>
-            <div>
-              <label className="block mb-1 font-medium">Contraseña</label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                value={newUser.password}
-                onChange={(e) => setNewUser((prev) => ({ ...prev, password: e.target.value }))}
-                className="w-full border rounded px-3 py-2"
-                placeholder="Mínimo 6 caracteres"
-              />
-            </div>
-            <div>
-              <label className="block mb-1 font-medium">Rol</label>
-              <select
-                value={newUser.role}
-                onChange={(e) => setNewUser((prev) => ({ ...prev, role: e.target.value as UserRole }))}
-                className="w-full border rounded px-3 py-2"
-              >
-                <option value="alumno">Alumno</option>
-                <option value="teacher">Profesor</option>
-                <option value="admin">Administrador</option>
-              </select>
-            </div>
+            <input
+              className="w-full border px-3 py-2 rounded"
+              placeholder="Nombre completo"
+              value={newUser.name}
+              onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+              required
+            />
+            <input
+              className="w-full border px-3 py-2 rounded"
+              type="email"
+              placeholder="Correo electrónico"
+              value={newUser.email}
+              onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              required
+            />
+            <input
+              className="w-full border px-3 py-2 rounded"
+              type="password"
+              placeholder="Contraseña"
+              value={newUser.password}
+              onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+              required
+              minLength={6}
+            />
+            <select
+              className="w-full border px-3 py-2 rounded"
+              value={newUser.role_id}
+              onChange={handleNewUserRoleChange}
+            >
+              <option value={UserRoleEnum.Student}>Alumno</option>
+              <option value={UserRoleEnum.Teacher}>Profesor</option>
+              <option value={UserRoleEnum.Admin}>Administrador</option>
+            </select>
 
-            {createError && <p className="text-red-600">{createError}</p>}
+            {/* --- Nuevo diseño para la selección de alumnos --- */}
+            {newUser.role_id === UserRoleEnum.Teacher && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <div className="flex items-center">
+                    <Users className="w-5 h-5 mr-1 text-gray-500" />
+                    Seleccionar Alumnos
+                  </div>
+                </label>
+                <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2">
+                  {fetchingStudents ? (
+                    <p className="text-gray-500 text-sm p-2">Cargando alumnos...</p>
+                  ) : availableStudents.length === 0 ? (
+                    <p className="text-gray-500 text-sm p-2">No hay alumnos disponibles</p>
+                  ) : (
+                    availableStudents.map((student) => (
+                      <div key={student.id} className="flex items-center p-2 hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          id={`student-${student.id}`}
+                          checked={newUser.assigned_student_ids.includes(student.id)}
+                          onChange={() => handleStudentToggle(student.id)}
+                          className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                        <label
+                          htmlFor={`student-${student.id}`}
+                          className="ml-2 block text-sm text-gray-700 cursor-pointer"
+                        >
+                          {student.name || `Alumno ID: ${student.id}`}
+                        </label>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Seleccionados: {newUser.assigned_student_ids.length} alumnos
+                </p>
+              </div>
+            )}
+            {/* --- Fin del nuevo diseño --- */}
 
+            {createError && <p className="text-red-500">{createError}</p>}
             <button
               type="submit"
-              disabled={loading}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md"
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded"
             >
-              Crear Usuario
+              Crear
             </button>
           </form>
         </div>
       )}
 
-      <div className="mb-4 flex flex-col md:flex-row md:items-center md:space-x-4">
-        <div className="relative w-full md:w-1/3 mb-2 md:mb-0">
+      {/* Filtros */}
+      <div className="flex mb-4 space-x-4">
+        <div className="relative w-1/2">
           <input
-            type="text"
+            className="w-full border px-10 py-2 rounded"
             placeholder="Buscar por nombre o email"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full border rounded pl-10 pr-3 py-2"
           />
           <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
           {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700"
-              aria-label="Limpiar búsqueda"
-            >
+            <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5">
               <FilterX />
             </button>
           )}
         </div>
-
         <select
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
-          className="border rounded px-3 py-2 w-full md:w-48"
+          onChange={(e) => setRoleFilter(e.target.value)}
+          className="border rounded px-2 py-1"
         >
-          <option value="all">Todos los roles</option>
-          <option value="alumno">Alumno</option>
-          <option value="teacher">Profesor</option>
-          <option value="admin">Administrador</option>
+          <option value="all">Todos</option>
+          <option value="Admin">Administrador</option>
+          <option value="Teacher">Profesor</option>
+          <option value="Student">Alumno</option>
         </select>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-white rounded-lg shadow">
-          <thead>
-            <tr className="border-b bg-gray-100">
-              <th className="text-left py-3 px-4">Nombre</th>
-              <th className="text-left py-3 px-4">Email</th>
-              <th className="text-left py-3 px-4">Rol</th>
-              <th className="text-center py-3 px-4">Acciones</th>
+      {/* Tabla */}
+      <table className="min-w-full bg-white rounded shadow">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="text-left py-3 px-4">Usuario</th>
+            <th className="text-left py-3 px-4">Email</th>
+            <th className="text-left py-3 px-4">Rol</th>
+            <th className="text-center py-3 px-4">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredUsers.length === 0 ? (
+            <tr>
+              <td colSpan={4} className="text-center py-6 text-gray-500">
+                No se encontraron usuarios
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.length === 0 && (
-              <tr>
-                <td colSpan={4} className="text-center py-6 text-gray-600">
-                  No se encontraron usuarios
-                </td>
-              </tr>
-            )}
-
-            {filteredUsers.map((user) => (
-              <tr
-                key={user.id}
-                className={`border-b ${
-                  editingUser?.id === user.id ? 'bg-yellow-50' : ''
-                }`}
-              >
+          ) : (
+            filteredUsers.map((user) => (
+              <tr key={user.id} className="border-t hover:bg-gray-50">
                 <td className="py-3 px-4 flex items-center space-x-2">
                   <UserCircle className="w-6 h-6 text-gray-400" />
-                  <span>{user.display_name}</span>
+                  <span>{user.name}</span>
                 </td>
                 <td className="py-3 px-4">{user.email}</td>
                 <td className="py-3 px-4">
@@ -367,12 +477,12 @@ if (roleError) {
                       onChange={(e) => setEditRole(e.target.value as UserRole)}
                       className="border rounded px-2 py-1"
                     >
-                      <option value="alumno">Alumno</option>
-                      <option value="teacher">Profesor</option>
-                      <option value="admin">Administrador</option>
+                      <option value="Student">Alumno</option>
+                      <option value="Teacher">Profesor</option>
+                      <option value="Admin">Administrador</option>
                     </select>
                   ) : (
-                    getRoleLabel(user.role)
+                    <span>{user.role ? getRoleLabel(user.role.description) : 'Sin rol'}</span>
                   )}
                 </td>
                 <td className="py-3 px-4 text-center space-x-2">
@@ -381,31 +491,30 @@ if (roleError) {
                       <button
                         onClick={() => handleRoleChange(user.id, editRole)}
                         className="text-green-600 hover:text-green-800"
-                        aria-label="Guardar cambios"
                       >
-                        <Edit />
+                        <Check />
                       </button>
                       <button
-                        onClick={cancelEditing}
+                        onClick={() => setEditingUser(null)}
                         className="text-gray-600 hover:text-gray-800"
-                        aria-label="Cancelar edición"
                       >
-                        ✕
+                        <X />
                       </button>
                     </>
                   ) : (
                     <>
                       <button
-                        onClick={() => startEditingUser(user)}
+                        onClick={() => {
+                          setEditingUser(user);
+                          setEditRole(user.role.description as UserRole);
+                        }}
                         className="text-blue-600 hover:text-blue-800"
-                        aria-label="Editar usuario"
                       >
                         <Edit />
                       </button>
                       <button
                         onClick={() => handleDeleteUser(user.id)}
                         className="text-red-600 hover:text-red-800"
-                        aria-label="Eliminar usuario"
                       >
                         <Trash2 />
                       </button>
@@ -413,10 +522,10 @@ if (roleError) {
                   )}
                 </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            ))
+          )}
+        </tbody>
+      </table>
     </div>
   );
 };
