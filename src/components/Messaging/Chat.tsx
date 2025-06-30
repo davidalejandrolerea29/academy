@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useAuth } from '../../contexts/AuthContext';
 import { MessagePrivate, User } from '../../types';
-import { Send, Clock, Paperclip, Smile } from 'lucide-react';
+import { Send, Clock, Paperclip, Smile, Check, CheckCheck } from 'lucide-react'; // Agrega Check y CheckCheck
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
@@ -13,7 +13,21 @@ interface ChatProps {
   recipientId: string;
   recipientData: User;
 }
-
+// En la interfaz MessagePrivate (en types.ts, o donde la tengas):
+interface MessagePrivate {
+  id: number; // ID del backend
+  user_id: number;
+  contact_id: number;
+  content: string;
+  attachment_url?: string;
+  read: boolean;
+  created_at: string;
+  updated_at: string;
+  sender?: User;
+  // Agrega esto para mensajes provisionales en el frontend
+  tempId?: string; // ID temporal para el frontend, para mensajes que aún no tienen ID de DB
+  status?: 'sending' | 'sent' | 'read'; // Nuevo estado para controlar las palomitas
+}
 const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   const { currentUser } = useAuth();
   const [messages, setMessages] = useState<MessagePrivate[]>([]);
@@ -24,7 +38,7 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const markMessageAsRead = async (messageId: number) => {
-    console.log('estoy andando como leido')
+  console.log('estoy andando como leido')
   try {
     await fetch(`${API_URL}/auth/privatechat/${messageId}/read`, {
       method: 'PATCH',
@@ -35,10 +49,9 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
       },
     });
 
-    // Actualiza el mensaje localmente
     setMessages((prev) =>
       prev.map((msg) =>
-        msg.id === messageId ? { ...msg, read: true } : msg
+        msg.id === messageId ? { ...msg, read: true, status: 'read' } : msg // <-- AGREGADO: status: 'read'
       )
     );
   } catch (error) {
@@ -58,19 +71,58 @@ useEffect(() => {
   const roomId = currentUser && recipientId
     ? [currentUser.id, recipientId].sort().join('-')
     : null;
-    const handleNewMessage = useCallback((data: any) => {
-      console.log('📬 Chat: Mensaje recibido vía WebSocket:', data);
-      const msg: MessagePrivate = data.message;
-      setMessages((prev) => {
-        // Opcional: Evitar duplicados si la red es inestable
-        // Esto es una medida de seguridad, pero la causa raíz debe ser el listener.
-        if (prev.some(m => m.id === msg.id)) {
-            console.warn('Chat: Mensaje duplicado detectado, ignorando.');
-            return prev;
+   // Dentro de Chat.tsx
+const handleNewMessage = useCallback((data: any) => {
+  console.log('📬 Chat: Mensaje recibido vía WebSocket:', data);
+  const receivedMsg: MessagePrivate = data.message;
+
+  setMessages((prev) => {
+    // Es un mensaje que yo envié si el user_id coincide.
+    const isOwnMessageReceived = String(receivedMsg.user_id) === String(currentUser?.id);
+
+    // Si es un mensaje que yo envié, busco si ya tengo un provisional para reemplazar.
+    if (isOwnMessageReceived) {
+      // Buscamos un mensaje provisional por su contenido y user_id.
+      // Opcionalmente, puedes buscar por un tempId si lo pasas de vuelta desde el backend,
+      // pero usualmente el backend no lo devuelve.
+      const tempMessageIndex = prev.findIndex(
+        (msg) => msg.tempId && msg.content === receivedMsg.content && String(msg.user_id) === String(receivedMsg.user_id)
+      );
+
+      if (tempMessageIndex > -1) {
+        // Encontrado un mensaje provisional, lo reemplazamos con el mensaje real del backend.
+        const updatedMessages = [...prev];
+        updatedMessages[tempMessageIndex] = {
+          ...receivedMsg,
+          // Mantén el status 'sent' o 'read' basado en el 'read' del backend
+          status: receivedMsg.read ? 'read' : 'sent',
+          tempId: undefined, // Limpiamos el tempId ya que ahora es un mensaje real
+        };
+        console.log('🔄 Chat: Mensaje provisional reemplazado:', receivedMsg.id);
+        return updatedMessages;
+      } else {
+        // Caso de que sea un mensaje mío pero no encontré un provisional para reemplazar.
+        // Esto puede pasar si se recargó la página o si el tempId no coincidió.
+        // En este caso, lo tratamos como un mensaje nuevo para evitar perderlo.
+        // También podemos revisar si ya existe un mensaje con el mismo ID definitivo.
+        if (prev.some(msg => msg.id === receivedMsg.id)) {
+          console.warn('Chat: Mensaje recibido con ID existente, ignorando para evitar duplicados:', receivedMsg.id);
+          return prev; // Ya existe, no lo añades de nuevo
         }
-        return [...prev, msg];
-      });
-    }, []);
+        console.log('➕ Chat: Añadiendo mensaje propio (no provisional) como nuevo:', receivedMsg.id);
+        return [...prev, { ...receivedMsg, status: receivedMsg.read ? 'read' : 'sent' }];
+      }
+    } else {
+      // Si es un mensaje de otro usuario, simplemente lo añadimos si no existe ya por ID
+      if (prev.some(m => m.id === receivedMsg.id)) {
+        console.warn('Chat: Mensaje de otro usuario con ID existente, ignorando:', receivedMsg.id);
+        return prev;
+      }
+      console.log('➕ Chat: Añadiendo mensaje de otro usuario como nuevo:', receivedMsg.id);
+      return [...prev, { ...receivedMsg, status: receivedMsg.read ? 'read' : 'sent' }];
+    }
+  });
+}, [currentUser]); // currentUser es una dependencia porque lo usas para isOwnMessageReceived
   useEffect(() => {
     if (!currentUser?.id || !recipientId) return;
 
@@ -147,12 +199,33 @@ useEffect(() => {
 
 const sendMessage = async (e: React.FormEvent) => {
   e.preventDefault();
-  if (!newMessage.trim() && !attachedFile) return;
+  const messageContent = newMessage.trim();
+  if (!messageContent && !attachedFile) return;
+
+  // 1. Crear un mensaje provisional para mostrarlo inmediatamente
+  const tempMessage: MessagePrivate = {
+    id: Date.now(), // Usamos un timestamp como ID temporal
+    tempId: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // Un ID único temporal
+    user_id: currentUser!.id, // El ID del usuario actual
+    contact_id: Number(recipientId),
+    content: messageContent,
+    attachment_url: attachedFile ? URL.createObjectURL(attachedFile) : undefined, // URL temporal para la visualización del archivo
+    read: false, // Por defecto no leído
+    created_at: new Date().toISOString(), // Fecha actual
+    updated_at: new Date().toISOString(),
+    sender: currentUser!, // Se envía a sí mismo
+    status: 'sending', // Estado inicial
+  };
+
+  setMessages((prev) => [...prev, tempMessage]); // Agrega el mensaje provisional a la UI
+  setNewMessage('');
+  setAttachedFile(null);
+  setShowEmojiPicker(false); // Oculta el picker
 
   const formData = new FormData();
-  formData.append('user_id', currentUser?.id);
-  formData.append('contact_id', recipientId);
-  formData.append('content', newMessage.trim() || '');
+  formData.append('user_id', String(currentUser?.id)); // Asegúrate de que los IDs son strings si el backend los espera así
+  formData.append('contact_id', String(recipientId));
+  formData.append('content', messageContent || '');
 
   if (attachedFile) {
     formData.append('file', attachedFile);
@@ -171,27 +244,26 @@ const sendMessage = async (e: React.FormEvent) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('❌ Error de validación:', data);
+      console.error('❌ Error de validación al enviar:', data);
+      // Opcional: Remover el mensaje provisional o marcarlo como error
+      setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
       return;
     }
 
-    // ELIMINA O COMENTA ESTA LÍNEA:
-    // if (data?.data) {
-    //   setMessages((prev) => [...prev, data.data]); // ESTA LÍNEA ES LA CAUSA DE LA DUPLICACIÓN PARA EL REMITENTE
-    //   setNewMessage('');
-    //   setAttachedFile(null);
-    // }
-
-    // En su lugar, simplemente limpia los campos después del envío exitoso
-    setNewMessage('');
-    setAttachedFile(null);
-
-    // El mensaje será añadido a `setMessages` cuando se reciba por el WebSocket
-    // a través del `channel.listen('.messagecreatedprivate', handleNewMessage)`
-    // del mismo remitente y de los receptores.
+    // El mensaje exitoso será manejado por el WebSocket, no necesitamos setearlo aquí.
+    // La actualización del estado 'sent' o 'read' también la manejará el WebSocket.
+    
+    // Si quieres actualizar el estado a 'sent' antes de que llegue por WebSocket, podrías hacer:
+    // setMessages((prev) =>
+    //   prev.map((msg) =>
+    //     msg.tempId === tempMessage.tempId ? { ...data.data, status: 'sent' } : msg
+    //   )
+    // );
 
   } catch (error) {
     console.error('Error al enviar mensaje:', error);
+    // Remover el mensaje provisional o marcarlo como error
+    setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
   }
 };
 
@@ -217,9 +289,11 @@ const sendMessage = async (e: React.FormEvent) => {
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto bg-gray-100">
-       {messages.map((message) => {
-  const isOwnMessage = message.user_id === currentUser?.id;
-  const sender = message.sender;
+       // En tu JSX, dentro del map:
+{messages.map((message) => {
+  // Aseguramos que ambos IDs sean del mismo tipo para la comparación
+  const isOwnMessage = String(message.user_id) === String(currentUser?.id);
+  const sender = message.sender; // Ya tienes esto
 
   return (
     <div
@@ -233,7 +307,7 @@ const sendMessage = async (e: React.FormEvent) => {
       >
         {!isOwnMessage && (
           <div className="text-xs text-gray-500 mb-1">
-            {sender?.name}
+            {sender?.name || 'Usuario desconocido'} {/* Añadido fallback */}
           </div>
         )}
 
@@ -257,15 +331,20 @@ const sendMessage = async (e: React.FormEvent) => {
               minute: '2-digit',
             })}
           </span>
-          {isOwnMessage && (
-            <span className="ml-1">
-              {message.read ? (
-                <span className="text-xs text-blue-100">✓✓</span>
-              ) : (
+          {/* {isOwnMessage && (
+            <span className="ml-1 flex items-center"> 
+              {message.status === 'sending' && (
                 <Clock className="w-3 h-3 text-blue-100" />
               )}
+              {message.status === 'sent' && (
+                // Una sola palomita para enviado al servidor/entregado
+                <Check className="w-3 h-3 text-blue-100" />
+              )}
+             {message.status === 'read' && (
+                <CheckCheck className="w-3 h-3 text-blue-100" />
+              )}
             </span>
-          )}
+          )} */}
         </div>
       </div>
     </div>
