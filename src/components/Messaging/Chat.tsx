@@ -13,9 +13,7 @@ const API_URL = import.meta.env.VITE_API_URL;
 interface ChatProps {
   recipientId: string;
   recipientData: User;
-  // Nueva prop: indica si estamos en modo observación (para admins)
   isObservationMode?: boolean;
-  // Nueva prop: mensajes si estamos en modo observación
   observationMessages?: MessagePrivate[];
   observationLoading?: boolean;
   observationError?: string | null;
@@ -30,17 +28,18 @@ const Chat: React.FC<ChatProps> = ({
   observationError = null,
 }) => {
   const { currentUser } = useAuth();
-  // Los mensajes se gestionan de forma diferente en modo observación
   const [messages, setMessages] = useState<MessagePrivate[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  // Nuevo estado para el mensaje de advertencia al usuario
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Mark messages as read (solo para usuarios NO admin)
   const markMessageAsRead = async (messageId: number) => {
-    if (isObservationMode) return; // No marcar como leído en modo observación
+    if (isObservationMode) return;
 
     console.log('Marcando mensaje como leído...');
     try {
@@ -64,7 +63,7 @@ const Chat: React.FC<ChatProps> = ({
   };
 
   useEffect(() => {
-    if (isObservationMode) return; // No se aplica en modo observación
+    if (isObservationMode) return;
 
     const unreadMessages = messages.filter(
       (m) => String(m.user_id) === recipientId && !m.read
@@ -75,12 +74,12 @@ const Chat: React.FC<ChatProps> = ({
     }
   }, [messages, recipientId, isObservationMode]);
 
-  const roomId = currentUser && recipientId && !isObservationMode // RoomId solo si NO es modo observación
+  const roomId = currentUser && recipientId && !isObservationMode
     ? [currentUser.id, recipientId].sort().join('-')
     : null;
 
   const handleNewMessage = useCallback((data: any) => {
-    if (isObservationMode) return; // No aplica en modo observación
+    if (isObservationMode) return;
 
     console.log('📬 Chat: Mensaje recibido vía WebSocket:', data);
     const receivedMsg: MessagePrivate = data.message;
@@ -123,13 +122,11 @@ const Chat: React.FC<ChatProps> = ({
 
   useEffect(() => {
     if (isObservationMode) {
-      // En modo observación, los mensajes vienen de props
       setMessages(observationMessages);
       setLoading(observationLoading);
       return;
     }
 
-    // Lógica normal de carga de mensajes para usuarios no admin
     if (!currentUser?.id || !recipientId) return;
 
     const fetchMessages = async () => {
@@ -195,12 +192,74 @@ const Chat: React.FC<ChatProps> = ({
     }
   };
 
+  // --- Nueva función de validación de mensajes ---
+  const containsBannedWordsOrPatterns = (text: string): boolean => {
+    const lowerCaseText = text.toLowerCase();
+
+    // Palabras clave
+    const bannedKeywords = [
+      'whatsapp',
+      'telegram',
+      'numero', // cubre 'número' también
+      'nro',
+      'hablame',
+      'llama',
+      'contacto',
+      'por fuera',
+      'clases privadas', // Para capturar frases
+      'mi cel', // Mi celular
+      'mi tel', // Mi teléfono
+      '+54', // Prefijo de Argentina
+    ];
+
+    // Expresiones Regulares para números de teléfono
+    // Adaptar esto a los formatos de números en Argentina o los esperados
+    const phoneRegex = [
+        /\b\d{2}\s?\d{4}[-\s]?\d{4}\b/, // Ej: 11 4567 8901, 11-4567-8901, 1145678901 (para 10 dígitos)
+        /\b\d{3}[-\s]?\d{3}[-\s]?\d{4}\b/, // Ej: 221-555-1234 (para 10 dígitos)
+        /\b(?:\+?54)?(?:\s*\d{2,4}){2,3}\s*\d{6,8}\b/, // Patrón más flexible para números argentinos con o sin prefijo de país. Ej: +54 9 11 5555-1234, 11 5555 1234
+        /\b\d{7,10}\b/ // Para números de 7 a 10 dígitos consecutivos
+    ];
+
+    // Verificar palabras clave
+    for (const keyword of bannedKeywords) {
+      if (lowerCaseText.includes(keyword)) {
+        console.warn(`Mensaje bloqueado por palabra clave: ${keyword}`);
+        return true;
+      }
+    }
+
+    // Verificar patrones de números de teléfono
+    for (const regex of phoneRegex) {
+      if (regex.test(lowerCaseText)) {
+        console.warn(`Mensaje bloqueado por patrón de número de teléfono: ${text}`);
+        return true;
+      }
+    }
+
+    return false;
+  };
+  // --- Fin de la nueva función de validación ---
+
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isObservationMode) return; // No permitir enviar mensajes en modo observación
+    if (isObservationMode) return;
 
     const messageContent = newMessage.trim();
     if (!messageContent && !attachedFile) return;
+
+    // --- Llamada a la función de validación ---
+    if (containsBannedWordsOrPatterns(messageContent)) {
+      setWarningMessage(
+        '¡Advertencia! Este mensaje contiene información sensible o prohibida. Por favor, revisa el contenido. El intento de compartir contactos externos puede resultar en la suspensión de tu cuenta.'
+      );
+      // Opcional: podrías poner un timeout para que el mensaje desaparezca
+      setTimeout(() => setWarningMessage(null), 8000); // El mensaje desaparece después de 8 segundos
+      return; // Detener el envío del mensaje
+    }
+    // --- Fin de la validación ---
+
 
     const tempMessage: MessagePrivate = {
       id: Date.now(),
@@ -220,6 +279,7 @@ const Chat: React.FC<ChatProps> = ({
     setNewMessage('');
     setAttachedFile(null);
     setShowEmojiPicker(false);
+    setWarningMessage(null); // Limpiar cualquier advertencia anterior
 
     const formData = new FormData();
     formData.append('user_id', String(currentUser?.id));
@@ -253,10 +313,9 @@ const Chat: React.FC<ChatProps> = ({
     }
   };
 
-  // Determinar qué mensajes mostrar y si está cargando/hay error
   const displayMessages = isObservationMode ? observationMessages : messages;
   const displayLoading = isObservationMode ? observationLoading : loading;
-  const displayError = isObservationMode ? observationError : null; // No hay un estado de error específico para el modo de chat normal aquí.
+  const displayError = isObservationMode ? observationError : null;
 
   if (displayLoading) {
     return (
@@ -277,9 +336,6 @@ const Chat: React.FC<ChatProps> = ({
              </span>
           )}
         </h2>
-        {/* <span className="text-sm text-gray-500 capitalize">
-          {recipientData.role_id}
-        </span> */}
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto bg-gray-100">
@@ -294,12 +350,6 @@ const Chat: React.FC<ChatProps> = ({
           </div>
         ) : (
           displayMessages.map((message) => {
-            // En modo observación, `currentUser` es el admin, no el remitente real del mensaje.
-            // Por eso usamos `message.user_id` para determinar quién envió el mensaje
-            // y lo comparamos con `recipientId` (el alumno objetivo) para simular
-            // el lado del chat para una visualización más intuitiva.
-            // También necesitamos considerar si `message.user_id` es el `selectedTeacher.id`
-            // que se pasó al chat de observación.
             const isTargetRecipient = String(message.user_id) === String(recipientId);
 
             return (
@@ -345,9 +395,16 @@ const Chat: React.FC<ChatProps> = ({
         <div ref={messagesEndRef}></div>
       </div>
 
-      {/* El formulario de envío de mensaje solo se muestra si NO estamos en modo observación */}
       {!isObservationMode && (
         <form onSubmit={sendMessage} className="p-4 bg-white border-t">
+          {/* Mensaje de advertencia */}
+          {warningMessage && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-3" role="alert">
+              <strong className="font-bold">¡Cuidado! </strong>
+              <span className="block sm:inline">{warningMessage}</span>
+            </div>
+          )}
+
           <div className="flex items-center space-x-2">
             <div className="relative">
               <button
