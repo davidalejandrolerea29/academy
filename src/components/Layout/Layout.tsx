@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCall } from '../../contexts/CallContext';
-import VideoRoom from '../VideoRoom/VideoRoom'; // Asegúrate de que la importación sea correcta
+import VideoRoom from '../VideoRoom/VideoRoom';
 import {
   Video,
   MessageSquare,
@@ -20,14 +20,12 @@ const Layout: React.FC = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // activeRoomId es la clave para montar/desmontar VideoRoom
   const { activeRoomId, endCall, isCallMinimized } = useCall();
 
   const handleLogout = async () => {
     try {
-      // Si hay una llamada activa al cerrar sesión, asegúrate de terminarla
       if (activeRoomId) {
-        endCall(); // Esto limpiará activeRoomId y navegará
+        endCall();
       }
       await logout();
       navigate('/login');
@@ -85,7 +83,6 @@ const Layout: React.FC = () => {
               <X className="w-6 h-6" />
             </button>
           </div>
-
 
           {currentUser && (
             <>
@@ -186,15 +183,14 @@ const Layout: React.FC = () => {
         </header>
 
         {/* Content area */}
-        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50">
-          <div className="container mx-auto p-4">
+        <main className="flex-1 overflow-x-hidden lg:overflow-y-auto bg-gray-50">
+          <div className="container mx-auto p-0 lg:p-4 h-full **overflow-hidden md:overflow-visible**"> {/* CAMBIO AQUÍ */}
             <Outlet />
           </div>
         </main>
       </div>
 
       {/* VideoRoom rendered here, outside the Outlet */}
-      {/* Si activeRoomId es null, el componente VideoRoom no se montará */}
       {activeRoomId && (
         <div className={`
           fixed bg-black bg-opacity-75 z-40
@@ -206,7 +202,7 @@ const Layout: React.FC = () => {
         `}>
           <VideoRoom
             roomId={activeRoomId}
-            onCallEnded={endCall} // onCallEnded es el mismo endCall del CallContext
+            onCallEnded={endCall}
           />
         </div>
       )}

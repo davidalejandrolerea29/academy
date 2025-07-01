@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useAuth } from '../../contexts/AuthContext';
 import { MessagePrivate, User } from '../../types';
-import { Send, Clock, Paperclip, Smile, Check, CheckCheck } from 'lucide-react';
+import { Send, Paperclip, Smile, ArrowLeft } from 'lucide-react'; // Importar ArrowLeft
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
@@ -17,6 +17,8 @@ interface ChatProps {
   observationMessages?: MessagePrivate[];
   observationLoading?: boolean;
   observationError?: string | null;
+  // Nueva prop para manejar la acción de volver en móvil
+  onBackToContacts?: () => void;
 }
 
 const Chat: React.FC<ChatProps> = ({
@@ -26,6 +28,7 @@ const Chat: React.FC<ChatProps> = ({
   observationMessages = [],
   observationLoading = false,
   observationError = null,
+  onBackToContacts, // Recibimos la función para volver
 }) => {
   const { currentUser } = useAuth();
   const [messages, setMessages] = useState<MessagePrivate[]>([]);
@@ -33,34 +36,32 @@ const Chat: React.FC<ChatProps> = ({
   const [loading, setLoading] = useState(true);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  // Nuevo estado para el mensaje de advertencia al usuario
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Mark messages as read (solo para usuarios NO admin)
-  const markMessageAsRead = async (messageId: number) => {
-    if (isObservationMode) return;
+  // const markMessageAsRead = async (messageId: number) => {
+  //   if (isObservationMode) return;
 
-    console.log('Marcando mensaje como leído...');
-    try {
-      await fetch(`${API_URL}/auth/privatechat/${messageId}/read`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${currentUser?.token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-      });
+  //   console.log('Marcando mensaje como leído...');
+  //   try {
+  //     await fetch(`${API_URL}/auth/privatechat/${messageId}/read`, {
+  //       method: 'PATCH',
+  //       headers: {
+  //         Authorization: `Bearer ${currentUser?.token}`,
+  //         'Content-Type': 'application/json',
+  //         Accept: 'application/json',
+  //       },
+  //     });
 
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId ? { ...msg, read: true, status: 'read' } : msg
-        )
-      );
-    } catch (error) {
-      console.error('Error al marcar mensaje como leído:', error);
-    }
-  };
+  //     setMessages((prev) =>
+  //       prev.map((msg) =>
+  //         msg.id === messageId ? { ...msg, read: true, status: 'read' } : msg
+  //       )
+  //     );
+  //   } catch (error) {
+  //     console.error('Error al marcar mensaje como leído:', error);
+  //   }
+  // };
 
   useEffect(() => {
     if (isObservationMode) return;
@@ -69,9 +70,9 @@ const Chat: React.FC<ChatProps> = ({
       (m) => String(m.user_id) === recipientId && !m.read
     );
 
-    if (unreadMessages.length > 0) {
-      unreadMessages.forEach((msg) => markMessageAsRead(msg.id));
-    }
+    // if (unreadMessages.length > 0) {
+    //   unreadMessages.forEach((msg) => markMessageAsRead(msg.id));
+    // }
   }, [messages, recipientId, isObservationMode]);
 
   const roomId = currentUser && recipientId && !isObservationMode
@@ -192,36 +193,21 @@ const Chat: React.FC<ChatProps> = ({
     }
   };
 
-  // --- Nueva función de validación de mensajes ---
   const containsBannedWordsOrPatterns = (text: string): boolean => {
     const lowerCaseText = text.toLowerCase();
 
-    // Palabras clave
     const bannedKeywords = [
-      'whatsapp',
-      'telegram',
-      'numero', // cubre 'número' también
-      'nro',
-      'hablame',
-      'llama',
-      'contacto',
-      'por fuera',
-      'clases privadas', // Para capturar frases
-      'mi cel', // Mi celular
-      'mi tel', // Mi teléfono
-      '+54', // Prefijo de Argentina
+      'whatsapp', 'telegram', 'numero', 'nro', 'hablame', 'llama',
+      'contacto', 'por fuera', 'clases privadas', 'mi cel', 'mi tel', '+54',
     ];
 
-    // Expresiones Regulares para números de teléfono
-    // Adaptar esto a los formatos de números en Argentina o los esperados
     const phoneRegex = [
-        /\b\d{2}\s?\d{4}[-\s]?\d{4}\b/, // Ej: 11 4567 8901, 11-4567-8901, 1145678901 (para 10 dígitos)
-        /\b\d{3}[-\s]?\d{3}[-\s]?\d{4}\b/, // Ej: 221-555-1234 (para 10 dígitos)
-        /\b(?:\+?54)?(?:\s*\d{2,4}){2,3}\s*\d{6,8}\b/, // Patrón más flexible para números argentinos con o sin prefijo de país. Ej: +54 9 11 5555-1234, 11 5555 1234
-        /\b\d{7,10}\b/ // Para números de 7 a 10 dígitos consecutivos
+        /\b\d{2}\s?\d{4}[-\s]?\d{4}\b/,
+        /\b\d{3}[-\s]?\d{3}[-\s]?\d{4}\b/,
+        /\b(?:\+?54)?(?:\s*\d{2,4}){2,3}\s*\d{6,8}\b/,
+        /\b\d{7,10}\b/
     ];
 
-    // Verificar palabras clave
     for (const keyword of bannedKeywords) {
       if (lowerCaseText.includes(keyword)) {
         console.warn(`Mensaje bloqueado por palabra clave: ${keyword}`);
@@ -229,18 +215,14 @@ const Chat: React.FC<ChatProps> = ({
       }
     }
 
-    // Verificar patrones de números de teléfono
     for (const regex of phoneRegex) {
       if (regex.test(lowerCaseText)) {
         console.warn(`Mensaje bloqueado por patrón de número de teléfono: ${text}`);
         return true;
       }
     }
-
     return false;
   };
-  // --- Fin de la nueva función de validación ---
-
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -249,17 +231,13 @@ const Chat: React.FC<ChatProps> = ({
     const messageContent = newMessage.trim();
     if (!messageContent && !attachedFile) return;
 
-    // --- Llamada a la función de validación ---
     if (containsBannedWordsOrPatterns(messageContent)) {
       setWarningMessage(
         '¡Advertencia! Este mensaje contiene información sensible o prohibida. Por favor, revisa el contenido. El intento de compartir contactos externos puede resultar en la suspensión de tu cuenta.'
       );
-      // Opcional: podrías poner un timeout para que el mensaje desaparezca
-      setTimeout(() => setWarningMessage(null), 8000); // El mensaje desaparece después de 8 segundos
-      return; // Detener el envío del mensaje
+      setTimeout(() => setWarningMessage(null), 8000);
+      return;
     }
-    // --- Fin de la validación ---
-
 
     const tempMessage: MessagePrivate = {
       id: Date.now(),
@@ -279,7 +257,7 @@ const Chat: React.FC<ChatProps> = ({
     setNewMessage('');
     setAttachedFile(null);
     setShowEmojiPicker(false);
-    setWarningMessage(null); // Limpiar cualquier advertencia anterior
+    setWarningMessage(null);
 
     const formData = new FormData();
     formData.append('user_id', String(currentUser?.id));
@@ -327,8 +305,17 @@ const Chat: React.FC<ChatProps> = ({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="bg-white shadow-sm p-4 border-b">
-        <h2 className="text-lg font-semibold text-gray-800">
+      <div className="bg-white shadow-sm border-b flex items-center p-2"> {/* Añadimos flex y items-center */}
+        {/* Botón de volver, visible solo en móvil para usuarios que no son admin */}
+        {onBackToContacts && currentUser?.role_id !== 1 && (
+          <button
+            onClick={onBackToContacts}
+            className="lg:hidden text-blue-500 hover:text-blue-600 mr-3 flex items-center"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
+        <h2 className="text-lg font-semibold text-gray-800 flex-1"> {/* flex-1 para que el título ocupe el espacio restante */}
           {recipientData.name}
           {isObservationMode && (
              <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
@@ -350,21 +337,30 @@ const Chat: React.FC<ChatProps> = ({
           </div>
         ) : (
           displayMessages.map((message) => {
-            const isTargetRecipient = String(message.user_id) === String(recipientId);
+            // Un mensaje es "mío" si el user_id del mensaje coincide con el currentUser.id
+            const isMyMessage = String(message.user_id) === String(currentUser?.id);
 
             return (
               <div
                 key={message.id}
-                className={`flex mb-4 ${isTargetRecipient ? 'justify-end' : 'justify-start'}`}
+                // Cambiamos la lógica: si es mío a la derecha, si no a la izquierda
+                className={`flex mb-4 ${isMyMessage ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-2xl shadow-sm ${
-                    isTargetRecipient ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'
-                  }`}
+                  className={`
+                    max-w-[75%]
+                    md:max-w-md
+                    lg:max-w-lg
+                    px-4 py-2 rounded-2xl shadow-sm
+                    ${isMyMessage ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'}
+                  `}
                 >
-                  <div className="text-xs text-gray-500 mb-1">
-                    {message.sender?.name || 'Usuario desconocido'}
-                  </div>
+                  {/* Solo mostrar el nombre del remitente si no es mi mensaje */}
+                  {!isMyMessage && (
+                    <div className="text-xs text-gray-500 mb-1">
+                      {message.sender?.name || 'Usuario desconocido'}
+                    </div>
+                  )}
 
                   <div className="text-sm break-words whitespace-pre-wrap">
                     {message.content}
@@ -374,13 +370,13 @@ const Chat: React.FC<ChatProps> = ({
                       href={message.attachment_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block mt-2 text-xs text-blue-200 underline"
+                      className={`block mt-2 text-xs ${isMyMessage ? 'text-blue-100' : 'text-blue-500'} underline`}
                     >
                       Ver archivo adjunto
                     </a>
                   )}
                   <div className="flex items-center justify-end mt-1">
-                    <span className={`text-xs ${isTargetRecipient ? 'text-blue-100' : 'text-gray-400'}`}>
+                    <span className={`text-xs ${isMyMessage ? 'text-blue-100' : 'text-gray-400'}`}>
                       {new Date(message.created_at).toLocaleTimeString('es-ES', {
                         hour: '2-digit',
                         minute: '2-digit',
@@ -397,20 +393,19 @@ const Chat: React.FC<ChatProps> = ({
 
       {!isObservationMode && (
         <form onSubmit={sendMessage} className="p-4 bg-white border-t">
-          {/* Mensaje de advertencia */}
           {warningMessage && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-3" role="alert">
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-3 text-sm" role="alert">
               <strong className="font-bold">¡Cuidado! </strong>
               <span className="block sm:inline">{warningMessage}</span>
             </div>
           )}
 
-          <div className="flex items-center space-x-2">
-            <div className="relative">
+          <div className="flex items-end space-x-2">
+            <div className="relative flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                className="text-gray-500 hover:text-blue-600"
+                className="text-gray-500 hover:text-blue-600 p-1 rounded-full transition-colors"
               >
                 <Smile className="w-6 h-6" />
               </button>
@@ -421,7 +416,7 @@ const Chat: React.FC<ChatProps> = ({
               )}
             </div>
 
-            <label className="cursor-pointer text-gray-500 hover:text-blue-600">
+            <label className="cursor-pointer text-gray-500 hover:text-blue-600 flex-shrink-0 p-1 rounded-full transition-colors">
               <Paperclip className="w-6 h-6" />
               <input type="file" hidden onChange={handleFileChange} />
             </label>
@@ -431,19 +426,19 @@ const Chat: React.FC<ChatProps> = ({
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder="Escribe un mensaje..."
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:focus:ring-blue-500 min-w-0"
             />
 
             <button
               type="submit"
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
+              className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg transition-colors flex-shrink-0"
               disabled={!newMessage.trim() && !attachedFile}
             >
               <Send className="w-5 h-5" />
             </button>
           </div>
           {attachedFile && (
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-gray-500 text-right">
               Archivo seleccionado: <strong>{attachedFile.name}</strong>
             </div>
           )}
