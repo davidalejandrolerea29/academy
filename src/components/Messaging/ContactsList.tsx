@@ -42,13 +42,8 @@ const ContactsList: React.FC<ContactsListProps> = ({
         if (currentAdminView === 'teachers') {
           url = `${API_URL}/auth/admin/teachers`;
         } else if (currentAdminView === 'students' || currentAdminView === 'chat-observation') {
-          // When admin is viewing students OR observing chat, keep the student list
-          // If you have a direct assignment of students to teachers,
-          // you SHOULD send `teacher_id` here.
-          // Example: url = `${API_URL}/auth/admin/students?teacher_id=${selectedTeacherForStudents?.id}`;
           url = `${API_URL}/auth/admin/students`;
         } else {
-          // This case should ideally not be reached if adminView is always one of the defined
           setListItems([]);
           setLoading(false);
           return;
@@ -74,7 +69,6 @@ const ContactsList: React.FC<ContactsListProps> = ({
       if (isContactsList) {
         setListItems(data.contacts?.map((c: any) => c.user) || []);
       } else if (currentUser.role_id === 1) {
-        // If currentAdminView is 'chat-observation', we still want to show the 'students' list
         if (currentAdminView === 'teachers') {
           setListItems(data.teachers || []);
         } else if (currentAdminView === 'students' || currentAdminView === 'chat-observation') {
@@ -90,8 +84,6 @@ const ContactsList: React.FC<ContactsListProps> = ({
   };
 
   useEffect(() => {
-    // Fetch items only if it's not the normal user mobile chat view
-    // For admins, fetch items based on currentAdminView (teachers/students/chat-observation)
     if (currentUser?.role_id === 1 || (currentUser?.role_id !== 1 && currentAdminView === 'contacts')) {
       fetchItems();
     }
@@ -156,8 +148,6 @@ const ContactsList: React.FC<ContactsListProps> = ({
                     onSetSelectedTeacher(item);
                     setCurrentAdminView('students');
                   } else if (currentAdminView === 'students' || currentAdminView === 'chat-observation') {
-                    // Even if already in chat-observation, allow selecting a different student
-                    setCurrentAdminView('chat-observation');
                     onSelectChatTarget(item.id, item);
                   }
                 } else {
