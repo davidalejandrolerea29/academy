@@ -1,9 +1,10 @@
-// imports
+// src/components/Messaging/Chat.tsx
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useAuth } from '../../contexts/AuthContext';
 import { MessagePrivate, User } from '../../types';
-import { Send, Clock, Paperclip, Smile, Check, CheckCheck } from 'lucide-react'; // Agrega Check y CheckCheck
+import { Send, Clock, Paperclip, Smile, Check, CheckCheck } from 'lucide-react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
@@ -12,24 +13,24 @@ const API_URL = import.meta.env.VITE_API_URL;
 interface ChatProps {
   recipientId: string;
   recipientData: User;
+  // Nueva prop: indica si estamos en modo observación (para admins)
+  isObservationMode?: boolean;
+  // Nueva prop: mensajes si estamos en modo observación
+  observationMessages?: MessagePrivate[];
+  observationLoading?: boolean;
+  observationError?: string | null;
 }
-// En la interfaz MessagePrivate (en types.ts, o donde la tengas):
-interface MessagePrivate {
-  id: number; // ID del backend
-  user_id: number;
-  contact_id: number;
-  content: string;
-  attachment_url?: string;
-  read: boolean;
-  created_at: string;
-  updated_at: string;
-  sender?: User;
-  // Agrega esto para mensajes provisionales en el frontend
-  tempId?: string; // ID temporal para el frontend, para mensajes que aún no tienen ID de DB
-  status?: 'sending' | 'sent' | 'read'; // Nuevo estado para controlar las palomitas
-}
-const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
+
+const Chat: React.FC<ChatProps> = ({
+  recipientId,
+  recipientData,
+  isObservationMode = false,
+  observationMessages = [],
+  observationLoading = false,
+  observationError = null,
+}) => {
   const { currentUser } = useAuth();
+  // Los mensajes se gestionan de forma diferente en modo observación
   const [messages, setMessages] = useState<MessagePrivate[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -37,93 +38,98 @@ const Chat: React.FC<ChatProps> = ({ recipientId, recipientData }) => {
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Mark messages as read (solo para usuarios NO admin)
   const markMessageAsRead = async (messageId: number) => {
-  console.log('estoy andando como leido')
-  try {
-    await fetch(`${API_URL}/auth/privatechat/${messageId}/read`, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${currentUser?.token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-    });
+    if (isObservationMode) return; // No marcar como leído en modo observación
 
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId ? { ...msg, read: true, status: 'read' } : msg // <-- AGREGADO: status: 'read'
-      )
+    console.log('Marcando mensaje como leído...');
+    try {
+      await fetch(`${API_URL}/auth/privatechat/${messageId}/read`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${currentUser?.token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      });
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, read: true, status: 'read' } : msg
+        )
+      );
+    } catch (error) {
+      console.error('Error al marcar mensaje como leído:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (isObservationMode) return; // No se aplica en modo observación
+
+    const unreadMessages = messages.filter(
+      (m) => String(m.user_id) === recipientId && !m.read
     );
-  } catch (error) {
-    console.error('Error al marcar mensaje como leído:', error);
-  }
-};
-useEffect(() => {
-  const unreadMessages = messages.filter(
-    (m) => m.user_id === recipientId && !m.read
-  );
 
-  if (unreadMessages.length > 0) {
-    unreadMessages.forEach((msg) => markMessageAsRead(msg.id));
-  }
-}, [messages, recipientId]);
+    if (unreadMessages.length > 0) {
+      unreadMessages.forEach((msg) => markMessageAsRead(msg.id));
+    }
+  }, [messages, recipientId, isObservationMode]);
 
-  const roomId = currentUser && recipientId
+  const roomId = currentUser && recipientId && !isObservationMode // RoomId solo si NO es modo observación
     ? [currentUser.id, recipientId].sort().join('-')
     : null;
-   // Dentro de Chat.tsx
-const handleNewMessage = useCallback((data: any) => {
-  console.log('📬 Chat: Mensaje recibido vía WebSocket:', data);
-  const receivedMsg: MessagePrivate = data.message;
 
-  setMessages((prev) => {
-    // Es un mensaje que yo envié si el user_id coincide.
-    const isOwnMessageReceived = String(receivedMsg.user_id) === String(currentUser?.id);
+  const handleNewMessage = useCallback((data: any) => {
+    if (isObservationMode) return; // No aplica en modo observación
 
-    // Si es un mensaje que yo envié, busco si ya tengo un provisional para reemplazar.
-    if (isOwnMessageReceived) {
-      // Buscamos un mensaje provisional por su contenido y user_id.
-      // Opcionalmente, puedes buscar por un tempId si lo pasas de vuelta desde el backend,
-      // pero usualmente el backend no lo devuelve.
-      const tempMessageIndex = prev.findIndex(
-        (msg) => msg.tempId && msg.content === receivedMsg.content && String(msg.user_id) === String(receivedMsg.user_id)
-      );
+    console.log('📬 Chat: Mensaje recibido vía WebSocket:', data);
+    const receivedMsg: MessagePrivate = data.message;
 
-      if (tempMessageIndex > -1) {
-        // Encontrado un mensaje provisional, lo reemplazamos con el mensaje real del backend.
-        const updatedMessages = [...prev];
-        updatedMessages[tempMessageIndex] = {
-          ...receivedMsg,
-          // Mantén el status 'sent' o 'read' basado en el 'read' del backend
-          status: receivedMsg.read ? 'read' : 'sent',
-          tempId: undefined, // Limpiamos el tempId ya que ahora es un mensaje real
-        };
-        console.log('🔄 Chat: Mensaje provisional reemplazado:', receivedMsg.id);
-        return updatedMessages;
-      } else {
-        // Caso de que sea un mensaje mío pero no encontré un provisional para reemplazar.
-        // Esto puede pasar si se recargó la página o si el tempId no coincidió.
-        // En este caso, lo tratamos como un mensaje nuevo para evitar perderlo.
-        // También podemos revisar si ya existe un mensaje con el mismo ID definitivo.
-        if (prev.some(msg => msg.id === receivedMsg.id)) {
-          console.warn('Chat: Mensaje recibido con ID existente, ignorando para evitar duplicados:', receivedMsg.id);
-          return prev; // Ya existe, no lo añades de nuevo
+    setMessages((prev) => {
+      const isOwnMessageReceived = String(receivedMsg.user_id) === String(currentUser?.id);
+
+      if (isOwnMessageReceived) {
+        const tempMessageIndex = prev.findIndex(
+          (msg) => msg.tempId && msg.content === receivedMsg.content && String(msg.user_id) === String(receivedMsg.user_id)
+        );
+
+        if (tempMessageIndex > -1) {
+          const updatedMessages = [...prev];
+          updatedMessages[tempMessageIndex] = {
+            ...receivedMsg,
+            status: receivedMsg.read ? 'read' : 'sent',
+            tempId: undefined,
+          };
+          console.log('🔄 Chat: Mensaje provisional reemplazado:', receivedMsg.id);
+          return updatedMessages;
+        } else {
+          if (prev.some(msg => msg.id === receivedMsg.id)) {
+            console.warn('Chat: Mensaje recibido con ID existente, ignorando para evitar duplicados:', receivedMsg.id);
+            return prev;
+          }
+          console.log('➕ Chat: Añadiendo mensaje propio (no provisional) como nuevo:', receivedMsg.id);
+          return [...prev, { ...receivedMsg, status: receivedMsg.read ? 'read' : 'sent' }];
         }
-        console.log('➕ Chat: Añadiendo mensaje propio (no provisional) como nuevo:', receivedMsg.id);
+      } else {
+        if (prev.some(m => m.id === receivedMsg.id)) {
+          console.warn('Chat: Mensaje de otro usuario con ID existente, ignorando:', receivedMsg.id);
+          return prev;
+        }
+        console.log('➕ Chat: Añadiendo mensaje de otro usuario como nuevo:', receivedMsg.id);
         return [...prev, { ...receivedMsg, status: receivedMsg.read ? 'read' : 'sent' }];
       }
-    } else {
-      // Si es un mensaje de otro usuario, simplemente lo añadimos si no existe ya por ID
-      if (prev.some(m => m.id === receivedMsg.id)) {
-        console.warn('Chat: Mensaje de otro usuario con ID existente, ignorando:', receivedMsg.id);
-        return prev;
-      }
-      console.log('➕ Chat: Añadiendo mensaje de otro usuario como nuevo:', receivedMsg.id);
-      return [...prev, { ...receivedMsg, status: receivedMsg.read ? 'read' : 'sent' }];
-    }
-  });
-}, [currentUser]); // currentUser es una dependencia porque lo usas para isOwnMessageReceived
+    });
+  }, [currentUser, isObservationMode]);
+
   useEffect(() => {
+    if (isObservationMode) {
+      // En modo observación, los mensajes vienen de props
+      setMessages(observationMessages);
+      setLoading(observationLoading);
+      return;
+    }
+
+    // Lógica normal de carga de mensajes para usuarios no admin
     if (!currentUser?.id || !recipientId) return;
 
     const fetchMessages = async () => {
@@ -149,7 +155,6 @@ const handleNewMessage = useCallback((data: any) => {
     fetchMessages();
 
     let channel: EchoChannel | null = null;
-    // Asegúrate de que reverbService se obtenga solo una vez por mount
     const reverbService = createReverbWebSocketService(currentUser?.token);
 
     if (roomId) {
@@ -158,14 +163,10 @@ const handleNewMessage = useCallback((data: any) => {
         .private(channelName)
         .then((chann) => {
           channel = chann;
-
           console.log(`✅ Chat: Intentando escuchar canal "${channelName}".`);
-
           channel.subscribed(() => {
             console.log(`✨ Chat: Autenticado y suscrito exitosamente al canal: "${channelName}"`);
           });
-
-          // Usa el callback memorizado aquí
           channel.listen('.messagecreatedprivate', handleNewMessage);
         })
         .catch((err) => console.error(`❌ Chat: Error al intentar suscribirse o autenticar el canal "${channelName}":`, err));
@@ -177,17 +178,16 @@ const handleNewMessage = useCallback((data: any) => {
         }
       };
     }
-  }, [currentUser, recipientId, roomId, handleNewMessage]);
+  }, [currentUser, recipientId, roomId, handleNewMessage, isObservationMode, observationMessages, observationLoading]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-
- const handleEmojiSelect = (emoji: any) => {
-  setNewMessage((prev) => prev + emoji.native);
-  setShowEmojiPicker(false); // <- Esto lo oculta automáticamente
-};
+  const handleEmojiSelect = (emoji: any) => {
+    setNewMessage((prev) => prev + emoji.native);
+    setShowEmojiPicker(false);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
@@ -195,81 +195,70 @@ const handleNewMessage = useCallback((data: any) => {
     }
   };
 
-// Chat.tsx (solo la función sendMessage)
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isObservationMode) return; // No permitir enviar mensajes en modo observación
 
-const sendMessage = async (e: React.FormEvent) => {
-  e.preventDefault();
-  const messageContent = newMessage.trim();
-  if (!messageContent && !attachedFile) return;
+    const messageContent = newMessage.trim();
+    if (!messageContent && !attachedFile) return;
 
-  // 1. Crear un mensaje provisional para mostrarlo inmediatamente
-  const tempMessage: MessagePrivate = {
-    id: Date.now(), // Usamos un timestamp como ID temporal
-    tempId: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // Un ID único temporal
-    user_id: currentUser!.id, // El ID del usuario actual
-    contact_id: Number(recipientId),
-    content: messageContent,
-    attachment_url: attachedFile ? URL.createObjectURL(attachedFile) : undefined, // URL temporal para la visualización del archivo
-    read: false, // Por defecto no leído
-    created_at: new Date().toISOString(), // Fecha actual
-    updated_at: new Date().toISOString(),
-    sender: currentUser!, // Se envía a sí mismo
-    status: 'sending', // Estado inicial
-  };
+    const tempMessage: MessagePrivate = {
+      id: Date.now(),
+      tempId: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      user_id: currentUser!.id,
+      contact_id: Number(recipientId),
+      content: messageContent,
+      attachment_url: attachedFile ? URL.createObjectURL(attachedFile) : undefined,
+      read: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      sender: currentUser!,
+      status: 'sending',
+    };
 
-  setMessages((prev) => [...prev, tempMessage]); // Agrega el mensaje provisional a la UI
-  setNewMessage('');
-  setAttachedFile(null);
-  setShowEmojiPicker(false); // Oculta el picker
+    setMessages((prev) => [...prev, tempMessage]);
+    setNewMessage('');
+    setAttachedFile(null);
+    setShowEmojiPicker(false);
 
-  const formData = new FormData();
-  formData.append('user_id', String(currentUser?.id)); // Asegúrate de que los IDs son strings si el backend los espera así
-  formData.append('contact_id', String(recipientId));
-  formData.append('content', messageContent || '');
+    const formData = new FormData();
+    formData.append('user_id', String(currentUser?.id));
+    formData.append('contact_id', String(recipientId));
+    formData.append('content', messageContent || '');
 
-  if (attachedFile) {
-    formData.append('file', attachedFile);
-  }
-
-  try {
-    const response = await fetch(`${API_URL}/auth/privatechat`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${currentUser?.token}`,
-        Accept: 'application/json',
-      },
-      body: formData,
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('❌ Error de validación al enviar:', data);
-      // Opcional: Remover el mensaje provisional o marcarlo como error
-      setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
-      return;
+    if (attachedFile) {
+      formData.append('file', attachedFile);
     }
 
-    // El mensaje exitoso será manejado por el WebSocket, no necesitamos setearlo aquí.
-    // La actualización del estado 'sent' o 'read' también la manejará el WebSocket.
-    
-    // Si quieres actualizar el estado a 'sent' antes de que llegue por WebSocket, podrías hacer:
-    // setMessages((prev) =>
-    //   prev.map((msg) =>
-    //     msg.tempId === tempMessage.tempId ? { ...data.data, status: 'sent' } : msg
-    //   )
-    // );
+    try {
+      const response = await fetch(`${API_URL}/auth/privatechat`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${currentUser?.token}`,
+          Accept: 'application/json',
+        },
+        body: formData,
+      });
 
-  } catch (error) {
-    console.error('Error al enviar mensaje:', error);
-    // Remover el mensaje provisional o marcarlo como error
-    setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
-  }
-};
+      const data = await response.json();
 
+      if (!response.ok) {
+        console.error('❌ Error de validación al enviar:', data);
+        setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
+        return;
+      }
+    } catch (error) {
+      console.error('Error al enviar mensaje:', error);
+      setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
+    }
+  };
 
+  // Determinar qué mensajes mostrar y si está cargando/hay error
+  const displayMessages = isObservationMode ? observationMessages : messages;
+  const displayLoading = isObservationMode ? observationLoading : loading;
+  const displayError = isObservationMode ? observationError : null; // No hay un estado de error específico para el modo de chat normal aquí.
 
- if (loading) {
+  if (displayLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
@@ -282,40 +271,50 @@ const sendMessage = async (e: React.FormEvent) => {
       <div className="bg-white shadow-sm p-4 border-b">
         <h2 className="text-lg font-semibold text-gray-800">
           {recipientData.name}
+          {isObservationMode && (
+             <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
+               Observando
+             </span>
+          )}
         </h2>
-        <span className="text-sm text-gray-500 capitalize">
+        {/* <span className="text-sm text-gray-500 capitalize">
           {recipientData.role_id}
-        </span>
+        </span> */}
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto bg-gray-100">
-        {/* Aquí va el cambio para mostrar el mensaje si no hay mensajes */}
-        {messages.length === 0 && !loading ? (
+        {displayError ? (
+          <div className="flex items-center justify-center h-full text-red-500 text-center">
+            Error al cargar el chat: {displayError}
+          </div>
+        ) : displayMessages.length === 0 && !displayLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 text-center">
             <p className="text-lg font-semibold mb-2">¡Es hora de conectar!</p>
             <p className="text-sm">Envía tu primer mensaje para iniciar la conversación.</p>
           </div>
         ) : (
-          // Si hay mensajes, los mapeamos como antes
-          messages.map((message) => {
-            const isOwnMessage = String(message.user_id) === String(currentUser?.id);
-            const sender = message.sender;
+          displayMessages.map((message) => {
+            // En modo observación, `currentUser` es el admin, no el remitente real del mensaje.
+            // Por eso usamos `message.user_id` para determinar quién envió el mensaje
+            // y lo comparamos con `recipientId` (el alumno objetivo) para simular
+            // el lado del chat para una visualización más intuitiva.
+            // También necesitamos considerar si `message.user_id` es el `selectedTeacher.id`
+            // que se pasó al chat de observación.
+            const isTargetRecipient = String(message.user_id) === String(recipientId);
 
             return (
               <div
                 key={message.id}
-                className={`flex mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                className={`flex mb-4 ${isTargetRecipient ? 'justify-end' : 'justify-start'}`}
               >
                 <div
                   className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-2xl shadow-sm ${
-                    isOwnMessage ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'
+                    isTargetRecipient ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'
                   }`}
                 >
-                  {!isOwnMessage && (
-                    <div className="text-xs text-gray-500 mb-1">
-                      {sender?.name || 'Usuario desconocido'}
-                    </div>
-                  )}
+                  <div className="text-xs text-gray-500 mb-1">
+                    {message.sender?.name || 'Usuario desconocido'}
+                  </div>
 
                   <div className="text-sm break-words whitespace-pre-wrap">
                     {message.content}
@@ -331,7 +330,7 @@ const sendMessage = async (e: React.FormEvent) => {
                     </a>
                   )}
                   <div className="flex items-center justify-end mt-1">
-                    <span className={`text-xs ${isOwnMessage ? 'text-blue-100' : 'text-gray-400'}`}>
+                    <span className={`text-xs ${isTargetRecipient ? 'text-blue-100' : 'text-gray-400'}`}>
                       {new Date(message.created_at).toLocaleTimeString('es-ES', {
                         hour: '2-digit',
                         minute: '2-digit',
@@ -346,51 +345,53 @@ const sendMessage = async (e: React.FormEvent) => {
         <div ref={messagesEndRef}></div>
       </div>
 
-      {/* ... (tu formulario de envío de mensaje existente) */}
-      <form onSubmit={sendMessage} className="p-4 bg-white border-t">
-        <div className="flex items-center space-x-2">
-          <div className="relative">
+      {/* El formulario de envío de mensaje solo se muestra si NO estamos en modo observación */}
+      {!isObservationMode && (
+        <form onSubmit={sendMessage} className="p-4 bg-white border-t">
+          <div className="flex items-center space-x-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                className="text-gray-500 hover:text-blue-600"
+              >
+                <Smile className="w-6 h-6" />
+              </button>
+              {showEmojiPicker && (
+                <div className="absolute bottom-12 left-0 z-50">
+                  <Picker data={data} onEmojiSelect={handleEmojiSelect} theme="light" />
+                </div>
+              )}
+            </div>
+
+            <label className="cursor-pointer text-gray-500 hover:text-blue-600">
+              <Paperclip className="w-6 h-6" />
+              <input type="file" hidden onChange={handleFileChange} />
+            </label>
+
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Escribe un mensaje..."
+              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+
             <button
-              type="button"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="text-gray-500 hover:text-blue-600"
+              type="submit"
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
+              disabled={!newMessage.trim() && !attachedFile}
             >
-              <Smile className="w-6 h-6" />
+              <Send className="w-5 h-5" />
             </button>
-            {showEmojiPicker && (
-              <div className="absolute bottom-12 left-0 z-50">
-                <Picker data={data} onEmojiSelect={handleEmojiSelect} theme="light" />
-              </div>
-            )}
           </div>
-
-          <label className="cursor-pointer text-gray-500 hover:text-blue-600">
-            <Paperclip className="w-6 h-6" />
-            <input type="file" hidden onChange={handleFileChange} />
-          </label>
-
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Escribe un mensaje..."
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-
-          <button
-            type="submit"
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
-            disabled={!newMessage.trim() && !attachedFile}
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
-        {attachedFile && (
-          <div className="mt-2 text-xs text-gray-500">
-            Archivo seleccionado: <strong>{attachedFile.name}</strong>
-          </div>
-        )}
-      </form>
+          {attachedFile && (
+            <div className="mt-2 text-xs text-gray-500">
+              Archivo seleccionado: <strong>{attachedFile.name}</strong>
+            </div>
+          )}
+        </form>
+      )}
     </div>
   );
 };
