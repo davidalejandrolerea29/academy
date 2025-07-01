@@ -104,7 +104,7 @@ const MessagingPage: React.FC = () => {
   }, [adminView, currentUser, selectedContactData, selectedTeacher]);
 
   return (
-    <div className="flex flex-col h-screen"> {/* h-screen para ocupar toda la altura */}
+    <div className="flex flex-col h-full"> {/* h-screen para ocupar toda la altura */}
       {/* Encabezado global de Mensajes */}
       <div className="bg-white shadow p-4 border-b">
         <h1 className="text-xl font-semibold text-gray-800 flex items-center">

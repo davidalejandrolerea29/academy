@@ -183,8 +183,18 @@ const Layout: React.FC = () => {
         </header>
 
         {/* Content area */}
+        {/*
+          El 'main' sigue gestionando su propio overflow para pantallas grandes.
+          En móviles, el overflow lo gestionarán los componentes internos si es necesario.
+        */}
         <main className="flex-1 overflow-x-hidden lg:overflow-y-auto bg-gray-50">
-          <div className="container mx-auto p-0 lg:p-4 h-full **overflow-hidden md:overflow-visible**"> {/* CAMBIO AQUÍ */}
+          {/*
+            CAMBIO CLAVE AQUÍ:
+            - Eliminamos el 'overflow-hidden' y 'md:overflow-visible' de este div.
+            - Lo dejamos con 'h-full' para que ocupe todo el espacio vertical disponible por 'main'.
+            - Los componentes hijos del Outlet ahora son responsables de su propio 'overflow'.
+          */}
+          <div className="container mx-auto p-0 lg:p-4 h-full">
             <Outlet />
           </div>
         </main>

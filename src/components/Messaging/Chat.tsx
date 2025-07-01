@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useAuth } from '../../contexts/AuthContext';
 import { MessagePrivate, User } from '../../types';
-import { Send, Paperclip, Smile, ArrowLeft } from 'lucide-react'; // Importar ArrowLeft
+import { Send, Paperclip, Smile, ArrowLeft } from 'lucide-react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
@@ -17,7 +17,6 @@ interface ChatProps {
   observationMessages?: MessagePrivate[];
   observationLoading?: boolean;
   observationError?: string | null;
-  // Nueva prop para manejar la acción de volver en móvil
   onBackToContacts?: () => void;
 }
 
@@ -28,7 +27,7 @@ const Chat: React.FC<ChatProps> = ({
   observationMessages = [],
   observationLoading = false,
   observationError = null,
-  onBackToContacts, // Recibimos la función para volver
+  onBackToContacts,
 }) => {
   const { currentUser } = useAuth();
   const [messages, setMessages] = useState<MessagePrivate[]>([]);
@@ -39,30 +38,6 @@ const Chat: React.FC<ChatProps> = ({
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // const markMessageAsRead = async (messageId: number) => {
-  //   if (isObservationMode) return;
-
-  //   console.log('Marcando mensaje como leído...');
-  //   try {
-  //     await fetch(`${API_URL}/auth/privatechat/${messageId}/read`, {
-  //       method: 'PATCH',
-  //       headers: {
-  //         Authorization: `Bearer ${currentUser?.token}`,
-  //         'Content-Type': 'application/json',
-  //         Accept: 'application/json',
-  //       },
-  //     });
-
-  //     setMessages((prev) =>
-  //       prev.map((msg) =>
-  //         msg.id === messageId ? { ...msg, read: true, status: 'read' } : msg
-  //       )
-  //     );
-  //   } catch (error) {
-  //     console.error('Error al marcar mensaje como leído:', error);
-  //   }
-  // };
-
   useEffect(() => {
     if (isObservationMode) return;
 
@@ -70,6 +45,7 @@ const Chat: React.FC<ChatProps> = ({
       (m) => String(m.user_id) === recipientId && !m.read
     );
 
+    // Considera re-habilitar esto si necesitas marcar mensajes como leídos
     // if (unreadMessages.length > 0) {
     //   unreadMessages.forEach((msg) => markMessageAsRead(msg.id));
     // }
@@ -305,9 +281,14 @@ const Chat: React.FC<ChatProps> = ({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="bg-white shadow-sm border-b flex items-center p-2"> {/* Añadimos flex y items-center */}
-        {/* Botón de volver, visible solo en móvil para usuarios que no son admin */}
-        {onBackToContacts && currentUser?.role_id !== 1 && (
+      <div className="bg-white shadow-sm border-b flex items-center p-2">
+        {/*
+          CAMBIO CLAVE AQUÍ:
+          El botón de volver se muestra si:
+          1. onBackToContacts está presente (indica que estamos en una vista móvil de Chat que puede "volver").
+          2. O el usuario es un administrador Y está en modo observación.
+        */}
+        {onBackToContacts && (currentUser?.role_id !== 1 || (currentUser?.role_id === 1 && isObservationMode)) && (
           <button
             onClick={onBackToContacts}
             className="lg:hidden text-blue-500 hover:text-blue-600 mr-3 flex items-center"
@@ -315,7 +296,7 @@ const Chat: React.FC<ChatProps> = ({
             <ArrowLeft className="w-5 h-5" />
           </button>
         )}
-        <h2 className="text-lg font-semibold text-gray-800 flex-1"> {/* flex-1 para que el título ocupe el espacio restante */}
+        <h2 className="text-lg font-semibold text-gray-800 flex-1">
           {recipientData.name}
           {isObservationMode && (
              <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
@@ -337,13 +318,11 @@ const Chat: React.FC<ChatProps> = ({
           </div>
         ) : (
           displayMessages.map((message) => {
-            // Un mensaje es "mío" si el user_id del mensaje coincide con el currentUser.id
             const isMyMessage = String(message.user_id) === String(currentUser?.id);
 
             return (
               <div
                 key={message.id}
-                // Cambiamos la lógica: si es mío a la derecha, si no a la izquierda
                 className={`flex mb-4 ${isMyMessage ? 'justify-end' : 'justify-start'}`}
               >
                 <div
@@ -355,7 +334,6 @@ const Chat: React.FC<ChatProps> = ({
                     ${isMyMessage ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'}
                   `}
                 >
-                  {/* Solo mostrar el nombre del remitente si no es mi mensaje */}
                   {!isMyMessage && (
                     <div className="text-xs text-gray-500 mb-1">
                       {message.sender?.name || 'Usuario desconocido'}
