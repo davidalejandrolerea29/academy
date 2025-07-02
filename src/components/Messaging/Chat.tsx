@@ -205,15 +205,15 @@ const Chat: React.FC<ChatProps> = ({
     if (isObservationMode) return;
 
     const messageContent = newMessage.trim();
-    if (!messageContent && !attachedFile) return;
+    // if (!messageContent && !attachedFile) return;
 
-    if (containsBannedWordsOrPatterns(messageContent)) {
-      setWarningMessage(
-        '¡Advertencia! Este mensaje contiene información sensible o prohibida. Por favor, revisa el contenido. El intento de compartir contactos externos puede resultar en la suspensión de tu cuenta.'
-      );
-      setTimeout(() => setWarningMessage(null), 8000);
-      return;
-    }
+    // if (containsBannedWordsOrPatterns(messageContent)) {
+    //   setWarningMessage(
+    //     '¡Advertencia! Este mensaje contiene información sensible o prohibida. Por favor, revisa el contenido. El intento de compartir contactos externos puede resultar en la suspensión de tu cuenta.'
+    //   );
+    //   setTimeout(() => setWarningMessage(null), 8000);
+    //   return;
+    // }
 
     const tempMessage: MessagePrivate = {
       id: Date.now(),
@@ -256,9 +256,23 @@ const Chat: React.FC<ChatProps> = ({
 
       const data = await response.json();
 
+      // --- MANEJO DE LA RESPUESTA DEL BACKEND PARA MENSAJES BANEADOS ---
+      if (response.status === 403 && data.code === 'BANNED_CONTENT_DETECTED') {
+          console.warn('🚫 Mensaje bloqueado por el backend (chat privado):', data.message);
+          setWarningMessage(data.message); // Muestra el mensaje de advertencia del backend
+          setTimeout(() => setWarningMessage(null), 8000);
+          // Eliminar el mensaje provisional del UI porque fue baneado
+          setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
+          return; // Detener el flujo de envío exitoso
+      }
+      // --- FIN DEL MANEJO DE MENSAJES BANEADOS ---
+
       if (!response.ok) {
-        console.error('❌ Error de validación al enviar:', data);
+        console.error('❌ Error del backend al enviar mensaje:', data);
+        // Si el backend responde con un error (ej. validación), removemos el mensaje optimista.
         setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
+        setWarningMessage(data.message || 'Error al enviar el mensaje. Por favor, inténtalo de nuevo.');
+        setTimeout(() => setWarningMessage(null), 5000);
         return;
       }
     } catch (error) {
