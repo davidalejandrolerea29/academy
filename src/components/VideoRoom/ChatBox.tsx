@@ -111,55 +111,6 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
     };
   }, [roomId, currentUser, roomParticipantId]);
 
-  // --- Nueva función de validación de mensajes ---
-  const containsBannedWordsOrPatterns = (text: string): boolean => {
-    const lowerCaseText = text.toLowerCase();
-
-    // Palabras clave
-    const bannedKeywords = [
-      'whatsapp',
-      'telegram',
-      'numero', // cubre 'número' también
-      'nro',
-      'hablame',
-      'llama',
-      'contacto',
-      'por fuera',
-      'clases privadas', // Para capturar frases
-      'mi cel', // Mi celular
-      'mi tel', // Mi teléfono
-      '+54', // Prefijo de Argentina
-    ];
-
-    // Expresiones Regulares para números de teléfono
-    // Adaptar esto a los formatos de números en Argentina o los esperados
-    const phoneRegex = [
-        /\b\d{2}\s?\d{4}[-\s]?\d{4}\b/, // Ej: 11 4567 8901, 11-4567-8901, 1145678901 (para 10 dígitos)
-        /\b\d{3}[-\s]?\d{3}[-\s]?\d{4}\b/, // Ej: 221-555-1234 (para 10 dígitos)
-        /\b(?:\+?54)?(?:\s*\d{2,4}){2,3}\s*\d{6,8}\b/, // Patrón más flexible para números argentinos con o sin prefijo de país. Ej: +54 9 11 5555-1234, 11 5555 1234
-        /\b\d{7,10}\b/ // Para números de 7 a 10 dígitos consecutivos
-    ];
-
-    // Verificar palabras clave
-    for (const keyword of bannedKeywords) {
-      if (lowerCaseText.includes(keyword)) {
-        console.warn(`[ChatBox] Mensaje bloqueado por palabra clave: ${keyword}`);
-        return true;
-      }
-    }
-
-    // Verificar patrones de números de teléfono
-    for (const regex of phoneRegex) {
-      if (regex.test(lowerCaseText)) {
-        console.warn(`[ChatBox] Mensaje bloqueado por patrón de número de teléfono: ${text}`);
-        return true;
-      }
-    }
-
-    return false;
-  };
-  // --- Fin de la nueva función de validación ---
-
   // --- Función handleSendMessage ---
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,17 +118,6 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
       console.warn("ChatBox: No se puede enviar el mensaje: chatInput, currentUser, roomParticipantId, o roomId faltan.");
       return;
     }
-
-    // --- Llamada a la función de validación ---
-    if (containsBannedWordsOrPatterns(chatInput.trim())) {
-      setWarningMessage(
-        '¡Advertencia! Este mensaje contiene información sensible o prohibida. El intento de compartir contactos externos puede resultar en la suspensión de tu cuenta.'
-      );
-      setTimeout(() => setWarningMessage(null), 8000); // El mensaje desaparece después de 8 segundos
-      return; // Detener el envío del mensaje
-    }
-    // --- Fin de la validación ---
-
     const payload = {
       content: chatInput.trim(),
       room_participant_id: roomParticipantId,
@@ -198,12 +138,33 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
 
       const data = await response.json();
 
+      // --- MANEJO DE RESPUESTA DEL BACKEND ---
       if (response.ok && data?.message_data) {
-        console.log('✅ ChatBox: Mensaje enviado al backend:', data);
-        setChatInput('');
+        console.log('✅ ChatBox: Mensaje enviado al backend con éxito:', data);
+        setChatInput(''); // Limpiar input SIEMPRE que se envíe con éxito
+
         setWarningMessage(null); // Limpiar cualquier advertencia anterior
+
+        // **** CAMBIO CLAVE AQUI: Añadimos el mensaje optimísticamente si fue exitoso ****
+        // Usamos la data devuelta por el backend para asegurar consistencia (siempre que el backend devuelva la estructura completa)
+        // Opcional: si la data.message_data ya es el formato perfecto, usarlo directamente
+        // const messageToAdd = {
+        //     sender: currentUser.name, // El remitente siempre eres tú
+        //     text: data.message_data.content,
+        //     // Aquí puedes añadir un 'id' del backend si viene en data.message_data
+        //     // id: data.message_data.id,
+        // };
+        // setMessages(prevMessages => [...prevMessages, messageToAdd]);
+
+      } else if (response.status === 403 && data.code === 'BANNED_CONTENT_DETECTED') {
+          console.warn('🚫 ChatBox: Mensaje bloqueado por el backend:', data.message);
+          setWarningMessage(data.message); // Mostrar el mensaje de advertencia del backend
+          setTimeout(() => setWarningMessage(null), 8000);
+          // NO limpiar chatInput aquí para que el usuario pueda corregir el mensaje
       } else {
-        console.error('❌ ChatBox: Respuesta inesperada o error del backend al enviar mensaje:', data);
+        console.error('❌ ChatBox: Error del backend al enviar mensaje:', data);
+        setWarningMessage(data.message || 'Error al enviar el mensaje. Por favor, inténtalo de nuevo.');
+        setTimeout(() => setWarningMessage(null), 5000);
       }
     } catch (error) {
       console.error('❌ ChatBox: Error al enviar mensaje:', error);
