@@ -463,47 +463,43 @@ pc.ontrack = (event) => {
   }, [currentUser, localStream, sendSignal]); // Añadido localStream a las dependencias
 
   // --- useEffect para obtener el stream local ---
-  useEffect(() => {
-    // En el useEffect donde llamas a getUserMedia:
-    const startMedia = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setLocalStream(stream);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
+ useEffect(() => {
+    const getMedia = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            setLocalStream(stream);
+            console.log("🟢 localStream establecido:", stream);
+
+            if (localVideoRef.current) {
+                localVideoRef.current.srcObject = stream;
+            }
+
+            // Aquí también podrías configurar el estado inicial de micEnabled y videoEnabled
+            setVideoEnabled(stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].enabled);
+            setMicEnabled(stream.getAudioTracks().length > 0 && stream.getAudioTracks()[0].enabled);
+
+        } catch (err) {
+            console.error("🔴 Error al acceder a los medios locales:", err);
+            setError("No se pudo acceder a la cámara o micrófono. Asegúrate de dar permisos.");
         }
-
-        const videoTrack = stream.getVideoTracks()[0];
-        const audioTrack = stream.getAudioTracks()[0];
-
-        // Debugging: Verifica el estado real de los tracks al obtenerlos
-        //console.log(`[Local Stream Init] Video track enabled: ${videoTrack?.enabled}, Audio track enabled: ${audioTrack?.enabled}`);
-
-        setVideoEnabled(videoTrack?.enabled || false);
-        setMicEnabled(audioTrack?.enabled || false);
-
-      } catch (err) {
-        console.error("Error al acceder a los medios:", err);
-        setError("No se pudo acceder a la cámara o micrófono. Asegúrate de dar permisos.");
-      }
     };
 
-    startMedia();
+    if (!localStream) { // Solo intenta obtener medios si localStream no existe
+        getMedia();
+    }
 
+    // --- Función de limpieza actualizada ---
     return () => {
-      // Limpia los streams y conexiones al desmontar el componente
-      localStream?.getTracks().forEach(track => track.stop());
-      Object.values(peerConnectionsRef.current).forEach(pc => {
-          if (pc.connectionState !== 'closed') pc.close();
-      });
-      peerConnectionsRef.current = {};
-      setLocalStream(null);
-      setParticipants({});
-      channelRef.current?.leave(); // Asegúrate de dejar el canal de Echo/Reverb
-      channelRef.current = null;
-      setHasJoinedChannel(false);
+        // Asegúrate de que el stream sea el que se estableció en este efecto
+        if (localStream) {
+            console.log("🟡 Deteniendo tracks de localStream en cleanup.");
+            localStream.getTracks().forEach(track => track.stop());
+            // No resetees setLocalStream(null) aquí si esperas que persista
+            // para otras lógicas como `handleCallCleanup`.
+            // Es mejor que `handleCallCleanup` se encargue de la limpieza final.
+        }
     };
-  }, []); // El array de dependencias vacío asegura que esto solo se ejecute una vez al montar
+}, [localStream]); // ¡IMPORTANTE! Añade localStream a las dependencias.
 
   // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB Y WEB RTC ---
 useEffect(() => {
