@@ -464,24 +464,27 @@ pc.ontrack = (event) => {
 
   // --- useEffect para obtener el stream local ---
  useEffect(() => {
-    const getMedia = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            setLocalStream(stream);
-            console.log("🟢 localStream establecido:", stream);
-
-            if (localVideoRef.current) {
-                localVideoRef.current.srcObject = stream;
-            }
-
-            // Aquí también podrías configurar el estado inicial de micEnabled y videoEnabled
-            setVideoEnabled(stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].enabled);
-            setMicEnabled(stream.getAudioTracks().length > 0 && stream.getAudioTracks()[0].enabled);
-
-        } catch (err) {
-            console.error("🔴 Error al acceder a los medios locales:", err);
-            setError("No se pudo acceder a la cámara o micrófono. Asegúrate de dar permisos.");
+      const getMedia = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        setLocalStream(stream);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
         }
+
+        const videoTrack = stream.getVideoTracks()[0];
+        const audioTrack = stream.getAudioTracks()[0];
+
+        // Debugging: Verifica el estado real de los tracks al obtenerlos
+        //console.log(`[Local Stream Init] Video track enabled: ${videoTrack?.enabled}, Audio track enabled: ${audioTrack?.enabled}`);
+
+        setVideoEnabled(videoTrack?.enabled || false);
+        setMicEnabled(audioTrack?.enabled || false);
+
+      } catch (err) {
+        console.error("Error al acceder a los medios:", err);
+        setError("No se pudo acceder a la cámara o micrófono. Asegúrate de dar permisos.");
+      }
     };
 
     if (!localStream) { // Solo intenta obtener medios si localStream no existe
