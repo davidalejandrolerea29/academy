@@ -201,21 +201,21 @@ const Layout: React.FC = () => {
       </div>
 
       {/* VideoRoom rendered here, outside the Outlet */}
-      {activeRoomId && (
-        <div className={`
-          fixed bg-black bg-opacity-75 z-40
-          transition-all duration-300 ease-in-out
-          ${isCallMinimized
-            ? 'bottom-4 right-4 w-[320px] h-[400px] rounded-lg shadow-xl overflow-hidden'
-            : 'inset-0 flex items-center justify-center'
-          }
-        `}>
-          <VideoRoom
-            roomId={activeRoomId}
-            onCallEnded={endCall}
-          />
-        </div>
-      )}
+        {activeRoomId && (
+          <div className={`
+            fixed bg-black bg-opacity-75 z-40
+            transition-all duration-300 ease-in-out
+            ${isCallMinimized
+              ? 'bottom-4 right-4 w-[320px] h-[400px] rounded-lg shadow-xl overflow-hidden'
+              : 'inset-0 flex items-center justify-center'
+            }
+          `}>
+            <VideoRoom
+              roomId={activeRoomId}
+              onCallEnded={endCall}
+            />
+          </div>
+        )}
     </div>
   );
 };
