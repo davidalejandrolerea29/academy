@@ -14,23 +14,34 @@ import {
 interface VideoRoomProps {
   roomId: string;
   onCallEnded: () => void;
+  isTeacher: boolean; // Add this prop as it's used in VideoRoom
+   isCallMinimized: boolean; // Pass this from context
+   toggleMinimizeCall: () => void; // Pass this from context
+   handleCallCleanup: () => void; // Pass this from context
 }
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
 import RemoteVideo from './RemoteVideo'; // Ajusta la ruta si RemoteVideo.tsx está en otro lugar
 import ChatBox from './ChatBox';
 
-const VideoRoom: React.FC<VideoRoomProps> = ({ roomId, onCallEnded }) => {
+const VideoRoom: React.FC<VideoRoomProps> = ({
+   roomId,
+   onCallEnded,
+   isTeacher, // Destructure new prop
+   isCallMinimized, // Destructure
+   toggleMinimizeCall, // Destructure
+   handleCallCleanup // Destructure
+ }) => {
   const API_URL = import.meta.env.VITE_API_URL;
   // const navigate = useNavigate();
   const iceCandidatesQueueRef = useRef<Record<string, RTCIceCandidate[]>>({});
-  const { isCallMinimized, toggleMinimizeCall } = useCall(); 
+  // const { isCallMinimized, toggleMinimizeCall } = useCall(); 
   // const { roomId } = useParams<{ roomId: string }>();
   const { currentUser } = useAuth(); // Asegúrate de que `currentUser.id` y `currentUser.name` existan
   const [room, setRoom] = useState<Room | null>(null); // Estado para la información de la sala (si es necesario)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isTeacher, setIsTeacher] = useState(false); // Determinar si el usuario actual es profesor
+  // const [isTeacher, setIsTeacher] = useState(false); // Determinar si el usuario actual es profesor
   const streamLogCountsRef = useRef<Record<string, number>>({});
 // En VideoRoom.tsx, dentro del componente:
 const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
@@ -144,31 +155,31 @@ const [participants, setParticipants] = useState<Record<string, {
     console.log("Compartir pantalla detenido.");
   }
 }, [localStream]);
-const handleCallCleanup = useCallback(() => {
-    console.log('[VideoRoom Cleanup] Iniciando limpieza de la llamada...');
-    stopLocalStream();
-    stopScreenShare();
+// const handleCallCleanup = useCallback(() => {
+//     console.log('[VideoRoom Cleanup] Iniciando limpieza de la llamada...');
+//     stopLocalStream();
+//     stopScreenShare();
 
-    // Cierra todas las PeerConnections
-    Object.values(peerConnectionsRef.current).forEach(pc => {
-      pc.close();
-    });
-    peerConnectionsRef.current = {}; // Reinicia el objeto de PeerConnections
+//     // Cierra todas las PeerConnections
+//     Object.values(peerConnectionsRef.current).forEach(pc => {
+//       pc.close();
+//     });
+//     peerConnectionsRef.current = {}; // Reinicia el objeto de PeerConnections
 
-    setParticipants({}); // Limpia los participantes
+//     setParticipants({}); // Limpia los participantes
 
-    if (channelRef.current) {
-      console.log(`[VideoRoom Cleanup] Dejando canal ${channelRef.current.name}`);
-      // CAMBIO AQUÍ: Llamar al método leave() del propio objeto channel
-      channelRef.current.leave(); // Esto enviará la señal de UNSUBSCRIBE y limpiará el canal internamente
-      channelRef.current = null; // Limpiar la referencia al canal después de dejarlo
-    }
-    setHasJoinedChannel(false);
+//     if (channelRef.current) {
+//       console.log(`[VideoRoom Cleanup] Dejando canal ${channelRef.current.name}`);
+//       // CAMBIO AQUÍ: Llamar al método leave() del propio objeto channel
+//       channelRef.current.leave(); // Esto enviará la señal de UNSUBSCRIBE y limpiará el canal internamente
+//       channelRef.current = null; // Limpiar la referencia al canal después de dejarlo
+//     }
+//     setHasJoinedChannel(false);
 
-    // Notifica al padre (Layout) que la llamada ha terminado
-    onCallEnded(); // Esto debería activar el desmontaje de VideoRoom en Layout
-    console.log('[VideoRoom Cleanup] Limpieza completa. Notificando a Layout.');
-  }, [stopLocalStream, stopScreenShare, onCallEnded]);
+//     // Notifica al padre (Layout) que la llamada ha terminado
+//     onCallEnded(); // Esto debería activar el desmontaje de VideoRoom en Layout
+//     console.log('[VideoRoom Cleanup] Limpieza completa. Notificando a Layout.');
+//   }, [stopLocalStream, stopScreenShare, onCallEnded]);
 
   // Dentro de tu función sendSignal:
   const sendSignal = useCallback(async (toPeerId: string, signalData: any) => {
@@ -1024,10 +1035,10 @@ if (!roomParticipantId) return;
     navigate('/rooms'); // Redirigir al usuario
   };
 
-  // const toggleRecording = () => {
-  //   //console.log("Función de grabación no implementada aún.");
-  //   setIsRecording(prev => !prev);
-  // };
+  const toggleRecording = () => {
+    //console.log("Función de grabación no implementada aún.");
+    // setIsRecording(prev => !prev);
+  };
 
 
   if (loading) {
@@ -1078,456 +1089,458 @@ let totalVideosInGrid = 0;
     // La lógica para `numVideos` necesita ser precisa para decidir el layout
 // ... (imports y hooks se mantienen igual) ...
 
-  return (
-    <div className={`flex bg-black text-white ${isCallMinimized ? 'h-full w-full flex-col' : 'h-screen flex-row'}`}>
+    return (
+<div className={`flex bg-black text-white ${isCallMinimized ? 'flex-col' : 'h-screen flex-row'}`}>
+       {/* Contenedor principal de videos (no minimizado) */}
+     {/* Full-screen call view - visible on all screens when not minimized */}
+     {!isCallMinimized && ( // This div is only for the full-screen view
+         <div className={`flex flex-1 ${isChatOpenMobile ? 'hidden md:flex flex-col' : 'flex-col'}`}>
+           {/* Contenido de los videos */}
+           <div className="flex-grow relative p-2 md:p-4 bg-gray-950">
+             {(() => {
+               if (currentScreenShareStream) {
+                 return (
+                   <>
+                     {/* Video PRINCIPAL: La pantalla compartida (propia o remota) */}
+                     <div className="w-full flex-grow flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden mb-2 md:mb-4">
+                       <RemoteVideo
+                         stream={currentScreenShareStream}
+                         participantId={`${currentScreenShareOwnerId}-screen`}
+                         participantName={currentScreenShareOwnerName}
+                         videoEnabled={true}
+                         micEnabled={currentScreenShareStream.getAudioTracks().length > 0}
+                         isLocal={isSharingScreen}
+                         volume={0}
+                         isScreenShare={true}
+                       />
+                     </div>
+                     {/* Miniaturas de otros participantes (cámaras y otras pantallas) */}
+                     {allActiveStreams.length > 0 && (
+                         <div className="w-full flex gap-2 md:gap-3 flex-shrink-0 overflow-x-auto p-1 md:p-2 scrollbar-hide">
+                             {/* Tu cámara local (siempre visible si localStream existe y videoEnabled) */}
+                             {localStream && videoEnabled && (
+                                 <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
+                                     <RemoteVideo
+                                         stream={localStream}
+                                         participantId={currentUser?.id || 'local'}
+                                         participantName={`${currentUser?.name || 'Tú'} (Yo)`}
+                                         videoEnabled={videoEnabled}
+                                         micEnabled={micEnabled}
+                                         isLocal={true}
+                                         volume={volume}
+                                         isScreenShare={false}
+                                         className="w-full h-full object-cover"
+                                     />
+                                 </div>
+                             )}
+                             {/* Cámaras de participantes remotos y otras PANTALLAS COMPARTIDAS */}
+                             {Object.values(participants).map(participant => (
+                                 <React.Fragment key={participant.id}>
+                                     {participant.cameraStream && participant.videoEnabled && (
+                                         <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
+                                             <RemoteVideo
+                                                 key={participant.id + '-camera'}
+                                                 stream={participant.cameraStream!}
+                                                 participantId={participant.id}
+                                                 participantName={participant.name}
+                                                 videoEnabled={participant.videoEnabled}
+                                                 micEnabled={participant.micEnabled}
+                                                 isLocal={false}
+                                                 volume={0}
+                                                 isScreenShare={false}
+                                                 className="w-full h-full object-cover"
+                                             />
+                                         </div>
+                                     )}
+                                     {participant.screenStream && participant.id !== currentScreenShareOwnerId && (
+                                         <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
+                                             <RemoteVideo
+                                                 key={participant.id + '-screen'}
+                                                 stream={participant.screenStream!}
+                                                 participantId={participant.id}
+                                                 participantName={`${participant.name} (Pantalla)`}
+                                                 videoEnabled={true}
+                                                 micEnabled={participant.screenStream?.getAudioTracks().length > 0}
+                                                 isLocal={false}
+                                                 volume={0}
+                                                 isScreenShare={true}
+                                                 className="w-full h-full object-cover"
+                                             />
+                                         </div>
+                                     )}
+                                 </React.Fragment>
+                             ))}
+                         </div>
+                     )}
+                   </>
+                 );
+               } else {
+                 let gridColsClass = "grid-cols-1";
+                 if (totalVideosInGrid === 2) gridColsClass = "grid-cols-1 sm:grid-cols-2";
+                 else if (totalVideosInGrid === 3) gridColsClass = "grid-cols-1 sm:grid-cols-3 md:grid-cols-3";
+                 else if (totalVideosInGrid === 4) gridColsClass = "grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4";
+                 else if (totalVideosInGrid >= 5) gridColsClass = "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
 
-      {/* Contenedor principal de videos (no minimizado) */}
-      {!isCallMinimized && (
-        <div className={`flex flex-1 ${isChatOpenMobile ? 'hidden md:flex flex-col' : 'flex-col'}`}>
-          {/* Contenido de los videos */}
-          <div className="flex-grow relative p-2 md:p-4 bg-gray-950">
-            {(() => {
-              if (currentScreenShareStream) {
-                return (
-                  <>
-                    {/* Video PRINCIPAL: La pantalla compartida (propia o remota) */}
-                    <div className="w-full flex-grow flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden mb-2 md:mb-4">
-                      <RemoteVideo
-                        stream={currentScreenShareStream}
-                        participantId={`${currentScreenShareOwnerId}-screen`}
-                        participantName={currentScreenShareOwnerName}
-                        videoEnabled={true}
-                        micEnabled={currentScreenShareStream.getAudioTracks().length > 0}
-                        isLocal={isSharingScreen}
-                        volume={0}
-                        isScreenShare={true}
-                      />
-                    </div>
-                    {/* Miniaturas de otros participantes (cámaras y otras pantallas) */}
-                    {allActiveStreams.length > 0 && (
-                        <div className="w-full flex gap-2 md:gap-3 flex-shrink-0 overflow-x-auto p-1 md:p-2 scrollbar-hide">
-                            {/* Tu cámara local (siempre visible si localStream existe y videoEnabled) */}
-                            {localStream && videoEnabled && (
-                                <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
-                                    <RemoteVideo
-                                        stream={localStream}
-                                        participantId={currentUser?.id || 'local'}
-                                        participantName={`${currentUser?.name || 'Tú'} (Yo)`}
-                                        videoEnabled={videoEnabled}
-                                        micEnabled={micEnabled}
-                                        isLocal={true}
-                                        volume={volume}
-                                        isScreenShare={false}
-                                        className="w-full h-full object-cover"
-                                    />
-                                </div>
-                            )}
-                            {/* Cámaras de participantes remotos y otras PANTALLAS COMPARTIDAS */}
-                            {Object.values(participants).map(participant => (
-                                <React.Fragment key={participant.id}>
-                                    {participant.cameraStream && participant.videoEnabled && (
-                                        <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
-                                            <RemoteVideo
-                                                key={participant.id + '-camera'}
-                                                stream={participant.cameraStream!}
-                                                participantId={participant.id}
-                                                participantName={participant.name}
-                                                videoEnabled={participant.videoEnabled}
-                                                micEnabled={participant.micEnabled}
-                                                isLocal={false}
-                                                volume={0}
-                                                isScreenShare={false}
-                                                className="w-full h-full object-cover"
-                                            />
-                                        </div>
-                                    )}
-                                    {participant.screenStream && participant.id !== currentScreenShareOwnerId && (
-                                        <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
-                                            <RemoteVideo
-                                                key={participant.id + '-screen'}
-                                                stream={participant.screenStream!}
-                                                participantId={participant.id}
-                                                participantName={`${participant.name} (Pantalla)`}
-                                                videoEnabled={true}
-                                                micEnabled={participant.screenStream?.getAudioTracks().length > 0}
-                                                isLocal={false}
-                                                volume={0}
-                                                isScreenShare={true}
-                                                className="w-full h-full object-cover"
-                                            />
-                                        </div>
-                                    )}
-                                </React.Fragment>
-                            ))}
-                        </div>
-                    )}
-                  </>
-                );
-              } else {
-                let gridColsClass = "grid-cols-1";
-                if (totalVideosInGrid === 2) gridColsClass = "grid-cols-1 sm:grid-cols-2";
-                else if (totalVideosInGrid === 3) gridColsClass = "grid-cols-1 sm:grid-cols-3 md:grid-cols-3";
-                else if (totalVideosInGrid === 4) gridColsClass = "grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4";
-                else if (totalVideosInGrid >= 5) gridColsClass = "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
+                 return (
+                   <div className="flex-1 flex items-center justify-center p-2">
+                     <div className={`w-full h-full grid ${gridColsClass} gap-3 md:gap-4 auto-rows-fr`}>
+                       {localStream && videoEnabled && (
+                         <RemoteVideo
+                           stream={localStream}
+                           participantId={currentUser?.id || 'local'}
+                           participantName={`${currentUser?.name || 'Tú'} (Yo)`}
+                           videoEnabled={videoEnabled}
+                           micEnabled={micEnabled}
+                           isLocal={true}
+                           volume={volume}
+                           isScreenShare={false}
+                         />
+                       )}
+                       {Object.values(participants)
+                           .filter(p => p.cameraStream && p.videoEnabled)
+                           .map(participant => (
+                           <RemoteVideo
+                               key={participant.id}
+                               stream={participant.cameraStream!}
+                               participantId={participant.id}
+                               participantName={participant.name}
+                               videoEnabled={participant.videoEnabled}
+                               micEnabled={participant.micEnabled}
+                               isLocal={false}
+                               volume={0}
+                               isScreenShare={false}
+                           />
+                       ))}
+                     </div>
+                   </div>
+                 );
+               }
+             })()}
+           </div>
 
-                return (
-                  <div className="flex-1 flex items-center justify-center p-2">
-                    <div className={`w-full h-full grid ${gridColsClass} gap-3 md:gap-4 auto-rows-fr`}>
-                      {localStream && videoEnabled && (
-                        <RemoteVideo
-                          stream={localStream}
-                          participantId={currentUser?.id || 'local'}
-                          participantName={`${currentUser?.name || 'Tú'} (Yo)`}
-                          videoEnabled={videoEnabled}
-                          micEnabled={micEnabled}
-                          isLocal={true}
-                          volume={volume}
-                          isScreenShare={false}
-                        />
-                      )}
-                      {Object.values(participants)
-                          .filter(p => p.cameraStream && p.videoEnabled)
-                          .map(participant => (
-                          <RemoteVideo
-                              key={participant.id}
-                              stream={participant.cameraStream!}
-                              participantId={participant.id}
-                              participantName={participant.name}
-                              videoEnabled={participant.videoEnabled}
-                              micEnabled={participant.micEnabled}
-                              isLocal={false}
-                              volume={0}
-                              isScreenShare={false}
-                          />
-                      ))}
-                    </div>
-                  </div>
-                );
-              }
-            })()}
-          </div>
+           {/* Controles de la llamada y botón de chat para MOBILE (parte inferior) */}
+           <div className="flex md:hidden justify-center gap-2 p-3 bg-black bg-opacity-80 w-full flex-wrap">
+             <button
+               onClick={toggleMic}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
+             >
+               {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+             </button>
 
-          {/* Controles de la llamada y botón de chat para MOBILE (parte inferior) */}
-          <div className="flex md:hidden justify-center gap-2 p-3 bg-black bg-opacity-80 w-full flex-wrap">
-            <button
-              onClick={toggleMic}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
-            >
-              {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
-            </button>
+             <button
+               onClick={toggleVideo}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
+             >
+               {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
+             </button>
 
-            <button
-              onClick={toggleVideo}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
-            >
-              {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
-            </button>
+             <button
+               onClick={toggleScreenShare}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
+             >
+               <ScreenShare size={20} />
+             </button>
 
-            <button
-              onClick={toggleScreenShare}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
-            >
-              <ScreenShare size={20} />
-            </button>
+             {/* {isTeacher && (
+               <button
+                 onClick={toggleRecording}
+                 className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+                 title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
+               >
+                 <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
+               </button>
+             )} */}
 
-            {isTeacher && (
-              <button
-                onClick={toggleRecording}
-                className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-                title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
-              >
-                <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
-              </button>
-            )}
+             <button
+               onClick={() => setIsChatOpenMobile(prev => !prev)}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-blue-600 hover:bg-blue-700"
+               title="Abrir/Cerrar Chat"
+             >
+               <MessageSquare size={20} />
+             </button>
 
-            <button
-              onClick={() => setIsChatOpenMobile(prev => !prev)}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-blue-600 hover:bg-blue-700"
-              title="Abrir/Cerrar Chat"
-            >
-              <MessageSquare size={20} />
-            </button>
+             <button
+               onClick={toggleMinimizeCall}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={isCallMinimized ? 'Maximizar llamada' : 'Minimizar llamada'}
+             >
+               {isCallMinimized ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
+             </button>
 
-            <button
-              onClick={toggleMinimizeCall}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={isCallMinimized ? 'Maximizar llamada' : 'Minimizar llamada'}
-            >
-              {isCallMinimized ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
-            </button>
-
-            <button
-              onClick={handleCallCleanup}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
-              title="Colgar"
-            >
-              <PhoneOff size={20} />
-            </button>
-          </div>
-        </div>
-      )}
+             <button
+               onClick={handleCallCleanup}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+               title="Colgar"
+             >
+               <PhoneOff size={20} />
+             </button>
+           </div>
+         </div>
+       )}
 
 
-      {/* Contenedor lateral/modal para Controles y Chat (Solo en Desktop o como Overlay en Móvil) */}
-      {!isCallMinimized && (
-        <div className={`
-          md:w-80 md:flex md:flex-col md:border-l md:border-gray-700 md:bg-gray-900
-          ${isChatOpenMobile ? 'fixed inset-0 z-50 flex flex-col bg-gray-900' : 'hidden md:flex'}
-        `}>
-          {/* Controles de la llamada (desktop y overlay móvil) */}
-          <div className="flex justify-center gap-2 p-3 bg-black bg-opacity-80 border-b border-gray-700 flex-wrap">
-            <button
-              onClick={toggleMic}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
-            >
-              {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
-            </button>
+       {/* Contenedor lateral/modal para Controles y Chat (Solo en Desktop o como Overlay en Móvil) */}
 
-            <button
-              onClick={toggleVideo}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
-            >
-              {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
-            </button>
+     {!isCallMinimized && ( // This div is also only for the full-screen view
+         <div className={`
+           md:w-80 md:flex md:flex-col md:border-l md:border-gray-700 md:bg-gray-900
+           ${isChatOpenMobile ? 'fixed inset-0 z-50 flex flex-col bg-gray-900' : 'hidden md:flex'}
+         `}>
+           {/* Controles de la llamada (desktop y overlay móvil) */}
+           <div className="flex justify-center gap-2 p-3 bg-black bg-opacity-80 border-b border-gray-700 flex-wrap">
+             <button
+               onClick={toggleMic}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
+             >
+               {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+             </button>
 
-            <button
-              onClick={toggleScreenShare}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
-            >
-              <ScreenShare size={20} />
-            </button>
+             <button
+               onClick={toggleVideo}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
+             >
+               {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
+             </button>
 
-            {isTeacher && (
-              <button
-                onClick={toggleRecording}
-                className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-                title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
-              >
-                <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
-              </button>
-            )}
+             <button
+               onClick={toggleScreenShare}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
+             >
+               <ScreenShare size={20} />
+             </button>
 
-            {/* Botón de CERRAR Chat (visible solo en el overlay móvil) */}
-            <button
-              onClick={() => setIsChatOpenMobile(false)}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 md:hidden"
-              title="Cerrar Chat"
-            >
-              <X size={20} />
-            </button>
+             {/* {isTeacher && (
+               <button
+                 onClick={toggleRecording}
+                 className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+                 title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
+               >
+                 <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
+               </button>
+             )} */}
 
-            {/* Botón de Minimizar/Maximizar (este botón en el panel lateral es para desktop) */}
-            <button
-              onClick={toggleMinimizeCall}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 hidden md:flex"
-              title={isCallMinimized ? 'Maximizar llamada' : 'Minimizar llamada'}
-            >
-              {isCallMinimized ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
-            </button>
+             {/* Botón de CERRAR Chat (visible solo en el overlay móvil) */}
+             <button
+               onClick={() => setIsChatOpenMobile(false)}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 md:hidden"
+               title="Cerrar Chat"
+             >
+               <X size={20} />
+             </button>
 
-            <button
-              onClick={handleCallCleanup}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
-              title="Colgar"
-            >
-              <PhoneOff size={20} />
-            </button>
-          </div>
+             {/* Botón de Minimizar/Maximizar (este botón en el panel lateral es para desktop) */}
+             <button
+               onClick={toggleMinimizeCall}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 hidden md:flex"
+               title={isCallMinimized ? 'Maximizar llamada' : 'Minimizar llamada'}
+             >
+               {isCallMinimized ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
+             </button>
 
-          {/* Chat lateral */}
-          <div className="flex-grow flex flex-col py-2 md:py-8 justify-end overflow-hidden">
-            {roomId && <ChatBox roomId={roomId} />}
-          </div>
-        </div>
-      )}
+             <button
+               onClick={handleCallCleanup}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+               title="Colgar"
+             >
+               <PhoneOff size={20} />
+             </button>
+           </div>
 
-      {/* --- WIDGET MINIMIZADO --- */}
+           {/* Chat lateral */}
+           <div className="flex-grow flex flex-col py-2 md:py-8 justify-end overflow-hidden">
+             {roomId && <ChatBox roomId={roomId} />}
+           </div>
+         </div>
+       )}
 
-      {/* Widget minimizado en DESKTOP (muestra cámaras y más controles) */}
-      {isCallMinimized && (
-        <div className={`
-          hidden md:flex fixed bottom-4 right-4 z-40
-          w-[320px] h-[400px] rounded-lg shadow-xl overflow-hidden bg-gray-950 flex-col
-        `}>
-          {/* Contenido de videos en miniatura para desktop minimizado */}
-          <div className="flex-1 flex flex-col bg-gray-950 rounded-lg overflow-hidden p-2">
-            {/* Pantalla compartida principal en miniatura (si aplica) */}
-            {currentScreenShareStream && (
-              <div className="w-full h-3/4 mb-2 bg-gray-800 rounded-md flex items-center justify-center overflow-hidden">
-                <RemoteVideo
-                  stream={currentScreenShareStream}
-                  participantId={`${currentScreenShareOwnerId}-screen-mini`}
-                  participantName={currentScreenShareOwnerName}
-                  videoEnabled={true}
-                  micEnabled={currentScreenShareStream.getAudioTracks().length > 0}
-                  isLocal={isSharingScreen}
-                  volume={0}
-                  isScreenShare={true}
-                  className="w-full h-full object-contain"
-                />
-              </div>
-            )}
-            {!currentScreenShareStream && isAnyScreenSharing && (
-                <div className="w-full h-3/4 mb-2 bg-gray-800 rounded-md flex items-center justify-center overflow-hidden text-gray-500 text-center">
-                    <ScreenShare className="w-8 h-8 mx-auto mb-1" />
-                    <p className="text-sm">Cargando pantalla...</p>
-                </div>
-            )}
+       {/* --- WIDGET MINIMIZADO --- */}
 
-            {/* Miniaturas de cámaras de participantes (local + remotos) Y OTRAS PANTALLAS COMPARTIDAS */}
-            <div className={`w-full ${currentScreenShareStream ? 'h-1/4' : 'flex-grow'} grid grid-cols-2 gap-1 overflow-y-auto`}>
-              {localStream && videoEnabled && (
-                <RemoteVideo
-                  stream={localStream}
-                  participantId={currentUser?.id || 'local-mini'}
-                  participantName={`${currentUser?.name || 'Tú'}`}
-                  videoEnabled={videoEnabled}
-                  micEnabled={micEnabled}
-                  isLocal={true}
-                  volume={volume}
-                  isScreenShare={false}
-                  className="w-full h-full object-cover rounded-sm"
-                />
-              )}
+       {/* Widget minimizado en DESKTOP (muestra cámaras y más controles) */}
+      {isCallMinimized && ( // This div is for the desktop minimized widget
+         <div className={`
+           hidden md:flex fixed bottom-4 right-4 z-40
+           w-[320px] h-[400px] rounded-lg shadow-xl overflow-hidden bg-gray-950 flex-col
+         `}>
+           {/* Contenido de videos en miniatura para desktop minimizado */}
+           <div className="flex-1 flex flex-col bg-gray-950 rounded-lg overflow-hidden p-2">
+             {/* Pantalla compartida principal en miniatura (si aplica) */}
+             {currentScreenShareStream && (
+               <div className="w-full h-3/4 mb-2 bg-gray-800 rounded-md flex items-center justify-center overflow-hidden">
+                 <RemoteVideo
+                   stream={currentScreenShareStream}
+                   participantId={`${currentScreenShareOwnerId}-screen-mini`}
+                   participantName={currentScreenShareOwnerName}
+                   videoEnabled={true}
+                   micEnabled={currentScreenShareStream.getAudioTracks().length > 0}
+                   isLocal={isSharingScreen}
+                   volume={0}
+                   isScreenShare={true}
+                   className="w-full h-full object-contain"
+                 />
+               </div>
+             )}
+             {!currentScreenShareStream && isAnyScreenSharing && (
+                 <div className="w-full h-3/4 mb-2 bg-gray-800 rounded-md flex items-center justify-center overflow-hidden text-gray-500 text-center">
+                     <ScreenShare className="w-8 h-8 mx-auto mb-1" />
+                     <p className="text-sm">Cargando pantalla...</p>
+                 </div>
+             )}
 
-              {Object.values(participants).map(participant => (
-                <React.Fragment key={participant.id + '-mini'}>
-                  {participant.cameraStream && participant.videoEnabled && (
-                    <RemoteVideo
-                      key={participant.id + '-camera-mini'}
-                      stream={participant.cameraStream!}
-                      participantId={participant.id}
-                      participantName={participant.name}
-                      videoEnabled={participant.videoEnabled}
-                      micEnabled={participant.micEnabled}
-                      isLocal={false}
-                      volume={0}
-                      isScreenShare={false}
-                      className="w-full h-full object-cover rounded-sm"
-                    />
-                  )}
-                  {participant.screenStream && participant.id !== currentScreenShareOwnerId && (
-                    <RemoteVideo
-                      key={participant.id + '-screen-mini'}
-                      stream={participant.screenStream!}
-                      participantId={participant.id}
-                      participantName={`${participant.name} (Pantalla)`}
-                      videoEnabled={true}
-                      micEnabled={participant.screenStream?.getAudioTracks().length > 0}
-                      isLocal={false}
-                      volume={0}
-                      isScreenShare={true}
-                      className="w-full h-full object-cover rounded-sm"
-                    />
-                  )}
-                </React.Fragment>
-              ))}
+             {/* Miniaturas de cámaras de participantes (local + remotos) Y OTRAS PANTALLAS COMPARTIDAS */}
+             <div className={`w-full ${currentScreenShareStream ? 'h-1/4' : 'flex-grow'} grid grid-cols-2 gap-1 overflow-y-auto`}>
+               {localStream && videoEnabled && (
+                 <RemoteVideo
+                   stream={localStream}
+                   participantId={currentUser?.id || 'local-mini'}
+                   participantName={`${currentUser?.name || 'Tú'}`}
+                   videoEnabled={videoEnabled}
+                   micEnabled={micEnabled}
+                   isLocal={true}
+                   volume={volume}
+                   isScreenShare={false}
+                   className="w-full h-full object-cover rounded-sm"
+                 />
+               )}
 
-              {!localStream && Object.values(participants).filter(p => p.cameraStream).length === 0 && !currentScreenShareStream && (
-                <div className="col-span-full flex flex-col items-center justify-center text-gray-500">
-                  <Users className="w-8 h-8 mb-2" />
-                  <p className="text-xs text-center">Nadie con video activo.</p>
-                </div>
-              )}
-            </div>
-          </div>
-          {/* Controles del widget minimizado grande (recuperados) */}
-          <div className="flex justify-center gap-2 p-3 bg-gray-800 border-t border-gray-700 flex-wrap">
-            <button
-              onClick={toggleMic}
-              className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
-            >
-              {micEnabled ? <Mic size={18} /> : <MicOff size={18} />}
-            </button>
-            <button
-              onClick={toggleVideo}
-              className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
-            >
-              {videoEnabled ? <Video size={18} /> : <VideoOff size={18} />}
-            </button>
-            <button
-              onClick={toggleScreenShare}
-              className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
-            >
-              <ScreenShare size={18} />
-            </button>
-            {isTeacher && (
-              <button
-                onClick={toggleRecording}
-                className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-                title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
-              >
-                <StopCircle size={18} className={isRecording ? 'text-red-500' : ''} />
-              </button>
-            )}
-            <button
-              onClick={toggleMinimizeCall}
-              className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title="Maximizar llamada"
-            >
-              <Maximize2 size={18} />
-            </button>
-            <button
-              onClick={handleCallCleanup}
-              className="w-10 h-10 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
-              title="Colgar"
-            >
-              <PhoneOff size={18} />
-            </button>
-          </div>
-        </div>
-      )}
+               {Object.values(participants).map(participant => (
+                 <React.Fragment key={participant.id + '-mini'}>
+                   {participant.cameraStream && participant.videoEnabled && (
+                     <RemoteVideo
+                       key={participant.id + '-camera-mini'}
+                       stream={participant.cameraStream!}
+                       participantId={participant.id}
+                       participantName={participant.name}
+                       videoEnabled={participant.videoEnabled}
+                       micEnabled={participant.micEnabled}
+                       isLocal={false}
+                       volume={0}
+                       isScreenShare={false}
+                       className="w-full h-full object-cover rounded-sm"
+                     />
+                   )}
+                   {participant.screenStream && participant.id !== currentScreenShareOwnerId && (
+                     <RemoteVideo
+                       key={participant.id + '-screen-mini'}
+                       stream={participant.screenStream!}
+                       participantId={participant.id}
+                       participantName={`${participant.name} (Pantalla)`}
+                       videoEnabled={true}
+                       micEnabled={participant.screenStream?.getAudioTracks().length > 0}
+                       isLocal={false}
+                       volume={0}
+                       isScreenShare={true}
+                       className="w-full h-full object-cover rounded-sm"
+                     />
+                   )}
+                 </React.Fragment>
+               ))}
 
-      {/* Widget minimizado en MOBILE (solo iconos y contador) */}
-      {isCallMinimized && (
-        <div className={`
-          md:hidden fixed bottom-4 right-4 z-50 flex flex-col p-2 bg-gray-900 rounded-lg shadow-lg
-          w-36 h-24
-        `}>
-          {/* Contenido del widget minimizado */}
-          <div className="flex items-center justify-center flex-grow text-gray-400 text-sm">
-            {currentScreenShareStream ? (
-              <div className="flex flex-col items-center">
-                <ScreenShare className="w-6 h-6 mb-1" />
-                <p>Compartiendo</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center">
-                <Users className="w-6 h-6 mb-1" />
-                <p>{Object.keys(participants).length + (localStream && videoEnabled ? 1 : 0)} Usuarios</p>
-              </div>
-            )}
-          </div>
-          {/* Controles de minimizado */}
-          <div className="flex justify-center gap-1 mt-2">
-            <button
-              onClick={toggleMinimizeCall}
-              className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title="Maximizar llamada"
-            >
-              <Maximize2 size={16} />
-            </button>
-            <button
-              onClick={handleCallCleanup}
-              className="w-8 h-8 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
-              title="Colgar"
-            >
-              <PhoneOff size={16} />
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+               {!localStream && Object.values(participants).filter(p => p.cameraStream).length === 0 && !currentScreenShareStream && (
+                 <div className="col-span-full flex flex-col items-center justify-center text-gray-500">
+                   <Users className="w-8 h-8 mb-2" />
+                   <p className="text-xs text-center">Nadie con video activo.</p>
+                 </div>
+               )}
+             </div>
+           </div>
+           {/* Controles del widget minimizado grande (recuperados) */}
+           <div className="flex justify-center gap-2 p-3 bg-gray-800 border-t border-gray-700 flex-wrap">
+             <button
+               onClick={toggleMic}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
+             >
+               {micEnabled ? <Mic size={18} /> : <MicOff size={18} />}
+             </button>
+             <button
+               onClick={toggleVideo}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
+             >
+               {videoEnabled ? <Video size={18} /> : <VideoOff size={18} />}
+             </button>
+             <button
+               onClick={toggleScreenShare}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
+             >
+               <ScreenShare size={18} />
+             </button>
+             {/* {isTeacher && (
+              //  <button
+              //    onClick={toggleRecording}
+              //    className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+              //    title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
+              //  >
+              //    <StopCircle size={18} className={isRecording ? 'text-red-500' : ''} />
+              //  </button>
+             )} */}
+             <button
+               onClick={toggleMinimizeCall}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title="Maximizar llamada"
+             >
+               <Maximize2 size={18} />
+             </button>
+             <button
+               onClick={handleCallCleanup}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+               title="Colgar"
+             >
+               <PhoneOff size={18} />
+             </button>
+           </div>
+         </div>
+       )}
 
-export default VideoRoom;
+       {/* Widget minimizado en MOBILE (solo iconos y contador) */}
+
+      {isCallMinimized && ( // This div is for the mobile minimized widget
+         <div className={`
+           md:hidden fixed bottom-4 right-4 z-50 flex flex-col p-2 bg-gray-900 rounded-lg shadow-lg
+           w-36 h-24
+         `}>
+           {/* Contenido del widget minimizado */}
+           <div className="flex items-center justify-center flex-grow text-gray-400 text-sm">
+             {currentScreenShareStream ? (
+               <div className="flex flex-col items-center">
+                 <ScreenShare className="w-6 h-6 mb-1" />
+                 <p>Compartiendo</p>
+               </div>
+             ) : (
+               <div className="flex flex-col items-center">
+                 <Users className="w-6 h-6 mb-1" />
+                 <p>{Object.keys(participants).length + (localStream && videoEnabled ? 1 : 0)} Usuarios</p>
+               </div>
+             )}
+           </div>
+           {/* Controles de minimizado */}
+           <div className="flex justify-center gap-1 mt-2">
+             <button
+               onClick={toggleMinimizeCall}
+               className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title="Maximizar llamada"
+             >
+               <Maximize2 size={16} />
+             </button>
+             <button
+               onClick={handleCallCleanup}
+               className="w-8 h-8 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+               title="Colgar"
+             >
+               <PhoneOff size={16} />
+             </button>
+           </div>
+         </div>
+       )}
+     </div>
+   );
+ };
+
+ export default VideoRoom;

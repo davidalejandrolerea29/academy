@@ -58,7 +58,7 @@ const RegisterPage: React.FC = () => {
             Crear una cuenta
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            Regístrate en EduVídeo
+            Regístrate en English New Path
           </p>
         </div>
         
