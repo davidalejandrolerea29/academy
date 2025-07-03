@@ -1235,13 +1235,13 @@ let totalVideosInGrid = 0;
                {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
              </button>
 
-             <button
+             {/* <button
                onClick={toggleScreenShare}
                className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
                title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
              >
                <ScreenShare size={20} />
-             </button>
+             </button> */}
 
              {/* {isTeacher && (
                <button
