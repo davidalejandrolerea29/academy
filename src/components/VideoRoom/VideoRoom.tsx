@@ -8,28 +8,40 @@ import { useMicVolume } from '../../hooks/useMicVolume'; // Asumo que tu hook es
 import { useCall } from '../../contexts/CallContext';
 import {
   Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle,
-  MessageSquare, PhoneOff, Minimize2, Maximize2, Users // <-- NUEVO: Íconos de minimizar/maximizar
+  MessageSquare, PhoneOff, Minimize2, Maximize2, Users, // <-- NUEVO: Íconos de minimizar/maximizar
+  X
 } from 'lucide-react';
 interface VideoRoomProps {
   roomId: string;
   onCallEnded: () => void;
+  isTeacher: boolean; // Add this prop as it's used in VideoRoom
+   isCallMinimized: boolean; // Pass this from context
+   toggleMinimizeCall: () => void; // Pass this from context
+   handleCallCleanup: () => void; // Pass this from context
 }
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
 import RemoteVideo from './RemoteVideo'; // Ajusta la ruta si RemoteVideo.tsx está en otro lugar
 import ChatBox from './ChatBox';
 
-const VideoRoom: React.FC<VideoRoomProps> = ({ roomId, onCallEnded }) => {
+const VideoRoom: React.FC<VideoRoomProps> = ({
+   roomId,
+   onCallEnded,
+   isTeacher, // Destructure new prop
+   isCallMinimized, // Destructure
+   toggleMinimizeCall, // Destructure
+   handleCallCleanup // Destructure
+ }) => {
   const API_URL = import.meta.env.VITE_API_URL;
   // const navigate = useNavigate();
   const iceCandidatesQueueRef = useRef<Record<string, RTCIceCandidate[]>>({});
-  const { isCallMinimized, toggleMinimizeCall } = useCall(); 
+  // const { isCallMinimized, toggleMinimizeCall } = useCall(); 
   // const { roomId } = useParams<{ roomId: string }>();
   const { currentUser } = useAuth(); // Asegúrate de que `currentUser.id` y `currentUser.name` existan
   const [room, setRoom] = useState<Room | null>(null); // Estado para la información de la sala (si es necesario)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isTeacher, setIsTeacher] = useState(false); // Determinar si el usuario actual es profesor
+  // const [isTeacher, setIsTeacher] = useState(false); // Determinar si el usuario actual es profesor
   const streamLogCountsRef = useRef<Record<string, number>>({});
 // En VideoRoom.tsx, dentro del componente:
 const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
@@ -38,6 +50,8 @@ const [isSharingScreen, setIsSharingScreen] = useState(false);
 const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
 const screenShareStreamRef = useRef<MediaStream | null>(null);
   // --- Refs para mantener referencias persistentes ---
+  const screenShareSendersRef = useRef<Record<string, { video?: RTCRtpSender, audio?: RTCRtpSender }>>({});
+const [isChatOpenMobile, setIsChatOpenMobile] = useState(false);
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const channelRef = useRef<EchoChannel | null>(null);
   const reverbServiceRef = useRef(createReverbWebSocketService(currentUser?.token || '')); // Instancia del servicio
@@ -52,6 +66,7 @@ const [participants, setParticipants] = useState<Record<string, {
     micEnabled: boolean,
     cameraStream: MediaStream | null, // Para la cámara principal
     screenStream: MediaStream | null,  // Para la pantalla compartida
+    isSharingRemoteScreen: boolean;
     // Opcional: una lista de todos los streams si no sabes qué esperar
     // streams: MediaStream[]
 }>>({});
@@ -140,31 +155,31 @@ const [participants, setParticipants] = useState<Record<string, {
     console.log("Compartir pantalla detenido.");
   }
 }, [localStream]);
-const handleCallCleanup = useCallback(() => {
-    console.log('[VideoRoom Cleanup] Iniciando limpieza de la llamada...');
-    stopLocalStream();
-    stopScreenShare();
+// const handleCallCleanup = useCallback(() => {
+//     console.log('[VideoRoom Cleanup] Iniciando limpieza de la llamada...');
+//     stopLocalStream();
+//     stopScreenShare();
 
-    // Cierra todas las PeerConnections
-    Object.values(peerConnectionsRef.current).forEach(pc => {
-      pc.close();
-    });
-    peerConnectionsRef.current = {}; // Reinicia el objeto de PeerConnections
+//     // Cierra todas las PeerConnections
+//     Object.values(peerConnectionsRef.current).forEach(pc => {
+//       pc.close();
+//     });
+//     peerConnectionsRef.current = {}; // Reinicia el objeto de PeerConnections
 
-    setParticipants({}); // Limpia los participantes
+//     setParticipants({}); // Limpia los participantes
 
-    if (channelRef.current) {
-      console.log(`[VideoRoom Cleanup] Dejando canal ${channelRef.current.name}`);
-      // CAMBIO AQUÍ: Llamar al método leave() del propio objeto channel
-      channelRef.current.leave(); // Esto enviará la señal de UNSUBSCRIBE y limpiará el canal internamente
-      channelRef.current = null; // Limpiar la referencia al canal después de dejarlo
-    }
-    setHasJoinedChannel(false);
+//     if (channelRef.current) {
+//       console.log(`[VideoRoom Cleanup] Dejando canal ${channelRef.current.name}`);
+//       // CAMBIO AQUÍ: Llamar al método leave() del propio objeto channel
+//       channelRef.current.leave(); // Esto enviará la señal de UNSUBSCRIBE y limpiará el canal internamente
+//       channelRef.current = null; // Limpiar la referencia al canal después de dejarlo
+//     }
+//     setHasJoinedChannel(false);
 
-    // Notifica al padre (Layout) que la llamada ha terminado
-    onCallEnded(); // Esto debería activar el desmontaje de VideoRoom en Layout
-    console.log('[VideoRoom Cleanup] Limpieza completa. Notificando a Layout.');
-  }, [stopLocalStream, stopScreenShare, onCallEnded]);
+//     // Notifica al padre (Layout) que la llamada ha terminado
+//     onCallEnded(); // Esto debería activar el desmontaje de VideoRoom en Layout
+//     console.log('[VideoRoom Cleanup] Limpieza completa. Notificando a Layout.');
+//   }, [stopLocalStream, stopScreenShare, onCallEnded]);
 
   // Dentro de tu función sendSignal:
   const sendSignal = useCallback(async (toPeerId: string, signalData: any) => {
@@ -243,88 +258,90 @@ const handleCallCleanup = useCallback(() => {
      // En tu pc.ontrack dentro de VideoRoom.tsx
 // Dentro de getOrCreatePeerConnection, después de crear `const pc = new RTCPeerConnection({...});`
 pc.ontrack = (event) => {
-    const incomingStream = event.streams[0]; // Esto es el MediaStream al que pertenece el track
-    const track = event.track; // El MediaStreamTrack que llegó
+    const incomingStream = event.streams[0];
+    const track = event.track;
 
-    // ES CLAVE QUE PEERID ESTÉ CORRECTAMENTE DEFINIDO AQUÍ.
-    // Si 'peerId' viene del scope exterior (ej. el parámetro de getOrCreatePeerConnection), úsalo.
-    // Si necesitas inferirlo del evento, es más complejo y puede ser event.transceiver.mid o event.receiver.track.id
-    // Para simplificar, asumamos que `peerId` ya está disponible en este scope correctamente.
+    const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc) || 'unknown';
+
+    if (!peerId || peerId === 'unknown') {
+        console.error("[ontrack ERROR] Peer ID no definido para el track entrante o PC no encontrada en ref.");
+        return;
+    }
 
     setParticipants(prev => {
-        const existingParticipant = prev[peerId] || { // USA EL `peerId` DEL PARÁMETRO
+        const existingParticipant = prev[peerId] || {
             id: peerId,
-            name: `Usuario ${peerId}`, // Obtén el nombre real aquí si lo tienes
-            videoEnabled: true,
-            micEnabled: true,
+            name: `Usuario ${peerId}`,
+            videoEnabled: false,
+            micEnabled: false,
             cameraStream: null,
-            screenStream: null
+            screenStream: null,
+            isSharingRemoteScreen: false, // Asegúrate de que esto se inicializa
         };
 
         const updatedParticipant = { ...existingParticipant };
 
-        // Lógica de si el track es de pantalla compartida:
-        // Por lo general, getDisplayMedia crea un *nuevo* MediaStream
-        // y lo adjunta con el track de video de la pantalla.
-        // Lo más fiable es si el `track.kind` es 'video' y si el stream ya no es el de la cámara.
-        // O si el `track.id` es de un track de pantalla (aunque no lo asignes, tiene un ID único).
+        // **Paso 1: Identificar el tipo de track**
+        // La mejor manera de saber si un track es de pantalla es por la señalización `screenShareStatus`.
+        // Si esa señal nos dice que este peer está compartiendo pantalla, y vemos un stream de video,
+        // asumimos que es el stream de la pantalla.
+        // También podemos usar heurísticas del navegador (label, contentHint) como respaldo.
+        const isPotentiallyScreenShareTrack = track.kind === 'video' &&
+            (updatedParticipant.isSharingRemoteScreen || // Si sabemos por la señal que comparte
+             track.label.includes('screen') ||            // Heurística común en Chrome/Firefox
+             track.label.includes('display') ||           // Heurística en algunos navegadores
+             track.contentHint === 'detail');             // Otra heurística de WebRTC
 
-        let isScreenShareTrack = false;
         if (track.kind === 'video') {
-            const videoTrack = track as MediaStreamVideoTrack;
-            // Métodos comunes para detectar si es pantalla
-            if (videoTrack.contentHint === 'detail' || videoTrack.contentHint === 'text') {
-                isScreenShareTrack = true;
-            }
-            const trackSettings = videoTrack.getSettings();
-            if (trackSettings.displaySurface) { // Específico de Chrome/Edge
-                isScreenShareTrack = true;
-            }
-            // Otra heurística: si el track.label contiene "screen" o "display"
-            if (videoTrack.label.toLowerCase().includes('screen') || videoTrack.label.toLowerCase().includes('display')) {
-                isScreenShareTrack = true;
-            }
-        }
-        // Si el stream ya existe y es de cámara, y llega un NUEVO track de video,
-        // Y el viejo stream de cámara no tiene este track,
-        // podríamos inferir que es un nuevo stream (de pantalla).
-
-        // Aquí es donde la lógica se pone complicada si un peer envía múltiples streams.
-        // La forma más robusta es que el *remitente* te diga qué stream es.
-        // Si no, la heurística es:
-        // Si el incomingStream.id no es el mismo que el existingParticipant.cameraStream.id
-        // Y incomingStream tiene un track de video, y existingParticipant.cameraStream ya tenía uno.
-        // Entonces es un nuevo stream, probablemente de pantalla.
-
-        // Simplificando: Si llega un track de video, y no es el track de la cámara existente:
-        if (track.kind === 'video') {
-            // Asumimos que si un participante ya tiene un `cameraStream`,
-            // cualquier nuevo track de video que llegue para ese `peerId`
-            // que NO es parte de su `cameraStream` existente, es de pantalla.
-            const isExistingCameraVideoTrack = updatedParticipant.cameraStream?.getVideoTracks().some(t => t.id === track.id);
-            if (isScreenShareTrack || (!isExistingCameraVideoTrack && incomingStream.id !== updatedParticipant.cameraStream?.id)) {
-                console.log(`[ontrack DEBUG] Recibiendo stream de PANTALLA de ${peerId} (Stream ID: ${incomingStream.id}, Track ID: ${track.id}).`);
-                updatedParticipant.screenStream = incomingStream;
-                // Si la pantalla compartida incluye audio, este se adjuntará al mismo stream
-                // Si el audio viene por separado, necesitas manejarlo.
-            } else { // Es un track de cámara
-                console.log(`[ontrack DEBUG] Recibiendo stream de CÁMARA de ${peerId} (Stream ID: ${incomingStream.id}, Track ID: ${track.id}).`);
-                updatedParticipant.cameraStream = incomingStream;
-                // Aquí podrías asegurar que el `videoEnabled` se actualice si el stream de cámara está presente
-                updatedParticipant.videoEnabled = true;
+            if (isPotentiallyScreenShareTrack) {
+                // Es un track de pantalla compartida
+                // Asignar el stream a screenStream del participante
+                if (!updatedParticipant.screenStream || updatedParticipant.screenStream.id !== incomingStream.id) {
+                    updatedParticipant.screenStream = incomingStream;
+                    console.log(`[ontrack] Recibiendo NUEVO stream de PANTALLA de ${peerId}`);
+                }
+                // Asegúrate de que el cameraStream no esté mostrando la pantalla por error
+                if (updatedParticipant.cameraStream === incomingStream) {
+                    updatedParticipant.cameraStream = null;
+                }
+            } else {
+                // Es un track de cámara
+                // Asignar el stream a cameraStream del participante
+                if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
+                    updatedParticipant.cameraStream = incomingStream;
+                    console.log(`[ontrack] Recibiendo NUEVO stream de CÁMARA de ${peerId}`);
+                }
+                updatedParticipant.videoEnabled = true; // Si llega un track de cámara, la cámara está habilitada
+                // Asegúrate de que el screenStream no esté mostrando la cámara por error
+                if (updatedParticipant.screenStream === incomingStream) {
+                    updatedParticipant.screenStream = null;
+                }
             }
         } else if (track.kind === 'audio') {
-            // El audio es más tricky. Asume que el primer audio es de la cámara.
-            // Si el audio de la pantalla viene en el mismo `incomingStream` que el video de pantalla,
-            // no necesitas una lógica separada para él aquí.
-            // Si llega un track de audio y el participante no tiene un `cameraStream` todavía,
-            // o si es un audio de un stream diferente que no es pantalla,
-            // puedes asignarlo al `cameraStream` o manejarlo aparte.
-            if (!updatedParticipant.cameraStream) { // Si aún no hay stream de cámara, asigna el audio aquí
-                // Crea un MediaStream solo para el audio si es necesario, o espera al video.
-                updatedParticipant.cameraStream = incomingStream; // O crea un nuevo MediaStream con solo este track de audio
+            // Para el audio, es más difícil diferenciar si es de cámara o pantalla solo por el track.
+            // La mejor práctica es que el audio de la pantalla venga con el stream de la pantalla,
+            // y el audio de la cámara con el stream de la cámara.
+            // Si el peer está compartiendo pantalla, asumimos que este audio es de la pantalla si el stream
+            // entrante también tiene un video de pantalla, o si el `screenStream` ya existe para ese peer.
+
+            // Si el peer está compartiendo pantalla Y este stream es el mismo que el screenStream del participante
+            if (updatedParticipant.isSharingRemoteScreen && updatedParticipant.screenStream === incomingStream) {
+                 if (!updatedParticipant.screenStream.getAudioTracks().some(t => t.id === track.id)) {
+                     updatedParticipant.screenStream.addTrack(track);
+                     console.log(`[ontrack] Añadido track de audio a screenStream de ${peerId}`);
+                 }
+            } else {
+                // De lo contrario, o si no está compartiendo pantalla, o si el stream es diferente,
+                // asumimos que es audio de la cámara.
+                if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
+                    updatedParticipant.cameraStream = incomingStream;
+                }
+                if (!updatedParticipant.cameraStream.getAudioTracks().some(t => t.id === track.id)) {
+                    updatedParticipant.cameraStream.addTrack(track);
+                    console.log(`[ontrack] Añadido track de audio a cameraStream de ${peerId}`);
+                }
+                updatedParticipant.micEnabled = true;
             }
-            updatedParticipant.micEnabled = true; // Asume que el micrófono está habilitado si hay audio
         }
 
         return {
@@ -332,8 +349,36 @@ pc.ontrack = (event) => {
             [peerId]: updatedParticipant
         };
     });
-};
 
+    // IMPORTANTE: Asegúrate de que tu función `getOrCreatePeerConnection` tenga configurado `pc.onnegotiationneeded`
+    // y que envíe una oferta/respuesta. Al añadir nuevos tracks (`pc.addTrack`), `onnegotiationneeded` se dispara,
+    // y si no se maneja, el otro peer no recibirá la información del nuevo stream.
+
+    pc.onnegotiationneeded = async () => {
+        try {
+            // Este evento se dispara cuando necesitas crear una nueva oferta o respuesta
+            // debido a cambios locales (como añadir o remover tracks).
+            // ¡Es crucial para que los cambios en los tracks se propaguen!
+            if (pc.signalingState !== 'stable') {
+                console.warn(`[PC Event] onnegotiationneeded disparado pero signalingState no es 'stable' (${pc.signalingState}). Ignorando por ahora.`);
+                return;
+            }
+            console.log(`[PC Event] onnegotiationneeded disparado para ${peerId}. Creando oferta...`);
+            await pc.setLocalDescription(await pc.createOffer());
+            if (pc.localDescription) {
+                sendSignal(peerId, {
+                    type: 'offer',
+                    sdp: pc.localDescription.sdp,
+                    sdpType: pc.localDescription.type,
+                    from: currentUser?.id,
+                });
+                console.log(`[PC Event] Oferta enviada a ${peerId}.`);
+            }
+        } catch (e) {
+            console.error(`[PC Event] Error en onnegotiationneeded para ${peerId}:`, e);
+        }
+    };
+};
             // --- CAMBIO CLAVE: Manejo de onicecandidate ---
       // Dentro de pc.onicecandidate:
       pc.onicecandidate = (event) => {
@@ -418,9 +463,8 @@ pc.ontrack = (event) => {
   }, [currentUser, localStream, sendSignal]); // Añadido localStream a las dependencias
 
   // --- useEffect para obtener el stream local ---
-  useEffect(() => {
-    // En el useEffect donde llamas a getUserMedia:
-    const startMedia = async () => {
+ useEffect(() => {
+      const getMedia = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setLocalStream(stream);
@@ -443,22 +487,22 @@ pc.ontrack = (event) => {
       }
     };
 
-    startMedia();
+    if (!localStream) { // Solo intenta obtener medios si localStream no existe
+        getMedia();
+    }
 
+    // --- Función de limpieza actualizada ---
     return () => {
-      // Limpia los streams y conexiones al desmontar el componente
-      localStream?.getTracks().forEach(track => track.stop());
-      Object.values(peerConnectionsRef.current).forEach(pc => {
-          if (pc.connectionState !== 'closed') pc.close();
-      });
-      peerConnectionsRef.current = {};
-      setLocalStream(null);
-      setParticipants({});
-      channelRef.current?.leave(); // Asegúrate de dejar el canal de Echo/Reverb
-      channelRef.current = null;
-      setHasJoinedChannel(false);
+        // Asegúrate de que el stream sea el que se estableció en este efecto
+        if (localStream) {
+            console.log("🟡 Deteniendo tracks de localStream en cleanup.");
+            localStream.getTracks().forEach(track => track.stop());
+            // No resetees setLocalStream(null) aquí si esperas que persista
+            // para otras lógicas como `handleCallCleanup`.
+            // Es mejor que `handleCallCleanup` se encargue de la limpieza final.
+        }
     };
-  }, []); // El array de dependencias vacío asegura que esto solo se ejecute una vez al montar
+}, [localStream]); // ¡IMPORTANTE! Añade localStream a las dependencias.
 
   // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB Y WEB RTC ---
 useEffect(() => {
@@ -647,6 +691,33 @@ useEffect(() => {
                           delete iceCandidatesQueueRef.current[from]; // Limpia la cola para este peer
                       }
                       break;
+
+                    // Dentro de joinedChannel.listenForWhisper('Signal')
+                    // Dentro de joinedChannel.listenForWhisper('Signal')
+                  case 'screenShareStatus':
+                      console.log(`[ScreenShareStatus] Recibido estado de pantalla compartida de ${data.from}: isSharing=${data.isSharing}`);
+                      setParticipants(prev => {
+                          const participantId = data.from;
+                          const existingParticipant = prev[participantId];
+                          if (!existingParticipant) return prev;
+
+                          const updatedParticipant = {
+                              ...existingParticipant,
+                              isSharingRemoteScreen: data.isSharing // ACTUALIZA ESTO SIEMPRE
+                          };
+
+                          if (!data.isSharing) {
+                              // Si el usuario deja de compartir pantalla, limpia su screenStream en el estado
+                              updatedParticipant.screenStream = null;
+                              // Opcional: podrías querer forzar que el cameraStream vuelva a mostrarse
+                              // si la cámara de ese usuario estaba activa antes.
+                              // Esto se manejaría si el track de la cámara se reanuda y llega por ontrack.
+                          }
+                          // Cuando inicia a compartir, `screenStream` se establecerá cuando llegue un nuevo track en `ontrack`.
+
+                          return { ...prev, [participantId]: updatedParticipant };
+                      });
+                      break;
                   // VideoRoom.tsx - dentro de joinedChannel.listenForWhisper('Signal')
                  case 'candidate':
                     // Agrega una verificación más estricta para data.candidate y data.candidate.candidate
@@ -808,116 +879,104 @@ useEffect(() => {
     });
   };
 
- const toggleScreenShare = async () => {
+const toggleScreenShare = useCallback(async () => {
     if (!localStream) {
-        console.warn("localStream no está disponible. No se puede iniciar la compartición de pantalla.");
+        console.warn("localStream no está disponible. No se puede iniciar/detener la compartición de pantalla.");
         return;
     }
 
     if (isSharingScreen) {
-        // Lógica para detener la compartición de pantalla
+        // --- Lógica para DETENER la compartición de pantalla ---
         if (screenShareStreamRef.current) {
             screenShareStreamRef.current.getTracks().forEach(track => track.stop());
             screenShareStreamRef.current = null;
         }
 
-        // Eliminar los senders de pantalla compartida de todas las PeerConnections
         Object.values(peerConnectionsRef.current).forEach(pc => {
-            const screenVideoSender = pc.getSenders().find(s => s.track?.id === 'screen-video-track'); // Usamos un ID custom si lo asignamos
-            if (screenVideoSender) {
-                pc.removeTrack(screenVideoSender);
-                console.log(`[ScreenShare] Removed screen video track from PC for ${pc.remoteDescription?.sdp?.substring(0, 20)}...`);
+            const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc);
+            if (!peerId) return;
+
+            const sendersForThisPeer = screenShareSendersRef.current[peerId];
+
+            if (sendersForThisPeer?.video) {
+                pc.removeTrack(sendersForThisPeer.video); // Remueve el sender que guardaste
+                console.log(`[ScreenShare Stop] Removed screen video track from PC for ${peerId}.`);
             }
-            const screenAudioSender = pc.getSenders().find(s => s.track?.id === 'screen-audio-track'); // Usamos un ID custom
-            if (screenAudioSender) {
-                pc.removeTrack(screenAudioSender);
-                console.log(`[ScreenShare] Removed screen audio track from PC for ${pc.remoteDescription?.sdp?.substring(0, 20)}...`);
+            if (sendersForThisPeer?.audio) {
+                pc.removeTrack(sendersForThisPeer.audio); // Remueve el sender que guardaste
+                console.log(`[ScreenShare Stop] Removed screen audio track from PC for ${peerId}.`);
             }
+            // Limpia los senders de este peer del ref
+            delete screenShareSendersRef.current[peerId];
         });
 
-        // Asegúrate de que el localStream original (cámara/mic) siga enviándose
-        // Esto es importante si hubieras pausado tus tracks de cámara/mic
-        localStream.getTracks().forEach(track => {
-            track.enabled = true; // Asegúrate de que tus tracks locales estén habilitados
+        if (localVideoRef.current && localStream) {
+            localVideoRef.current.srcObject = localStream;
+        }
+
+        Object.keys(peerConnectionsRef.current).forEach(peerId => {
+            sendSignal(peerId, { type: 'screenShareStatus', isSharing: false, from: currentUser?.id });
         });
-        setVideoEnabled(true); // Tu cámara local debería estar visible de nuevo
-        setMicEnabled(localStream?.getAudioTracks()[0]?.enabled || false); // Tu micrófono local debería estar habilitado de nuevo
 
         setIsSharingScreen(false);
         return;
     }
 
-    // Lógica para iniciar la compartición de pantalla
-    setIsSharingScreen(true);
+    // --- Lógica para INICIAR la compartición de pantalla ---
     try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); // Audio para compartir audio del sistema si se desea
-        screenShareStreamRef.current = screenStream; // Guardamos la referencia
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        screenShareStreamRef.current = screenStream;
 
         const screenVideoTrack = screenStream.getVideoTracks()[0];
         const screenAudioTrack = screenStream.getAudioTracks()[0];
 
-        // Opcional: Asignar IDs únicos a los tracks para fácil identificación
-        // Esto no es estrictamente necesario ya que el stream ID ya es único,
-        // pero puede ayudar a la hora de buscar y remover senders específicos.
-        // screenVideoTrack.id = 'screen-video-track';
-        // if (screenAudioTrack) {
-        //     screenAudioTrack.id = 'screen-audio-track';
-        // }
+        // NO INTENTES ASIGNAR screenVideoTrack.id = '...' o screenAudioTrack.id = '...'
+        // Usa la ID que ya tienen o propiedades personalizadas si realmente las necesitas
+        // para algo más que buscar el sender, pero para el sender no es necesario.
 
-        // Añade las pistas de pantalla a TODAS las PeerConnections existentes
+        if (localVideoRef.current) {
+            localVideoRef.current.srcObject = screenStream;
+        }
+
         Object.values(peerConnectionsRef.current).forEach(pc => {
-            // Verifica si ya hay un sender para este track para evitar duplicados
-           // En toggleScreenShare, sección de añadir tracks:
-            const existingVideoSender = pc.getSenders().find(s => s.track === screenVideoTrack); // Comparar por referencia de objeto Track
-            if (!existingVideoSender) {
-                pc.addTrack(screenVideoTrack, screenStream);
-                console.log(`[ScreenShare] Added new screen video track to PC for ${pc.remoteDescription?.sdp?.substring(0, 20)}...`);
-            } else {
-                // Esto solo debería pasar si el mismo track ya estaba añadido, lo cual es raro para getDisplayMedia
-                // O si quieres reemplazar un track previamente enviado con este nuevo track de pantalla.
-                // Si la intención es AÑADIR la pantalla COMPARTIDA como un stream ADICIONAL,
-                // la lógica debería ser siempre pc.addTrack para un nuevo stream.
-                // Si solo quieres tener UN stream de video (cámara O pantalla), entonces usar `replaceTrack` en el sender de la cámara.
-                // Pero tu `participants` sugiere que quieres ambos.
+            const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc);
+            if (!peerId) return;
 
-                // Para múltiples streams (cámara Y pantalla), siempre deberías hacer addTrack si el track es nuevo.
-                // Si el peerConnection ya tiene el track de pantalla, no lo añades de nuevo.
-                console.warn(`[ScreenShare] Screen video track already exists for PC via this specific track object.`);
-                // existingVideoSender.replaceTrack(screenVideoTrack); // Solo si realmente quieres reemplazar el mismo track
-            }
+            // Al añadir el track, guarda el RTCRtpSender que retorna addTrack
+            const videoSender = pc.addTrack(screenVideoTrack, screenStream);
+            console.log(`[ScreenShare Start] Added NEW screen video track to PC for ${peerId}.`);
 
+            let audioSender: RTCRtpSender | undefined;
             if (screenAudioTrack) {
-                const existingAudioSender = pc.getSenders().find(s => s.track?.id === screenAudioTrack.id);
-                if (!existingAudioSender) {
-                    pc.addTrack(screenAudioTrack, screenStream);
-                    console.log(`[ScreenShare] Added new screen audio track to PC for ${pc.remoteDescription?.sdp?.substring(0, 20)}...`);
-                } else {
-                    console.log(`[ScreenShare] Screen audio track already exists for PC.`);
-                    existingAudioSender.replaceTrack(screenAudioTrack);
-                }
+                audioSender = pc.addTrack(screenAudioTrack, screenStream);
+                console.log(`[ScreenShare Start] Added NEW screen audio track to PC for ${peerId}.`);
             }
+
+            // Guarda los senders en la ref para poder removerlos después
+            screenShareSendersRef.current[peerId] = {
+                video: videoSender,
+                audio: audioSender
+            };
         });
 
-        // Cuando la compartición de pantalla termina (ej. el usuario hace clic en "Detener compartir")
         screenVideoTrack.onended = () => {
-            console.log("[ScreenShare] Screen share ended by user.");
-            toggleScreenShare(); // Llama a la función de nuevo para ejecutar la lógica de "detener"
+            console.log("[ScreenShare] Screen share ended by user (browser control).");
+            toggleScreenShare();
         };
 
-        // No necesitas deshabilitar tu cámara local.
-        // Lo importante es que tu `localStream` original siga enviándose.
-        // Si quieres que TU PROPIA CÁMARA se "pause" mientras compartes, puedes hacerlo,
-        // pero la propuesta es que siempre se vea tu cámara Y la pantalla.
-        // setVideoEnabled(false); // Esto solo afectaría tu propio render, no lo que envías.
+        Object.keys(peerConnectionsRef.current).forEach(peerId => {
+            sendSignal(peerId, { type: 'screenShareStatus', isSharing: true, from: currentUser?.id });
+        });
 
+        setIsSharingScreen(true);
     } catch (error) {
         console.error("Error sharing screen:", error);
         setIsSharingScreen(false);
-        // Vuelve al estado original si hay un error
-        setVideoEnabled(localStream?.getVideoTracks()[0]?.enabled || true);
-        setMicEnabled(localStream?.getAudioTracks()[0]?.enabled || true);
+        if (localVideoRef.current && localStream) {
+            localVideoRef.current.srcObject = localStream;
+        }
     }
-};
+}, [isSharingScreen, localStream, sendSignal, currentUser]);
 
 const [roomParticipantId, setRoomParticipantId] = useState<number | null>(null);
 useEffect(() => {
@@ -975,10 +1034,10 @@ if (!roomParticipantId) return;
     navigate('/rooms'); // Redirigir al usuario
   };
 
-  // const toggleRecording = () => {
-  //   //console.log("Función de grabación no implementada aún.");
-  //   setIsRecording(prev => !prev);
-  // };
+  const toggleRecording = () => {
+    //console.log("Función de grabación no implementada aún.");
+    // setIsRecording(prev => !prev);
+  };
 
 
   if (loading) {
@@ -1004,287 +1063,483 @@ if (!roomParticipantId) return;
 
 // ... (imports y hooks se mantienen igual) ...
 // ... (resto del código) ...
+
   const remoteScreenShareActive = Object.values(participants).some(p => p.screenStream);
   const isAnyScreenSharing = isSharingScreen || remoteScreenShareActive;
  
+     const remoteScreenShareParticipant = Object.values(participants).find(p => p.screenStream);
+    const currentScreenShareStream = isSharingScreen ? screenShareStreamRef.current : (remoteScreenShareParticipant?.screenStream || null);
+    const currentScreenShareOwnerId = isSharingScreen ? currentUser?.id : remoteScreenShareParticipant?.id;
+    const currentScreenShareOwnerName = isSharingScreen ? `${currentUser?.name || 'Tú'} (Mi Pantalla)` : (remoteScreenShareParticipant ? `${remoteScreenShareParticipant.name} (Pantalla)` : '');
+    const allActiveStreams = [
+        localStream,
+        ...Object.values(participants).map(p => p.cameraStream),
+        ...Object.values(participants).filter(p => p.screenStream && p.id !== currentScreenShareOwnerId).map(p => p.screenStream)
+    ].filter(Boolean); // Filtra los streams nulos
+let totalVideosInGrid = 0;
+  if (!currentScreenShareStream) { // Solo si NO hay pantalla compartida principal
+    if (localStream && videoEnabled) { // Tu cámara solo cuenta si está habilitada
+        totalVideosInGrid += 1;
+    }
+    totalVideosInGrid += Object.values(participants).filter(p => p.cameraStream && p.videoEnabled).length;
+  }
+    // Calcular el número de videos para decidir la cuadrícula
+    const numVideos = allActiveStreams.length + (currentScreenShareStream ? 0 : 1); // +1 si tu cámara está activa y no hay pantalla compartida
+    // La lógica para `numVideos` necesita ser precisa para decidir el layout
+// ... (imports y hooks se mantienen igual) ...
 
-  return (
-    // ... (El resto del JSX es el mismo, no hay cambios aquí a menos que quieras más detalles en la UI)
-    <div className={`flex bg-black text-white ${isCallMinimized ? 'h-full w-full flex-col' : 'h-screen flex-row'}`}>
-      {/* Contenedor principal de videos (Maximizada) */}
-      {!isCallMinimized && (
-        <div className="flex flex-col flex-1 relative p-4 bg-gray-950">
-          {(() => {
-            if (isAnyScreenSharing) {
-              return (
-                <>
-                  <div className="w-full flex-grow flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden mb-4">
-                    {isSharingScreen && screenShareStreamRef.current ? (
-                      <RemoteVideo
-                        stream={screenShareStreamRef.current}
-                        participantId={currentUser?.id || 'local-screen'}
-                        participantName={`${currentUser?.name || 'Tú'} (Mi Pantalla)`}
-                        videoEnabled={true}
-                        micEnabled={false}
-                        isLocal={true}
-                        volume={0}
-                        isScreenShare={true}
-                      />
-                    ) : (
-                      (() => {
-                        const remoteScreenShare = Object.values(participants).find(p => p.screenStream);
-                        if (remoteScreenShare) {
-                          return (
-                            <RemoteVideo
-                              stream={remoteScreenShare.screenStream!}
-                              participantId={`${remoteScreenShare.id}-screen`}
-                              participantName={`${remoteScreenShare.name} (Pantalla)`}
-                              videoEnabled={true}
-                              micEnabled={false}
-                              isLocal={false}
-                              volume={0}
-                              isScreenShare={true}
-                            />
-                          );
-                        }
-                        return null;
-                      })()
-                    )}
-                  </div>
-                  <div className="w-full grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 flex-shrink-0">
-                    {localStream && (
-                      <RemoteVideo
-                        stream={localStream}
-                        participantId={currentUser?.id || 'local'}
-                        participantName={`${currentUser?.name || 'Tú'} (Yo)`}
-                        videoEnabled={videoEnabled}
-                        micEnabled={micEnabled}
-                        isLocal={true}
-                        volume={volume}
-                        isScreenShare={false}
-                      />
-                    )}
-                    {/* Filtra aquí para solo mostrar participantes con cameraStream */}
-                    {Object.values(participants)
-                        .filter(p => p.cameraStream) // Solo muestra si hay un stream de cámara
-                        .map(participant => (
-                        <RemoteVideo
-                            key={participant.id} // Asegúrate de usar una key única
-                            stream={participant.cameraStream!}
-                            participantId={participant.id}
-                            participantName={participant.name}
-                            videoEnabled={participant.videoEnabled}
-                            micEnabled={participant.micEnabled}
-                            isLocal={false}
-                            volume={0}
-                            isScreenShare={false}
-                        />
-                    ))}
-                  </div>
-                </>
-              );
-            } else {
-              return (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="w-full grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {localStream && (
-                      <RemoteVideo
-                        stream={localStream}
-                        participantId={currentUser?.id || 'local'}
-                        participantName={`${currentUser?.name || 'Tú'} (Yo)`}
-                        videoEnabled={videoEnabled}
-                        micEnabled={micEnabled}
-                        isLocal={true}
-                        volume={volume}
-                        isScreenShare={false}
-                      />
-                    )}
-                    {Object.values(participants)
-                        .filter(p => p.cameraStream) // Solo muestra si hay un stream de cámara
-                        .map(participant => (
-                        <RemoteVideo
-                            key={participant.id} // Asegúrate de usar una key única
-                            stream={participant.cameraStream!}
-                            participantId={participant.id}
-                            participantName={participant.name}
-                            videoEnabled={participant.videoEnabled}
-                            micEnabled={participant.micEnabled}
-                            isLocal={false}
-                            volume={0}
-                            isScreenShare={false}
-                        />
-                    ))}
-                  </div>
-                </div>
-              );
-            }
-          })()}
-        </div>
-      )}
+    return (
+<div className={`flex bg-black text-white ${isCallMinimized ? 'flex-col' : 'h-screen flex-row'}`}>
+       {/* Contenedor principal de videos (no minimizado) */}
+     {/* Full-screen call view - visible on all screens when not minimized */}
+     {!isCallMinimized && ( // This div is only for the full-screen view
+         <div className={`flex flex-1 ${isChatOpenMobile ? 'hidden md:flex flex-col' : 'flex-col'}`}>
+           {/* Contenido de los videos */}
+           <div className="flex-grow relative p-2 md:p-4 bg-gray-950">
+             {(() => {
+               if (currentScreenShareStream) {
+                 return (
+                   <>
+                     {/* Video PRINCIPAL: La pantalla compartida (propia o remota) */}
+                     <div className="w-full flex-grow flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden mb-2 md:mb-4">
+                       <RemoteVideo
+                         stream={currentScreenShareStream}
+                         participantId={`${currentScreenShareOwnerId}-screen`}
+                         participantName={currentScreenShareOwnerName}
+                         videoEnabled={true}
+                         micEnabled={currentScreenShareStream.getAudioTracks().length > 0}
+                         isLocal={isSharingScreen}
+                         volume={0}
+                         isScreenShare={true}
+                       />
+                     </div>
+                     {/* Miniaturas de otros participantes (cámaras y otras pantallas) */}
+                     {allActiveStreams.length > 0 && (
+                         <div className="w-full flex gap-2 md:gap-3 flex-shrink-0 overflow-x-auto p-1 md:p-2 scrollbar-hide">
+                             {/* Tu cámara local (siempre visible si localStream existe y videoEnabled) */}
+                             {localStream && videoEnabled && (
+                                 <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
+                                     <RemoteVideo
+                                         stream={localStream}
+                                         participantId={currentUser?.id || 'local'}
+                                         participantName={`${currentUser?.name || 'Tú'} (Yo)`}
+                                         videoEnabled={videoEnabled}
+                                         micEnabled={micEnabled}
+                                         isLocal={true}
+                                         volume={volume}
+                                         isScreenShare={false}
+                                         className="w-full h-full object-cover"
+                                     />
+                                 </div>
+                             )}
+                             {/* Cámaras de participantes remotos y otras PANTALLAS COMPARTIDAS */}
+                             {Object.values(participants).map(participant => (
+                                 <React.Fragment key={participant.id}>
+                                     {participant.cameraStream && participant.videoEnabled && (
+                                         <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
+                                             <RemoteVideo
+                                                 key={participant.id + '-camera'}
+                                                 stream={participant.cameraStream!}
+                                                 participantId={participant.id}
+                                                 participantName={participant.name}
+                                                 videoEnabled={participant.videoEnabled}
+                                                 micEnabled={participant.micEnabled}
+                                                 isLocal={false}
+                                                 volume={0}
+                                                 isScreenShare={false}
+                                                 className="w-full h-full object-cover"
+                                             />
+                                         </div>
+                                     )}
+                                     {participant.screenStream && participant.id !== currentScreenShareOwnerId && (
+                                         <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
+                                             <RemoteVideo
+                                                 key={participant.id + '-screen'}
+                                                 stream={participant.screenStream!}
+                                                 participantId={participant.id}
+                                                 participantName={`${participant.name} (Pantalla)`}
+                                                 videoEnabled={true}
+                                                 micEnabled={participant.screenStream?.getAudioTracks().length > 0}
+                                                 isLocal={false}
+                                                 volume={0}
+                                                 isScreenShare={true}
+                                                 className="w-full h-full object-cover"
+                                             />
+                                         </div>
+                                     )}
+                                 </React.Fragment>
+                             ))}
+                         </div>
+                     )}
+                   </>
+                 );
+               } else {
+                 let gridColsClass = "grid-cols-1";
+                 if (totalVideosInGrid === 2) gridColsClass = "grid-cols-1 sm:grid-cols-2";
+                 else if (totalVideosInGrid === 3) gridColsClass = "grid-cols-1 sm:grid-cols-3 md:grid-cols-3";
+                 else if (totalVideosInGrid === 4) gridColsClass = "grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4";
+                 else if (totalVideosInGrid >= 5) gridColsClass = "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
 
-      {/* Vista Minimizada - Muestra solo si isCallMinimized es true */}
-      {isCallMinimized && (
-        <div className="flex-1 flex flex-col bg-gray-950 rounded-lg overflow-hidden p-2">
-          {/* Pantalla compartida principal en miniatura (si aplica) */}
-          {isAnyScreenSharing && (
-            <div className="w-full h-3/4 mb-2 bg-gray-800 rounded-md flex items-center justify-center overflow-hidden">
-              {isSharingScreen && screenShareStreamRef.current ? (
-                <RemoteVideo
-                  stream={screenShareStreamRef.current}
-                  participantId={currentUser?.id || 'local-screen-mini'}
-                  participantName={`${currentUser?.name || 'Tú'} (Mi Pantalla)`}
-                  videoEnabled={true}
-                  micEnabled={false}
-                  isLocal={true}
-                  volume={0}
-                  isScreenShare={true}
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                (() => {
-                  const remoteScreenShare = Object.values(participants).find(p => p.screenStream);
-                  if (remoteScreenShare) {
-                    return (
-                      <RemoteVideo
-                        stream={remoteScreenShare.screenStream!}
-                        participantId={`${remoteScreenShare.id}-screen-mini`}
-                        participantName={`${remoteScreenShare.name} (Pantalla)`}
-                        videoEnabled={true}
-                        micEnabled={false}
-                        isLocal={false}
-                        volume={0}
-                        isScreenShare={true}
-                        className="w-full h-full object-contain"
-                      />
-                    );
-                  }
-                  return (
-                      <div className="text-gray-500 text-center">
-                          <ScreenShare className="w-8 h-8 mx-auto mb-1" />
-                          <p className="text-sm">Compartiendo pantalla</p>
-                      </div>
-                  );
-                })()
-              )}
-            </div>
-          )}
+                 return (
+                   <div className="flex-1 flex items-center justify-center p-2">
+                     <div className={`w-full h-full grid ${gridColsClass} gap-3 md:gap-4 auto-rows-fr`}>
+                       {localStream && videoEnabled && (
+                         <RemoteVideo
+                           stream={localStream}
+                           participantId={currentUser?.id || 'local'}
+                           participantName={`${currentUser?.name || 'Tú'} (Yo)`}
+                           videoEnabled={videoEnabled}
+                           micEnabled={micEnabled}
+                           isLocal={true}
+                           volume={volume}
+                           isScreenShare={false}
+                         />
+                       )}
+                       {Object.values(participants)
+                           .filter(p => p.cameraStream && p.videoEnabled)
+                           .map(participant => (
+                           <RemoteVideo
+                               key={participant.id}
+                               stream={participant.cameraStream!}
+                               participantId={participant.id}
+                               participantName={participant.name}
+                               videoEnabled={participant.videoEnabled}
+                               micEnabled={participant.micEnabled}
+                               isLocal={false}
+                               volume={0}
+                               isScreenShare={false}
+                           />
+                       ))}
+                     </div>
+                   </div>
+                 );
+               }
+             })()}
+           </div>
 
-          {/* Miniaturas de cámaras de participantes (local + remotos) */}
-          <div className={`w-full ${isAnyScreenSharing ? 'h-1/4' : 'flex-grow'} grid grid-cols-2 gap-1 overflow-y-auto`}>
-            {/* Tu propia cámara */}
-            {localStream && (
-              <RemoteVideo
-                stream={localStream}
-                participantId={currentUser?.id || 'local-mini'}
-                participantName={`${currentUser?.name || 'Tú'}`}
-                videoEnabled={videoEnabled}
-                micEnabled={micEnabled}
-                isLocal={true}
-                volume={volume}
-                isScreenShare={false}
-                className="w-full h-full object-cover rounded-sm"
-              />
-            )}
+           {/* Controles de la llamada y botón de chat para MOBILE (parte inferior) */}
+           <div className="flex md:hidden justify-center gap-2 p-3 bg-black bg-opacity-80 w-full flex-wrap">
+             <button
+               onClick={toggleMic}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
+             >
+               {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+             </button>
 
-            {/* Cámaras de participantes remotos */}
-            {Object.values(participants)
-              .filter(p => p.cameraStream) // Asegúrate de que solo se rendericen si tienen un stream
-              .map(participant => (
-                <RemoteVideo
-                  key={participant.id + '-mini'}
-                  stream={participant.cameraStream!}
-                  participantId={participant.id}
-                  participantName={participant.name}
-                  videoEnabled={participant.videoEnabled}
-                  micEnabled={participant.micEnabled}
-                  isLocal={false}
-                  volume={0}
-                  isScreenShare={false}
-                  className="w-full h-full object-cover rounded-sm"
-                />
-              ))}
+             <button
+               onClick={toggleVideo}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
+             >
+               {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
+             </button>
 
-            {/* Placeholder si no hay cámaras para mostrar */}
-            {!localStream && Object.values(participants).filter(p => p.cameraStream).length === 0 && !isAnyScreenSharing && (
-              <div className="col-span-full flex flex-col items-center justify-center text-gray-500">
-                <Users className="w-12 h-12 mb-2" />
-                <p className="text-sm text-center">Nadie con cámara activa.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+             {/* <button
+               onClick={toggleScreenShare}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
+             >
+               <ScreenShare size={20} />
+             </button> */}
 
-      {/* Controles de la llamada - Secciones diferentes para maximizado y minimizado */}
-      <div className={`flex justify-center gap-2 p-3 bg-black bg-opacity-80
-        ${isCallMinimized ? 'w-full flex-wrap' : 'border-t border-gray-700'}`}>
+             {/* {isTeacher && (
+               <button
+                 onClick={toggleRecording}
+                 className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+                 title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
+               >
+                 <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
+               </button>
+             )} */}
 
-        {/* Botones de control (Mic, Video) - Comunes y siempre visibles */}
-        <button
-          onClick={toggleMic}
-          className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-          title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
-        >
-          {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
-        </button>
+             <button
+               onClick={() => setIsChatOpenMobile(prev => !prev)}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-blue-600 hover:bg-blue-700"
+               title="Abrir/Cerrar Chat"
+             >
+               <MessageSquare size={20} />
+             </button>
 
-        <button
-          onClick={toggleVideo}
-          className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-          title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
-        >
-          {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
-        </button>
+             <button
+               onClick={toggleMinimizeCall}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={isCallMinimized ? 'Maximizar llamada' : 'Minimizar llamada'}
+             >
+               {isCallMinimized ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
+             </button>
 
-        {/* Botón de Compartir Pantalla y Grabar (solo en vista maximizada) */}
-        {!isCallMinimized && (
-          <>
-            <button
-              onClick={toggleScreenShare}
-              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-              title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
-            >
-              <ScreenShare size={20} />
-            </button>
+             <button
+               onClick={handleCallCleanup}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+               title="Colgar"
+             >
+               <PhoneOff size={20} />
+             </button>
+           </div>
+         </div>
+       )}
 
-            {isTeacher && (
-              <button
-                onClick={toggleRecording}
-                className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-                title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
-              >
-                <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
-              </button>
-            )}
-          </>
-        )}
 
-        {/* Botón de Minimizar/Maximizar: SIEMPRE VISIBLE */}
-        <button
-          onClick={toggleMinimizeCall}
-          className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
-          title={isCallMinimized ? 'Maximizar llamada' : 'Minimizar llamada'}
-        >
-          {isCallMinimized ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
-        </button>
+       {/* Contenedor lateral/modal para Controles y Chat (Solo en Desktop o como Overlay en Móvil) */}
 
-        {/* Botón de Colgar: SIEMPRE VISIBLE */}
-        <button
-          onClick={handleCallCleanup} // Llama a la nueva función de limpieza
-          className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
-          title="Colgar"
-        >
-          <PhoneOff size={20} />
-        </button>
-      </div>
+     {!isCallMinimized && ( // This div is also only for the full-screen view
+         <div className={`
+           md:w-80 md:flex md:flex-col md:border-l md:border-gray-700 md:bg-gray-900
+           ${isChatOpenMobile ? 'fixed inset-0 z-50 flex flex-col bg-gray-900' : 'hidden md:flex'}
+         `}>
+           {/* Controles de la llamada (desktop y overlay móvil) */}
+           <div className="flex justify-center gap-2 p-3 bg-black bg-opacity-80 border-b border-gray-700 flex-wrap">
+             <button
+               onClick={toggleMic}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
+             >
+               {micEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+             </button>
 
-      {/* Chat lateral - Oculta si minimizado */}
-      <div className={`w-80 border-l border-gray-700 bg-gray-900 flex flex-col flex-2 py-8 justify-end
-        ${isCallMinimized ? 'hidden' : ''}`}>
-        {roomId && <ChatBox roomId={roomId} />}
-      </div>
-    </div>
-  );
-};
+             <button
+               onClick={toggleVideo}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
+             >
+               {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
+             </button>
 
-export default VideoRoom;
+             <button
+               onClick={toggleScreenShare}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
+             >
+               <ScreenShare size={20} />
+             </button>
+
+             {/* {isTeacher && (
+               <button
+                 onClick={toggleRecording}
+                 className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+                 title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
+               >
+                 <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
+               </button>
+             )} */}
+
+             {/* Botón de CERRAR Chat (visible solo en el overlay móvil) */}
+             <button
+               onClick={() => setIsChatOpenMobile(false)}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 md:hidden"
+               title="Cerrar Chat"
+             >
+               <X size={20} />
+             </button>
+
+             {/* Botón de Minimizar/Maximizar (este botón en el panel lateral es para desktop) */}
+             <button
+               onClick={toggleMinimizeCall}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 hidden md:flex"
+               title={isCallMinimized ? 'Maximizar llamada' : 'Minimizar llamada'}
+             >
+               {isCallMinimized ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
+             </button>
+
+             <button
+               onClick={handleCallCleanup}
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+               title="Colgar"
+             >
+               <PhoneOff size={20} />
+             </button>
+           </div>
+
+           {/* Chat lateral */}
+           <div className="flex-grow flex flex-col py-2 md:py-8 justify-end overflow-hidden">
+             {roomId && <ChatBox roomId={roomId} />}
+           </div>
+         </div>
+       )}
+
+       {/* --- WIDGET MINIMIZADO --- */}
+
+       {/* Widget minimizado en DESKTOP (muestra cámaras y más controles) */}
+      {isCallMinimized && ( // This div is for the desktop minimized widget
+         <div className={`
+           hidden md:flex fixed bottom-4 right-4 z-40
+           w-[320px] h-[400px] rounded-lg shadow-xl overflow-hidden bg-gray-950 flex-col
+         `}>
+           {/* Contenido de videos en miniatura para desktop minimizado */}
+           <div className="flex-1 flex flex-col bg-gray-950 rounded-lg overflow-hidden p-2">
+             {/* Pantalla compartida principal en miniatura (si aplica) */}
+             {currentScreenShareStream && (
+               <div className="w-full h-3/4 mb-2 bg-gray-800 rounded-md flex items-center justify-center overflow-hidden">
+                 <RemoteVideo
+                   stream={currentScreenShareStream}
+                   participantId={`${currentScreenShareOwnerId}-screen-mini`}
+                   participantName={currentScreenShareOwnerName}
+                   videoEnabled={true}
+                   micEnabled={currentScreenShareStream.getAudioTracks().length > 0}
+                   isLocal={isSharingScreen}
+                   volume={0}
+                   isScreenShare={true}
+                   className="w-full h-full object-contain"
+                 />
+               </div>
+             )}
+             {!currentScreenShareStream && isAnyScreenSharing && (
+                 <div className="w-full h-3/4 mb-2 bg-gray-800 rounded-md flex items-center justify-center overflow-hidden text-gray-500 text-center">
+                     <ScreenShare className="w-8 h-8 mx-auto mb-1" />
+                     <p className="text-sm">Cargando pantalla...</p>
+                 </div>
+             )}
+
+             {/* Miniaturas de cámaras de participantes (local + remotos) Y OTRAS PANTALLAS COMPARTIDAS */}
+             <div className={`w-full ${currentScreenShareStream ? 'h-1/4' : 'flex-grow'} grid grid-cols-2 gap-1 overflow-y-auto`}>
+               {localStream && videoEnabled && (
+                 <RemoteVideo
+                   stream={localStream}
+                   participantId={currentUser?.id || 'local-mini'}
+                   participantName={`${currentUser?.name || 'Tú'}`}
+                   videoEnabled={videoEnabled}
+                   micEnabled={micEnabled}
+                   isLocal={true}
+                   volume={volume}
+                   isScreenShare={false}
+                   className="w-full h-full object-cover rounded-sm"
+                 />
+               )}
+
+               {Object.values(participants).map(participant => (
+                 <React.Fragment key={participant.id + '-mini'}>
+                   {participant.cameraStream && participant.videoEnabled && (
+                     <RemoteVideo
+                       key={participant.id + '-camera-mini'}
+                       stream={participant.cameraStream!}
+                       participantId={participant.id}
+                       participantName={participant.name}
+                       videoEnabled={participant.videoEnabled}
+                       micEnabled={participant.micEnabled}
+                       isLocal={false}
+                       volume={0}
+                       isScreenShare={false}
+                       className="w-full h-full object-cover rounded-sm"
+                     />
+                   )}
+                   {participant.screenStream && participant.id !== currentScreenShareOwnerId && (
+                     <RemoteVideo
+                       key={participant.id + '-screen-mini'}
+                       stream={participant.screenStream!}
+                       participantId={participant.id}
+                       participantName={`${participant.name} (Pantalla)`}
+                       videoEnabled={true}
+                       micEnabled={participant.screenStream?.getAudioTracks().length > 0}
+                       isLocal={false}
+                       volume={0}
+                       isScreenShare={true}
+                       className="w-full h-full object-cover rounded-sm"
+                     />
+                   )}
+                 </React.Fragment>
+               ))}
+
+               {!localStream && Object.values(participants).filter(p => p.cameraStream).length === 0 && !currentScreenShareStream && (
+                 <div className="col-span-full flex flex-col items-center justify-center text-gray-500">
+                   <Users className="w-8 h-8 mb-2" />
+                   <p className="text-xs text-center">Nadie con video activo.</p>
+                 </div>
+               )}
+             </div>
+           </div>
+           {/* Controles del widget minimizado grande (recuperados) */}
+           <div className="flex justify-center gap-2 p-3 bg-gray-800 border-t border-gray-700 flex-wrap">
+             <button
+               onClick={toggleMic}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={micEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
+             >
+               {micEnabled ? <Mic size={18} /> : <MicOff size={18} />}
+             </button>
+             <button
+               onClick={toggleVideo}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={videoEnabled ? 'Apagar cámara' : 'Encender cámara'}
+             >
+               {videoEnabled ? <Video size={18} /> : <VideoOff size={18} />}
+             </button>
+             <button
+               onClick={toggleScreenShare}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title={isSharingScreen ? 'Detener compartir pantalla' : 'Compartir pantalla'}
+             >
+               <ScreenShare size={18} />
+             </button>
+             {/* {isTeacher && (
+              //  <button
+              //    onClick={toggleRecording}
+              //    className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+              //    title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
+              //  >
+              //    <StopCircle size={18} className={isRecording ? 'text-red-500' : ''} />
+              //  </button>
+             )} */}
+             <button
+               onClick={toggleMinimizeCall}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title="Maximizar llamada"
+             >
+               <Maximize2 size={18} />
+             </button>
+             <button
+               onClick={handleCallCleanup}
+               className="w-10 h-10 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+               title="Colgar"
+             >
+               <PhoneOff size={18} />
+             </button>
+           </div>
+         </div>
+       )}
+
+       {/* Widget minimizado en MOBILE (solo iconos y contador) */}
+
+      {isCallMinimized && ( // This div is for the mobile minimized widget
+         <div className={`
+           md:hidden fixed bottom-4 right-4 z-50 flex flex-col p-2 bg-gray-900 rounded-lg shadow-lg
+           w-36 h-24
+         `}>
+           {/* Contenido del widget minimizado */}
+           <div className="flex items-center justify-center flex-grow text-gray-400 text-sm">
+             {currentScreenShareStream ? (
+               <div className="flex flex-col items-center">
+                 <ScreenShare className="w-6 h-6 mb-1" />
+                 <p>Compartiendo</p>
+               </div>
+             ) : (
+               <div className="flex flex-col items-center">
+                 <Users className="w-6 h-6 mb-1" />
+                 <p>{Object.keys(participants).length + (localStream && videoEnabled ? 1 : 0)} Usuarios</p>
+               </div>
+             )}
+           </div>
+           {/* Controles de minimizado */}
+           <div className="flex justify-center gap-1 mt-2">
+             <button
+               onClick={toggleMinimizeCall}
+               className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+               title="Maximizar llamada"
+             >
+               <Maximize2 size={16} />
+             </button>
+             <button
+               onClick={handleCallCleanup}
+               className="w-8 h-8 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
+               title="Colgar"
+             >
+               <PhoneOff size={16} />
+             </button>
+           </div>
+         </div>
+       )}
+     </div>
+   );
+ };
+
+ export default VideoRoom;

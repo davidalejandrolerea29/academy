@@ -293,14 +293,6 @@ const RoomList: React.FC = () => {
                         <Video className="w-4 h-4 mr-2" />
                         Unirse
                       </button>
-                    ) : room.start_time <= now && room.end_time >= now ? (
-                      <button
-                        onClick={() => startCall(String(room.id))}
-                        className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-md flex items-center justify-center text-sm transition-colors w-full flex-grow"
-                      >
-                        <Video className="w-4 h-4 mr-2" />
-                        Ver sala
-                      </button>
                     ) : (
                       <span className="text-sm text-gray-500 px-3 py-2 w-full text-center sm:text-left flex-grow">
                         {room.start_time > now ? 'Próximamente' : 'Finalizada'}
