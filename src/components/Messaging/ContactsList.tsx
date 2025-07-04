@@ -137,7 +137,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
                 onSetSelectedTeacher(null);
                 onClearChatPanel(); // Llama a la función de limpieza en MessagingPage
               }}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'teachers' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'teachers' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
               Profesores
             </button>
@@ -147,13 +147,13 @@ const ContactsList: React.FC<ContactsListProps> = ({
                 onSetSelectedTeacher(null);
                 onClearChatPanel(); // Llama a la función de limpieza en MessagingPage
               }}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'all-students' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'all-students' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
               Todos los Alumnos
             </button>
             {/* <button
               onClick={() => setCurrentAdminView('chat-observation')}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'chat-observation' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'chat-observation' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
               Observar Chats
             </button> */}
@@ -169,7 +169,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
               onSetSelectedTeacher(null);
               onClearChatPanel(); // Llama a la función de limpieza en MessagingPage
             }}
-            className="flex items-center text-blue-500 hover:text-blue-600 text-sm"
+            className="flex items-center text-orange-500 hover:text-orange-600 text-sm"
           >
             <ChevronLeft className="w-4 h-4 mr-1" />
             Volver a Profesores

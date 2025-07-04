@@ -199,7 +199,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
               className="flex-1 p-2 rounded bg-gray-800 text-white"
               placeholder="Escribe un mensaje..."
             />
-            <button type="submit" className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700">
+            <button type="submit" className="bg-orange-600 px-4 py-2 rounded hover:bg-orange-700">
               Enviar
             </button>
         </div>

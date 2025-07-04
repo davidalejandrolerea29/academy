@@ -199,7 +199,7 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
       {isLocal && !isScreenShare && ( // Solo para tu propio micrófono
         <div className="absolute bottom-2 right-2 w-16 h-1 bg-gray-600 rounded">
           <div
-            className="h-full bg-blue-500 rounded"
+            className="h-full bg-orange-500 rounded"
             style={{ width: `${volume * 100}%` }}
           ></div>
         </div>

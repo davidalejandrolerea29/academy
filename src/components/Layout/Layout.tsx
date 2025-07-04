@@ -124,7 +124,7 @@
                    className={({ isActive }) => `
                      flex items-center px-4 py-2 rounded-md text-sm font-medium
                      ${isActive
-                       ? 'bg-blue-50 text-blue-700'
+                       ? 'bg-blue-50 text-orange-700'
                        : 'text-gray-700 hover:bg-gray-100'}
                    `}
                    onClick={closeSidebar}
@@ -138,7 +138,7 @@
                    className={({ isActive }) => `
                      flex items-center px-4 py-2 rounded-md text-sm font-medium
                      ${isActive
-                       ? 'bg-blue-50 text-blue-700'
+                       ? 'bg-blue-50 text-orange-700'
                        : 'text-gray-700 hover:bg-gray-100'}
                    `}
                    onClick={closeSidebar}
@@ -153,7 +153,7 @@
                      className={({ isActive }) => `
                        flex items-center px-4 py-2 rounded-md text-sm font-medium
                        ${isActive
-                         ? 'bg-blue-50 text-blue-700'
+                         ? 'bg-blue-50 text-orange-700'
                          : 'text-gray-700 hover:bg-gray-100'}
                      `}
                      onClick={closeSidebar}

@@ -1053,7 +1053,7 @@ if (!roomParticipantId) return;
     return (
       <div className="flex items-center justify-center h-full text-red-500 bg-gray-900">
         <p>Error: {error}</p>
-        <button onClick={() => navigate('/rooms')} className="ml-4 px-4 py-2 bg-blue-600 rounded">Volver a Salas</button>
+        <button onClick={() => navigate('/rooms')} className="ml-4 px-4 py-2 bg-orange-600 rounded">Volver a Salas</button>
       </div>
     );
   }
@@ -1255,7 +1255,7 @@ let totalVideosInGrid = 0;
 
              <button
                onClick={() => setIsChatOpenMobile(prev => !prev)}
-               className="w-12 h-12 rounded-full flex items-center justify-center bg-blue-600 hover:bg-blue-700"
+               className="w-12 h-12 rounded-full flex items-center justify-center bg-orange-600 hover:bg-orange-700"
                title="Abrir/Cerrar Chat"
              >
                <MessageSquare size={20} />
