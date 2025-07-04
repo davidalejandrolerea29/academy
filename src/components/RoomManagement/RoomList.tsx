@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCall } from '../../contexts/CallContext';
-// Asegúrate de que los tipos estén definidos como arriba
-import { Room, User } from '../../types'; // O definir Participant, Message, RoomFrontend en este mismo archivo si no tienes types.ts
+import { Room, User } from '../../types';
 import {
   Calendar,
   Clock,
@@ -13,20 +12,19 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  MessageSquare // ¡Nuevo icono para mensajes!
+  MessageSquare
 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-// (Coloca las interfaces Message, Participant, RoomFrontend aquí si no están en types.ts)
 interface Message {
   id: number;
   content: string;
-  timestamp: string; // O Date, si lo parseas en el frontend
+  timestamp: string;
   read: boolean;
   banned: boolean;
   room_participant_id: number;
-  sender_name: string; // Nuevo campo para el nombre del remitente
+  sender_name: string;
 }
 
 interface Participant {
@@ -47,7 +45,12 @@ interface RoomFrontend extends Omit<Room, 'start_time' | 'end_time' | 'participa
     name: string;
   } | null;
   participants: Participant[];
-  messages?: Message[]; // Campo opcional para los administradores
+  messages?: Message[];
+  // Asegúrate de que 'creator_id' o 'user_id' o similar exista en tu tipo Room
+  // Si tu backend devuelve el ID del creador en 'teacher_id' (incluso si es un admin quien la creó),
+  // entonces eso es lo que usaremos. Si tienes un campo 'created_by_user_id', úsalo.
+  // Para este ejemplo, asumiré que 'teacher_id' es el ID del creador de la sala.
+  teacher_id: number; // Asegúrate de que este campo exista en tu tipo `Room` o agrégalo.
 }
 
 
@@ -58,7 +61,6 @@ const RoomList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming');
 
-  // Estado para el modal de mensajes
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [currentRoomMessages, setCurrentRoomMessages] = useState<Message[]>([]);
   const [currentRoomName, setCurrentRoomName] = useState('');
@@ -68,9 +70,8 @@ const RoomList: React.FC = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      // Ya no es necesario enviar user_id en el query, el backend lo obtiene del token
       console.log('Fetching rooms for current user role:', currentUser.role?.description);
-      const response = await fetch(`${API_URL}/auth/rooms`, { // URL sin ?user_id
+      const response = await fetch(`${API_URL}/auth/rooms`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -86,7 +87,9 @@ const RoomList: React.FC = () => {
         ...room,
         start_time: new Date(room.start_time),
         end_time: new Date(room.end_time),
-        // Los mensajes ya vienen listos en el campo 'messages' si el usuario es admin
+        // Asegúrate de que room.teacher_id viene del backend y es el ID del creador
+        // Si el backend devuelve un campo diferente para el creador (ej: created_by), úsalo aquí.
+        teacher_id: room.teacher_id, // Asumiendo que teacher_id es el creador.
       }));
       console.log('Mapped Rooms:', mappedRooms);
       setRooms(mappedRooms);
@@ -131,7 +134,7 @@ const RoomList: React.FC = () => {
       }
 
       console.log(`Sala ${roomId} actualizada con éxito.`);
-      fetchRooms(); // Refrescar la lista de salas después de la actualización
+      fetchRooms();
     } catch (error) {
       console.error('Error actualizando la sala:', error);
     }
@@ -164,14 +167,12 @@ const RoomList: React.FC = () => {
     return true;
   });
 
-  // Función para abrir el modal de mensajes
   const openMessageModal = (room: RoomFrontend) => {
     setCurrentRoomMessages(room.messages || []);
     setCurrentRoomName(room.name);
     setIsMessageModalOpen(true);
   };
 
-  // Función para cerrar el modal de mensajes
   const closeMessageModal = () => {
     setIsMessageModalOpen(false);
     setCurrentRoomMessages([]);
@@ -247,9 +248,23 @@ const RoomList: React.FC = () => {
 
             const uniqueParticipants = new Set(room.participants.map(p => p.user_id)).size;
 
-             return (
-              <div key={room.id} className="bg-white rounded-lg shadow overflow-hidden flex flex-col"> {/* Añade flex-col aquí */}
-                <div className="p-4 sm:p-5 flex-grow"> {/* Añade flex-grow para que el contenido ocupe el espacio disponible */}
+            // *** LÓGICA CLAVE AQUÍ: Determinar si el botón "Unirse" debe mostrarse ***
+            let canJoinRoom = false;
+            if (currentUser?.role?.description === 'Admin') {
+                // Admin solo puede unirse si es el creador de la sala
+                canJoinRoom = isLive && room.teacher_id === currentUser.id;
+            } else if (currentUser?.role?.description === 'Teacher') {
+                // Profesor solo puede unirse si es el creador de la sala
+                canJoinRoom = isLive && room.teacher_id === currentUser.id;
+            } else if (currentUser?.role?.description === 'Student') {
+                // Alumno puede unirse si la sala está en vivo y él es un participante
+                canJoinRoom = isLive && room.participants.some(p => p.user_id === currentUser.id);
+            }
+
+
+            return (
+              <div key={room.id} className="bg-white rounded-lg shadow overflow-hidden flex flex-col">
+                <div className="p-4 sm:p-5 flex-grow">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3">
                     <h2 className="text-base sm:text-lg font-semibold text-gray-800 flex-1 mb-2 sm:mb-0">{room.name}</h2>
                     <span
@@ -284,8 +299,8 @@ const RoomList: React.FC = () => {
                   </div>
 
                   {/* PRIMERA FILA DE BOTONES: Unirse/Ver Sala y Activar/Desactivar */}
-                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-2"> {/* Reduce el margen inferior si el botón de mensajes va justo debajo */}
-                    {isLive ? (
+                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-2">
+                    {canJoinRoom ? ( // Usa la nueva variable canJoinRoom
                       <button
                         onClick={() => startCall(String(room.id))}
                         className="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-md flex items-center justify-center text-sm transition-colors w-full flex-grow"
@@ -294,8 +309,13 @@ const RoomList: React.FC = () => {
                         Unirse
                       </button>
                     ) : (
+                      // Muestra un mensaje o un espacio si no puede unirse
                       <span className="text-sm text-gray-500 px-3 py-2 w-full text-center sm:text-left flex-grow">
-                        {room.start_time > now ? 'Próximamente' : 'Finalizada'}
+                        {isLive
+                          ? currentUser?.role?.description === 'Admin' && room.teacher_id !== currentUser.id
+                            ? 'Gestionar sala' // Mensaje específico para admin que no es creador
+                            : 'No disponible' // Mensaje general para otros casos
+                          : room.start_time > now ? 'Próximamente' : 'Finalizada'}
                       </span>
                     )}
 
@@ -313,11 +333,11 @@ const RoomList: React.FC = () => {
                       </button>
                     )}
                   </div>
-                </div> {/* Cierre del div flex-grow */}
+                </div>
 
                 {/* SEGUNDA FILA (INFERIOR): Botón de Ver Mensajes (solo para administradores) */}
-                {(currentUser?.role?.description === 'Admin') && ( // Muestra la sección solo si es admin
-                  <div className="p-4 sm:p-5 border-t border-gray-200"> {/* Un padding diferente y un borde superior para separarlo */}
+                {(currentUser?.role?.description === 'Admin') && (
+                  <div className="p-4 sm:p-5 border-t border-gray-200">
                     {room.messages && room.messages.length > 0 ? (
                       <button
                         onClick={() => openMessageModal(room)}
@@ -327,7 +347,7 @@ const RoomList: React.FC = () => {
                         Ver Mensajes ({room.messages.length})
                       </button>
                     ) : (
-                      <span className="text-sm text-gray-400 text-center block"> {/* block para que ocupe todo el ancho */}
+                      <span className="text-sm text-gray-400 text-center block">
                         No hay mensajes para esta sala.
                       </span>
                     )}
@@ -339,7 +359,7 @@ const RoomList: React.FC = () => {
         </div>
       )}
 
-      {/* Modal para mostrar mensajes */}
+      {/* Modal para mostrar mensajes (sin cambios) */}
       {isMessageModalOpen && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md md:max-w-lg lg:max-w-xl max-h-[80vh] overflow-hidden flex flex-col">
