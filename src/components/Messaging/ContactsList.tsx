@@ -14,6 +14,8 @@ interface ContactsListProps {
   setCurrentAdminView: (view: 'contacts' | 'teachers' | 'students' | 'chat-observation' | 'all-students') => void;
   selectedTeacherForStudents?: User | null;
   onSetSelectedTeacher: (teacher: User | null) => void;
+  // Agregamos una prop para notificar a MessagingPage que debe limpiar el chat
+  onClearChatPanel: () => void;
 }
 
 const ContactsList: React.FC<ContactsListProps> = ({
@@ -23,6 +25,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
   setCurrentAdminView,
   selectedTeacherForStudents,
   onSetSelectedTeacher,
+  onClearChatPanel, // Recibimos la nueva prop
 }) => {
   const { currentUser } = useAuth();
   const [listItems, setListItems] = useState<User[]>([]);
@@ -132,7 +135,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
               onClick={() => {
                 setCurrentAdminView('teachers');
                 onSetSelectedTeacher(null);
-                onSelectChatTarget(0, { id: 0, name: '', email: '', role: { id: 0, description: 'Admin' }, role_id: 0 });
+                onClearChatPanel(); // Llama a la función de limpieza en MessagingPage
               }}
               className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'teachers' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
@@ -142,7 +145,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
               onClick={() => {
                 setCurrentAdminView('all-students');
                 onSetSelectedTeacher(null);
-                onSelectChatTarget(0, { id: 0, name: '', email: '', role: { id: 0, description: 'Admin' }, role_id: 0 });
+                onClearChatPanel(); // Llama a la función de limpieza en MessagingPage
               }}
               className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'all-students' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
@@ -164,7 +167,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
             onClick={() => {
               setCurrentAdminView('teachers');
               onSetSelectedTeacher(null);
-              onSelectChatTarget(0, { id: 0, name: '', email: '', role: { id: 0, description: 'Admin' }, role_id: 0 });
+              onClearChatPanel(); // Llama a la función de limpieza en MessagingPage
             }}
             className="flex items-center text-blue-500 hover:text-blue-600 text-sm"
           >
@@ -199,7 +202,10 @@ const ContactsList: React.FC<ContactsListProps> = ({
                     onSetSelectedTeacher(item);
                     setCurrentAdminView('students');
                   } else if (currentAdminView === 'students' || currentAdminView === 'all-students' || currentAdminView === 'chat-observation') {
-                    onSelectChatTarget(item.id, item);
+                    // Solo seleccionamos el chat si es un ID de usuario real
+                    if (item.id !== 0) {
+                      onSelectChatTarget(item.id, item);
+                    }
                   }
                 } else {
                   onSelectChatTarget(item.id, item);
