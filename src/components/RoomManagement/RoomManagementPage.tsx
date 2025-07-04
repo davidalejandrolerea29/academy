@@ -18,7 +18,7 @@ const RoomManagementPage: React.FC = () => {
     <div className="container mx-auto py-4 px-4 sm:px-6 lg:px-8"> {/* Ajuste de padding */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
         <div className="flex items-center mb-4 md:mb-0">
-          <Video className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500 mr-2 sm:mr-3" /> {/* Tamaño de icono responsivo */}
+          <Video className="w-7 h-7 sm:w-8 sm:h-8 text-orange-500 mr-2 sm:mr-3" /> {/* Tamaño de icono responsivo */}
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Gestión de Salas</h1> {/* Tamaño de texto responsivo */}
         </div>
         
@@ -28,7 +28,7 @@ const RoomManagementPage: React.FC = () => {
               onClick={() => setView('list')}
               className={`w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center
                 ${view === 'list' 
-                  ? 'bg-blue-500 text-white' 
+                  ? 'bg-orange-500 text-white' 
                   : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}
               `}
             >
@@ -40,7 +40,7 @@ const RoomManagementPage: React.FC = () => {
               onClick={() => setView('create')}
               className={`w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center
                 ${view === 'create' 
-                  ? 'bg-blue-500 text-white' 
+                  ? 'bg-orange-500 text-white' 
                   : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}
               `}
             >

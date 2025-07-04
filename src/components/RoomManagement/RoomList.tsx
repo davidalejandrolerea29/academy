@@ -196,7 +196,7 @@ const RoomList: React.FC = () => {
             onClick={() => setFilter('upcoming')}
             className={`px-3 py-1 rounded-md text-sm ${
               filter === 'upcoming'
-                ? 'bg-blue-500 text-white'
+                ? 'bg-orange-500 text-white'
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
@@ -206,7 +206,7 @@ const RoomList: React.FC = () => {
             onClick={() => setFilter('past')}
             className={`px-3 py-1 rounded-md text-sm ${
               filter === 'past'
-                ? 'bg-blue-500 text-white'
+                ? 'bg-orange-500 text-white'
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
@@ -216,7 +216,7 @@ const RoomList: React.FC = () => {
             onClick={() => setFilter('all')}
             className={`px-3 py-1 rounded-md text-sm ${
               filter === 'all'
-                ? 'bg-blue-500 text-white'
+                ? 'bg-orange-500 text-white'
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
@@ -371,7 +371,7 @@ const RoomList: React.FC = () => {
             <div className="p-4 border-t">
               <button
                 onClick={closeMessageModal}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-md text-sm transition-colors"
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-md text-sm transition-colors"
               >
                 Cerrar
               </button>

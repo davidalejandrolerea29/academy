@@ -84,7 +84,7 @@ const ChangePasswordPage: React.FC = () => {
               placeholder="Nueva contraseña"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full pl-10 pr-3 py-2 border rounded focus:outline-none focus:ring focus:ring-blue-500"
+              className="w-full pl-10 pr-3 py-2 border rounded focus:outline-none focus:ring focus:ring-orange-500"
               required
               minLength={6}
             />
@@ -97,7 +97,7 @@ const ChangePasswordPage: React.FC = () => {
               placeholder="Confirmar nueva contraseña"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full pl-10 pr-3 py-2 border rounded focus:outline-none focus:ring focus:ring-blue-500"
+              className="w-full pl-10 pr-3 py-2 border rounded focus:outline-none focus:ring focus:ring-orange-500"
               required
               minLength={6}
             />
@@ -107,7 +107,7 @@ const ChangePasswordPage: React.FC = () => {
             type="submit"
             disabled={loading}
             className={`w-full py-2 px-4 rounded text-white font-medium ${
-              loading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+              loading ? 'bg-blue-400' : 'bg-orange-600 hover:bg-orange-700'
             }`}
           >
             {loading ? 'Guardando...' : 'Cambiar Contraseña'}

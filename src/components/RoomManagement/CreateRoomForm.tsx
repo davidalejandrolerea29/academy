@@ -261,7 +261,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                     id={`student-${student.id}`}
                     checked={selectedStudents.includes(student.id)}
                     onChange={() => handleStudentToggle(student.id)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500" // Estilo de foco
+                    className="h-4 w-4 text-orange-600 focus:ring-orange-500" // Estilo de foco
                   />
                   <label
                     htmlFor={`student-${student.id}`}
@@ -284,7 +284,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
           type="submit"
           disabled={loading}
           className={`w-full py-2 px-4 rounded-md text-white font-medium text-base 
-            ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'}
+            ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'}
             transition-colors`}
         >
           {loading ? 'Creando...' : 'Crear Sala'}

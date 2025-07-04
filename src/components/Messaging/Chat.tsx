@@ -305,7 +305,7 @@ const Chat: React.FC<ChatProps> = ({
         {onBackToContacts && (currentUser?.role_id !== 1 || (currentUser?.role_id === 1 && isObservationMode)) && (
           <button
             onClick={onBackToContacts}
-            className="lg:hidden text-blue-500 hover:text-blue-600 mr-3 flex items-center"
+            className="lg:hidden text-orange-500 hover:text-orange-600 mr-3 flex items-center"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -345,7 +345,7 @@ const Chat: React.FC<ChatProps> = ({
                     md:max-w-md
                     lg:max-w-lg
                     px-4 py-2 rounded-2xl shadow-sm
-                    ${isMyMessage ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'}
+                    ${isMyMessage ? 'bg-orange-500 text-white' : 'bg-white text-gray-800 border'}
                   `}
                 >
                   {!isMyMessage && (
@@ -362,7 +362,7 @@ const Chat: React.FC<ChatProps> = ({
                       href={message.attachment_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`block mt-2 text-xs ${isMyMessage ? 'text-blue-100' : 'text-blue-500'} underline`}
+                      className={`block mt-2 text-xs ${isMyMessage ? 'text-blue-100' : 'text-orange-500'} underline`}
                     >
                       Ver archivo adjunto
                     </a>
@@ -397,7 +397,7 @@ const Chat: React.FC<ChatProps> = ({
               <button
                 type="button"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                className="text-gray-500 hover:text-blue-600 p-1 rounded-full transition-colors"
+                className="text-gray-500 hover:text-orange-600 p-1 rounded-full transition-colors"
               >
                 <Smile className="w-6 h-6" />
               </button>
@@ -408,7 +408,7 @@ const Chat: React.FC<ChatProps> = ({
               )}
             </div>
 
-            <label className="cursor-pointer text-gray-500 hover:text-blue-600 flex-shrink-0 p-1 rounded-full transition-colors">
+            <label className="cursor-pointer text-gray-500 hover:text-orange-600 flex-shrink-0 p-1 rounded-full transition-colors">
               <Paperclip className="w-6 h-6" />
               <input type="file" hidden onChange={handleFileChange} />
             </label>
@@ -418,12 +418,12 @@ const Chat: React.FC<ChatProps> = ({
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder="Escribe un mensaje..."
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:focus:ring-blue-500 min-w-0"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:focus:ring-orange-500 min-w-0"
             />
 
             <button
               type="submit"
-              className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg transition-colors flex-shrink-0"
+              className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg transition-colors flex-shrink-0"
               disabled={!newMessage.trim() && !attachedFile}
             >
               <Send className="w-5 h-5" />

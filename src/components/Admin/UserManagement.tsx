@@ -153,7 +153,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <input
           type="text"
           name="name"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base" // Responsive text size
+          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
           value={formData.name}
           onChange={handleInputChange}
           required
@@ -164,7 +164,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <input
           type="email"
           name="email"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base" // Responsive text size
+          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
           value={formData.email}
           onChange={handleInputChange}
           required
@@ -177,7 +177,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <input
           type="password"
           name="password"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base" // Responsive text size
+          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required={!isEditMode}
@@ -188,7 +188,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <label className="block text-sm font-medium text-gray-700">Rol</label>
         <select
           name="role_id"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base" // Responsive text size
+          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
           value={formData.role_id}
           onChange={handleRoleChange}
         >
@@ -219,7 +219,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                     id={`assign-student-${student.id}`}
                     checked={formData.assigned_student_ids?.includes(student.id) || false}
                     onChange={() => handleAssignmentToggle(student.id, 'student')}
-                    className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 rounded focus:ring-blue-500" // Responsive checkbox size
+                    className="h-3 w-3 sm:h-4 sm:w-4 text-orange-600 rounded focus:ring-orange-500" // Responsive checkbox size
                   />
                   <label
                     htmlFor={`assign-student-${student.id}`}
@@ -258,7 +258,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                     id={`assign-teacher-${teacher.id}`}
                     checked={formData.assigned_teacher_ids?.includes(teacher.id) || false}
                     onChange={() => handleAssignmentToggle(teacher.id, 'teacher')}
-                    className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 rounded focus:ring-blue-500" // Responsive checkbox size
+                    className="h-3 w-3 sm:h-4 sm:w-4 text-orange-600 rounded focus:ring-orange-500" // Responsive checkbox size
                   />
                   <label
                     htmlFor={`assign-teacher-${teacher.id}`}
@@ -288,7 +288,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         </button>
         <button
           type="submit"
-          className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 text-sm sm:text-base" // Responsive padding and text size
+          className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-md bg-orange-600 text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 text-sm sm:text-base" // Responsive padding and text size
         >
           {isEditMode ? 'Guardar Cambios' : 'Crear Usuario'}
         </button>
@@ -571,12 +571,12 @@ const UserManagement: React.FC = () => {
       {/* Encabezado */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6">
         <div className="flex items-center mb-3 sm:mb-0">
-          <Users className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500 mr-2 sm:mr-3" /> 
+          <Users className="w-6 h-6 sm:w-8 sm:h-8 text-orange-500 mr-2 sm:mr-3" /> 
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Gestión de Usuarios</h1>
         </div>
         <button
           onClick={() => setShowCreateFormModal(true)}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded flex items-center text-sm sm:text-base" // Responsive padding and text size
+          className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded flex items-center text-sm sm:text-base" // Responsive padding and text size
         >
           <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2" />
           Crear Usuario
@@ -647,7 +647,7 @@ const UserManagement: React.FC = () => {
                       <div className="flex space-x-1 sm:space-x-2 justify-center"> 
                         <button
                           onClick={() => handleEditClick(user)}
-                          className="text-blue-600 hover:text-blue-800 p-1" // Añadido padding para touch target
+                          className="text-orange-600 hover:text-blue-800 p-1" // Añadido padding para touch target
                         >
                           <Edit className="w-5 h-5" /> 
                         </button>

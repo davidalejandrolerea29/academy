@@ -161,7 +161,7 @@ const MessagingPage: React.FC = () => {
       {/* Encabezado global de Mensajes */}
       <div className="bg-white shadow p-4 border-b">
         <h1 className="text-xl font-semibold text-gray-800 flex items-center">
-          <MessageSquare className="w-6 h-6 mr-2 text-blue-500" />
+          <MessageSquare className="w-6 h-6 mr-2 text-orange-500" />
           Mensajes
           {currentUser?.role_id === 1 && (
             <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
@@ -179,7 +179,7 @@ const MessagingPage: React.FC = () => {
               <button
                 onClick={() => setMobileView('contacts')}
                 className={`px-3 py-1 rounded-lg transition-colors ${
-                  mobileView === 'contacts' ? 'bg-blue-500 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  mobileView === 'contacts' ? 'bg-orange-500 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 }`}
               >
                 Contactos
@@ -189,7 +189,7 @@ const MessagingPage: React.FC = () => {
                 disabled={!selectedContactId}
                 className={`px-3 py-1 rounded-lg transition-colors ${
                   mobileView === 'chat' && selectedContactId
-                    ? 'bg-blue-500 text-white shadow'
+                    ? 'bg-orange-500 text-white shadow'
                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 } ${!selectedContactId ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
@@ -203,7 +203,7 @@ const MessagingPage: React.FC = () => {
             <div className="lg:hidden p-2 bg-gray-100 border-b">
                 <button
                     onClick={handleBackToStudents} // Volverá a la lista de alumnos del profesor
-                    className="px-3 py-1 text-blue-500 flex items-center hover:text-blue-600"
+                    className="px-3 py-1 text-orange-500 flex items-center hover:text-orange-600"
                 >
                     <ChevronLeft className="inline-block mr-1" size={16} /> Volver a Alumnos
                 </button>
@@ -214,7 +214,7 @@ const MessagingPage: React.FC = () => {
             <div className="lg:hidden p-2 bg-gray-100 border-b">
                 <button
                     onClick={handleBackToAllStudents} // Nueva función para volver a "Todos los Alumnos"
-                    className="px-3 py-1 text-blue-500 flex items-center hover:text-blue-600"
+                    className="px-3 py-1 text-orange-500 flex items-center hover:text-orange-600"
                 >
                     <ChevronLeft className="inline-block mr-1" size={16} /> Volver a Alumnos
                 </button>
