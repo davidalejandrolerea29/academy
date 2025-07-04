@@ -6,22 +6,33 @@ export interface Role {
   created_at: string;
   updated_at: string;
 }
-
 export interface User {
   id: number;
-  email: string;
   name: string;
+  email: string;
   role_id: number;
-  role: Role; // Asegúrate de que esta propiedad exista y sea del tipo Role
-  token?: string; // Hice token opcional ya que no siempre estará presente
-  // Quité role_description ya que `user.role.description` ya lo provee
-  // photo_url?: string | null;
-  // email_verified_at?: string | null;
-  // created_at?: string; // Opcional, ya que no siempre lo usarás directamente
-  // updated_at?: string; // Opcional
-  must_change_password:Boolean;
+  role: Role; // Objeto de rol completo
+  must_change_password: boolean;
+  // Nuevos campos para asignaciones
+  assigned_student_ids?: number[]; // IDs de alumnos asignados (si es profesor)
+  assigned_students?: { id: number; name: string }[]; // Detalles de alumnos asignados
+  assigned_teacher_ids?: number[]; // IDs de profesores asignados (si es alumno)
+  assigned_teachers?: { id: number; name: string }[]; // Detalles de profesores asignados
 }
 
+export interface UserFormData {
+  name: string;
+  email: string;
+  password?: string; // Opcional para editar
+  role_id: number;
+  assigned_student_ids?: number[];
+  assigned_teacher_ids?: number[]; // Nuevo para asignar profesores a alumnos
+}
+
+export interface Option { // Para select de asignaciones
+  id: number;
+  name: string;
+}
 
 export interface Room {
   id: number;
