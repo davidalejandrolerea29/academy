@@ -12,7 +12,7 @@ import {
   User as UserIcon,
   GraduationCap,
   Briefcase,
-  X, // Asegúrate de que la 'X' para cerrar el modal esté importada
+  X,
 } from 'lucide-react';
 import { User, UserRole, UserFormData, Option } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
@@ -25,7 +25,7 @@ const UserRoleEnum = {
   Student: 3,
 };
 
-// --- Componente de Modal Genérico (puedes sacarlo a su propio archivo si quieres, e.g., components/ModalWrapper.tsx) ---
+// --- Componente de Modal Genérico ---
 interface ModalWrapperProps {
   children: React.ReactNode;
   onClose: () => void;
@@ -34,19 +34,20 @@ interface ModalWrapperProps {
 
 const ModalWrapper: React.FC<ModalWrapperProps> = ({ children, onClose, title }) => {
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl transform transition-all sm:my-8 sm:w-full">
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h3 className="text-xl font-semibold text-gray-900">{title}</h3>
+    // Ajustado para que el modal ocupe más espacio en móviles y tenga un padding responsive
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm sm:max-w-2xl transform transition-all my-auto mx-2 sm:mx-auto"> {/* Ajustado max-w y mx */}
+        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 flex justify-between items-center"> {/* Padding responsive */}
+          <h3 className="text-lg sm:text-xl font-semibold text-gray-900">{title}</h3> {/* Tamaño de texto responsive */}
           <button
             type="button"
             className="text-gray-400 hover:text-gray-600 focus:outline-none"
             onClick={onClose}
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5 sm:w-6 sm:h-6" /> {/* Tamaño de ícono responsive */}
           </button>
         </div>
-        <div className="p-6">
+        <div className="p-4 sm:p-6"> {/* Padding responsive */}
           {children}
         </div>
       </div>
@@ -64,7 +65,7 @@ interface UserFormModalProps {
   availableTeachers: Option[];
   fetchingAssignments: boolean;
   error: string | null;
-  currentUserId: number | null; // Necesario para 'assigned_by' en creación
+  currentUserId: number | null;
 }
 
 const UserFormModal: React.FC<UserFormModalProps> = ({
@@ -79,13 +80,11 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
   currentUserId,
 }) => {
   const [formData, setFormData] = useState(initialUserData);
-  const [password, setPassword] = useState(''); // Estado separado para la contraseña
+  const [password, setPassword] = useState('');
 
   useEffect(() => {
-    // Cuando initialUserData cambie (e.g., al abrir el modal de edición para un nuevo usuario),
-    // actualiza el estado local del formulario.
     setFormData(initialUserData);
-    setPassword(''); // Siempre resetear la contraseña al abrir/cambiar usuario
+    setPassword('');
   }, [initialUserData]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -136,13 +135,12 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
       dataToSave.password = password;
     }
 
-    if (!isEditMode) { // Para la creación, añade assigned_by
+    if (!isEditMode) {
       if (currentUserId === null) {
-        // Esto debería ser manejado antes de abrir el modal, pero como fallback
         console.error("currentUserId es null, no se puede crear usuario.");
         return;
       }
-      (dataToSave as any).assigned_by = currentUserId; // Casting temporal, considera ajustar tu tipo UserFormData para esto
+      (dataToSave as any).assigned_by = currentUserId;
     }
 
     onSave(dataToSave);
@@ -155,7 +153,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <input
           type="text"
           name="name"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base" // Responsive text size
           value={formData.name}
           onChange={handleInputChange}
           required
@@ -166,7 +164,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <input
           type="email"
           name="email"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base" // Responsive text size
           value={formData.email}
           onChange={handleInputChange}
           required
@@ -179,7 +177,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <input
           type="password"
           name="password"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base" // Responsive text size
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required={!isEditMode}
@@ -190,7 +188,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <label className="block text-sm font-medium text-gray-700">Rol</label>
         <select
           name="role_id"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base" // Responsive text size
           value={formData.role_id}
           onChange={handleRoleChange}
         >
@@ -204,28 +202,28 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             <div className="flex items-center">
-              <GraduationCap className="w-5 h-5 mr-1 text-gray-500" />
+              <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5 mr-1 text-gray-500" />
               Seleccionar Alumnos a Asignar
             </div>
           </label>
-          <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50">
+          <div className="max-h-32 sm:max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50"> 
             {fetchingAssignments ? (
-              <p className="text-gray-500 text-sm p-2">Cargando alumnos...</p>
+              <p className="text-gray-500 text-xs sm:text-sm p-2">Cargando alumnos...</p> 
             ) : availableStudents.length === 0 ? (
-              <p className="text-gray-500 text-sm p-2">No hay alumnos disponibles para asignar.</p>
+              <p className="text-gray-500 text-xs sm:text-sm p-2">No hay alumnos disponibles para asignar.</p> 
             ) : (
               availableStudents.map((student) => (
-                <div key={student.id} className="flex items-center p-2 hover:bg-gray-100 cursor-pointer">
+                <div key={student.id} className="flex items-center p-1 sm:p-2 hover:bg-gray-100 cursor-pointer"> 
                   <input
                     type="checkbox"
                     id={`assign-student-${student.id}`}
                     checked={formData.assigned_student_ids?.includes(student.id) || false}
                     onChange={() => handleAssignmentToggle(student.id, 'student')}
-                    className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 rounded focus:ring-blue-500" // Responsive checkbox size
                   />
                   <label
                     htmlFor={`assign-student-${student.id}`}
-                    className="ml-2 block text-sm text-gray-700 cursor-pointer"
+                    className="ml-2 block text-xs sm:text-sm text-gray-700 cursor-pointer" // Responsive text size
                   >
                     {student.name || `Alumno ID: ${student.id}`}
                   </label>
@@ -243,28 +241,28 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             <div className="flex items-center">
-              <Briefcase className="w-5 h-5 mr-1 text-gray-500" />
+              <Briefcase className="w-4 h-4 sm:w-5 sm:h-5 mr-1 text-gray-500" /> 
               Seleccionar Profesores a Asignar
             </div>
           </label>
-          <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50">
+          <div className="max-h-32 sm:max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50"> 
             {fetchingAssignments ? (
-              <p className="text-gray-500 text-sm p-2">Cargando profesores...</p>
+              <p className="text-gray-500 text-xs sm:text-sm p-2">Cargando profesores...</p> 
             ) : availableTeachers.length === 0 ? (
-              <p className="text-gray-500 text-sm p-2">No hay profesores disponibles para asignar.</p>
+              <p className="text-gray-500 text-xs sm:text-sm p-2">No hay profesores disponibles para asignar.</p> 
             ) : (
               availableTeachers.map((teacher) => (
-                <div key={teacher.id} className="flex items-center p-2 hover:bg-gray-100 cursor-pointer">
+                <div key={teacher.id} className="flex items-center p-1 sm:p-2 hover:bg-gray-100 cursor-pointer"> 
                   <input
                     type="checkbox"
                     id={`assign-teacher-${teacher.id}`}
                     checked={formData.assigned_teacher_ids?.includes(teacher.id) || false}
                     onChange={() => handleAssignmentToggle(teacher.id, 'teacher')}
-                    className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 rounded focus:ring-blue-500" // Responsive checkbox size
                   />
                   <label
                     htmlFor={`assign-teacher-${teacher.id}`}
-                    className="ml-2 block text-sm text-gray-700 cursor-pointer"
+                    className="ml-2 block text-xs sm:text-sm text-gray-700 cursor-pointer" // Responsive text size
                   >
                     {teacher.name || `Profesor ID: ${teacher.id}`}
                   </label>
@@ -284,13 +282,13 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
+          className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm sm:text-base" // Responsive padding and text size
         >
           Cancelar
         </button>
         <button
           type="submit"
-          className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 text-sm sm:text-base" // Responsive padding and text size
         >
           {isEditMode ? 'Guardar Cambios' : 'Crear Usuario'}
         </button>
@@ -310,7 +308,7 @@ const UserManagement: React.FC = () => {
   const [roleFilter, setRoleFilter] = useState<string | 'all'>('all');
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [showCreateFormModal, setShowCreateFormModal] = useState(false); // Cambiado para modal
+  const [showCreateFormModal, setShowCreateFormModal] = useState(false);
 
   const [createError, setCreateError] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -322,30 +320,33 @@ const UserManagement: React.FC = () => {
   const [availableTeachers, setAvailableTeachers] = useState<Option[]>([]);
   const [fetchingAssignments, setFetchingAssignments] = useState(false);
 
-  const fetchAvailableStudents = async () => {
+  const fetchAvailableStudents = useCallback(async () => {
     setFetchingAssignments(true);
     try {
-      const response = await fetch(`${API_URL}/auth/students`, {
+      const response = await fetch(`${API_URL}/auth/admin/available-students-for-assignment`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         }
       });
-      if (!response.ok) throw new Error('Error al obtener la lista de estudiantes');
+      if (!response.ok) {
+        const errorBody = await response.json();
+        throw new Error(errorBody.error || 'Error al obtener la lista de estudiantes disponibles');
+      }
       const result = await response.json();
-      setAvailableStudents(result.data.map((student: any) => ({
+      setAvailableStudents(result.students?.map((student: any) => ({
         id: student.id,
         name: student.name,
-      })));
+      })) || []);
     } catch (error) {
-      console.error('Error fetching students:', error);
+      console.error('Error fetching available students:', error);
     } finally {
       setFetchingAssignments(false);
     }
-  };
+  }, [token]);
 
-  const fetchAvailableTeachers = async () => {
+  const fetchAvailableTeachers = useCallback(async () => {
     setFetchingAssignments(true);
     try {
       const response = await fetch(`${API_URL}/auth/admin/teachers`, {
@@ -355,18 +356,21 @@ const UserManagement: React.FC = () => {
           'Authorization': `Bearer ${token}`
         }
       });
-      if (!response.ok) throw new Error('Error al obtener la lista de profesores');
+      if (!response.ok) {
+        const errorBody = await response.json();
+        throw new Error(errorBody.error || 'Error al obtener la lista de profesores');
+      }
       const result = await response.json();
-      setAvailableTeachers(result.data.map((teacher: any) => ({
+      setAvailableTeachers(result.teachers?.map((teacher: any) => ({
         id: teacher.id,
         name: teacher.name,
-      })));
+      })) || []);
     } catch (error) {
       console.error('Error fetching teachers:', error);
     } finally {
       setFetchingAssignments(false);
     }
-  };
+  }, [token]);
 
 
   const fetchUsers = useCallback(async () => {
@@ -387,7 +391,7 @@ const UserManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [token]); // token como dependencia
+  }, [token]);
 
   useEffect(() => {
     if (currentUser && !authLoading) {
@@ -395,12 +399,12 @@ const UserManagement: React.FC = () => {
       fetchAvailableStudents();
       fetchAvailableTeachers();
     }
-  }, [currentUser, authLoading, fetchUsers]); // Añade fetchUsers a las dependencias del useEffect
+  }, [currentUser, authLoading, fetchUsers, fetchAvailableStudents, fetchAvailableTeachers]);
 
-  // Manejador para iniciar edición (abre el modal)
+
   const handleEditClick = (user: User) => {
     setEditingUser(user);
-    setEditError(null); // Limpiar errores previos
+    setEditError(null);
   };
 
   const handleSaveEdit = async (updatedData: UserFormData) => {
@@ -426,7 +430,10 @@ const UserManagement: React.FC = () => {
       }
 
       await fetchUsers();
-      setEditingUser(null); // Cerrar el modal
+      await fetchAvailableStudents();
+      await fetchAvailableTeachers();
+
+      setEditingUser(null);
     } catch (error) {
       console.error('Error saving user edit:', error);
       if (!editError) {
@@ -472,7 +479,10 @@ const UserManagement: React.FC = () => {
       }
 
       await fetchUsers();
-      setShowCreateFormModal(false); // Cerrar el modal
+      await fetchAvailableStudents();
+      await fetchAvailableTeachers();
+
+      setShowCreateFormModal(false);
     } catch (error) {
       console.error('Error creating user:', error);
       setCreateError('Error al crear el usuario');
@@ -494,8 +504,12 @@ const UserManagement: React.FC = () => {
       });
       if (!response.ok) throw new Error('Error al eliminar el usuario');
 
-      setUsers((prevUsers) => prevUsers.filter((user) => user.id !== userId));
-    } catch (error) {
+      await fetchUsers();
+      await fetchAvailableStudents();
+      await fetchAvailableTeachers();
+
+    }
+    catch (error) {
       console.error('Error deleting user:', error);
       alert('Hubo un error al intentar eliminar el usuario. Es posible que tenga relaciones activas (ej. habitaciones, contactos).');
     }
@@ -553,42 +567,42 @@ const UserManagement: React.FC = () => {
 
 
   return (
-    <div className="container mx-auto py-6 px-4">
+    <div className="container mx-auto py-4 px-2 sm:py-6 sm:px-4"> 
       {/* Encabezado */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center">
-          <Users className="w-8 h-8 text-blue-500 mr-3" />
-          <h1 className="text-2xl font-bold text-gray-800">Gestión de Usuarios</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6">
+        <div className="flex items-center mb-3 sm:mb-0">
+          <Users className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500 mr-2 sm:mr-3" /> 
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Gestión de Usuarios</h1>
         </div>
         <button
           onClick={() => setShowCreateFormModal(true)}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center"
+          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded flex items-center text-sm sm:text-base" // Responsive padding and text size
         >
-          <UserPlus className="w-5 h-5 mr-2" />
+          <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2" />
           Crear Usuario
         </button>
       </div>
 
       {/* Filtros */}
-      <div className="flex mb-4 space-x-4">
-        <div className="relative w-1/2">
+      <div className="flex flex-col sm:flex-row mb-4 space-y-3 sm:space-y-0 sm:space-x-4"> 
+        <div className="relative w-full sm:w-1/2"> 
           <input
-            className="w-full border px-10 py-2 rounded"
+            className="w-full border px-8 sm:px-10 py-2 rounded text-sm sm:text-base" // Responsive padding and text size
             placeholder="Buscar por nombre o email"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-          <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3 top-2.5 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" /> 
           {searchTerm && (
             <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5">
-              <FilterX />
+              <FilterX className="w-4 h-4 sm:w-5 sm:h-5" /> 
             </button>
           )}
         </div>
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
-          className="border rounded px-2 py-1"
+          className="border rounded px-2 py-1.5 text-sm sm:text-base w-full sm:w-auto" // Responsive width, padding, text size
         >
           <option value="all">Todos</option>
           <option value="Admin">Administrador</option>
@@ -597,59 +611,60 @@ const UserManagement: React.FC = () => {
         </select>
       </div>
 
-      {/* Tabla */}
-      <table className="min-w-full bg-white rounded shadow">
-        <thead className="bg-gray-100">
-          <tr>
-            <th className="text-left py-3 px-4">Usuario</th>
-            <th className="text-left py-3 px-4">Email</th>
-            <th className="text-left py-3 px-4">Rol</th>
-            <th className="text-center py-3 px-4">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredUsers.length === 0 ? (
+      <div className="overflow-x-auto shadow rounded-lg"> 
+        <table className="min-w-full bg-white">
+          <thead className="bg-gray-100 hidden sm:table-header-group"> 
             <tr>
-              <td colSpan={4} className="text-center py-6 text-gray-500">
-                No se encontraron usuarios
-              </td>
+              <th className="text-left py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-600 uppercase tracking-wider">Usuario</th>
+              <th className="text-left py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-600 uppercase tracking-wider">Email</th>
+              <th className="text-left py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-600 uppercase tracking-wider">Rol</th>
+              <th className="text-center py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>
             </tr>
-          ) : (
-            filteredUsers.map((user) => (
-              <tr key={user.id} className="border-t hover:bg-gray-50">
-                <td className="py-3 px-4">
-                    <div className="flex items-center space-x-2">
-                      <UserCircle className="w-6 h-6 text-gray-400" />
-                      <span>{user.name}</span>
-                    </div>
-                </td>
-                <td className="py-3 px-4">
-                    <span>{user.email}</span>
-                </td>
-                <td className="py-3 px-4">
-                    <span>{user.role ? getRoleLabel(user.role.description) : 'Sin rol'}</span>
-                </td>
-                <td className="py-3 px-4 text-center">
-                    <div className="flex space-x-2 justify-center">
-                      <button
-                        onClick={() => handleEditClick(user)}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        <Edit />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteUser(user.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <Trash2 />
-                      </button>
-                    </div>
+          </thead>
+          <tbody className="block sm:table-row-group">
+            {filteredUsers.length === 0 ? (
+              <tr className="block sm:table-row">
+                <td colSpan={4} className="text-center py-6 text-gray-500 block sm:table-cell">
+                  No se encontraron usuarios
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              filteredUsers.map((user) => (
+                <tr key={user.id} className="block border-t hover:bg-gray-50 mb-4 sm:mb-0 sm:table-row">
+                  <td data-label="Usuario" className="block sm:table-cell py-2 px-3 sm:py-3 sm:px-4 text-sm sm:text-base border-b sm:border-0 relative before:content-[attr(data-label)] before:font-bold before:block before:mb-0.5 sm:before:hidden"> {/* Añadir data-label y estilo para móviles */}
+                      <div className="flex items-center space-x-1 sm:space-x-2"> 
+                        <UserCircle className="w-5 h-5 text-gray-400 sm:w-6 sm:h-6" /> 
+                        <span>{user.name}</span>
+                      </div>
+                  </td>
+                  <td data-label="Email" className="block sm:table-cell py-2 px-3 sm:py-3 sm:px-4 text-sm sm:text-base border-b sm:border-0 relative before:content-[attr(data-label)] before:font-bold before:block before:mb-0.5 sm:before:hidden">
+                      <span>{user.email}</span>
+                  </td>
+                  <td data-label="Rol" className="block sm:table-cell py-2 px-3 sm:py-3 sm:px-4 text-sm sm:text-base border-b sm:border-0 relative before:content-[attr(data-label)] before:font-bold before:block before:mb-0.5 sm:before:hidden">
+                      <span>{user.role ? getRoleLabel(user.role.description) : 'Sin rol'}</span>
+                  </td>
+                  <td data-label="Acciones" className="block sm:table-cell py-2 px-3 sm:py-3 sm:px-4 text-center text-sm sm:text-base relative before:content-[attr(data-label)] before:font-bold before:block before:mb-0.5 sm:before:hidden">
+                      <div className="flex space-x-1 sm:space-x-2 justify-center"> 
+                        <button
+                          onClick={() => handleEditClick(user)}
+                          className="text-blue-600 hover:text-blue-800 p-1" // Añadido padding para touch target
+                        >
+                          <Edit className="w-5 h-5" /> 
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(user.id)}
+                          className="text-red-600 hover:text-red-800 p-1" // Añadido padding para touch target
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {/* Modal de Creación de Usuario */}
       {showCreateFormModal && (
@@ -661,7 +676,7 @@ const UserManagement: React.FC = () => {
             initialUserData={{
               name: '',
               email: '',
-              password: '', // Esto se maneja internamente en UserFormModal
+              password: '',
               role_id: UserRoleEnum.Student,
               role: 'Student',
               assigned_student_ids: [],
@@ -689,7 +704,7 @@ const UserManagement: React.FC = () => {
             initialUserData={{
               name: editingUser.name,
               email: editingUser.email,
-              password: '', // La contraseña se gestiona aparte
+              password: '',
               role_id: getRoleIdFromDescription(editingUser.role.description),
               role: editingUser.role.description,
               assigned_student_ids: editingUser.assigned_student_ids || [],
