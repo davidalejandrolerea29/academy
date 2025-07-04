@@ -1,12 +1,15 @@
 // src/components/Messaging/MessagingPage.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ContactsList from './ContactsList';
 import Chat from './Chat';
 import { User, MessagePrivate } from '../../types';
-import { MessageSquare, ArrowLeft } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { ChevronLeft } from 'lucide-react'; // Asegúrate de importar ChevronLeft
 
 const API_URL = import.meta.env.VITE_API_URL;
+
+type ChatMode = 'none' | 'direct-chat' | 'observation';
 
 const MessagingPage: React.FC = () => {
   const { currentUser } = useAuth();
@@ -17,57 +20,80 @@ const MessagingPage: React.FC = () => {
     'contacts'
   );
 
-  const [adminView, setAdminView] = useState<'teachers' | 'students' | 'chat-observation'>(
+  const [adminView, setAdminView] = useState<'teachers' | 'students' | 'all-students'>(
     currentUser?.role_id === 1 ? 'teachers' : 'contacts'
   );
   const [selectedTeacher, setSelectedTeacher] = useState<User | null>(null);
+
+  const [chatMode, setChatMode] = useState<ChatMode>(
+    currentUser?.role_id === 1 ? 'none' : 'direct-chat'
+  );
 
   const [observedChatMessages, setObservedChatMessages] = useState<MessagePrivate[]>([]);
   const [loadingObservedChat, setLoadingObservedChat] = useState(false);
   const [observedChatError, setObservedChatError] = useState<string | null>(null);
 
-  const handleSelectChatTarget = (userId: number, userData: User) => {
-    setSelectedContactId(userId.toString());
-    setSelectedContactData(userData);
-    setMobileView('chat');
-  };
+  const isInitialRender = useRef(true);
 
-  const handleBackToContacts = () => {
-    setMobileView('contacts');
+  // Función para resetear completamente el panel derecho y estados relacionados
+  const resetChatPanel = () => {
     setSelectedContactId(null);
     setSelectedContactData(null);
-    if (adminView === 'chat-observation') {
-      setObservedChatMessages([]);
-      setObservedChatError(null);
-      setLoadingObservedChat(false);
+    setObservedChatMessages([]);
+    setObservedChatError(null);
+    setLoadingObservedChat(false);
+    setChatMode('none');
+    // En móvil, al resetear, siempre volvemos a la vista de contactos
+    // Esto es crucial para que el panel de chat desaparezca en móvil si no hay un contacto seleccionado.
+    if (window.innerWidth < 1024) { // Solo si es vista móvil
+      setMobileView('contacts');
     }
   };
 
+  const handleSelectChatTarget = (userId: number, userData: User) => {
+    setSelectedContactId(userId.toString());
+    setSelectedContactData(userData);
+    setMobileView('chat'); // Para la vista móvil
+
+    if (currentUser?.role_id === 1) {
+      if (adminView === 'all-students') {
+        setChatMode('direct-chat'); // Admin puede chatear directamente con alumnos de "Todos los Alumnos"
+      } else if (adminView === 'students') {
+        setChatMode('observation'); // Admin solo observa chats de alumnos de un profesor específico
+      } else {
+        setChatMode('none'); // Fallback, no debería ocurrir si la lógica es correcta
+      }
+    } else {
+      setChatMode('direct-chat'); // Usuarios normales siempre en chat directo
+    }
+  };
+
+  // Estas funciones ahora solo cambian la vista y llaman a resetChatPanel
   const handleBackToTeachers = () => {
     setSelectedTeacher(null);
     setAdminView('teachers');
-    setSelectedContactId(null);
-    setSelectedContactData(null);
-    setObservedChatMessages([]);
-    setMobileView('contacts');
+    resetChatPanel(); // Limpia todo el estado del chat al volver a profesores
   };
 
   const handleBackToStudents = () => {
+    // Esto se llama cuando el admin vuelve de un chat de observación a la lista de alumnos de un profesor
     setAdminView('students');
-    setSelectedContactId(null);
-    setSelectedContactData(null);
-    setObservedChatMessages([]);
-    setMobileView('contacts');
+    resetChatPanel(); // Limpia todo el estado del chat
   };
+
+  // Nueva función para el botón "Volver a Alumnos" en vista móvil cuando el admin está en all-students direct-chat
+  const handleBackToAllStudents = () => {
+    // Al volver de un chat directo con un alumno, volvemos a la lista de "Todos los Alumnos"
+    // y limpiamos el panel de chat.
+    resetChatPanel();
+    // No necesitamos cambiar adminView aquí, ya está en 'all-students'
+    // setAdminView('all-students'); // Esto ya debería estar así
+  };
+
 
   useEffect(() => {
     const fetchObservedChat = async () => {
-      if (
-        currentUser?.role_id === 1 &&
-        adminView === 'chat-observation' &&
-        selectedContactData &&
-        selectedTeacher
-      ) {
+      if (currentUser?.role_id === 1 && chatMode === 'observation' && selectedContactData && selectedTeacher) {
         setLoadingObservedChat(true);
         setObservedChatError(null);
         try {
@@ -97,14 +123,41 @@ const MessagingPage: React.FC = () => {
         } finally {
             setLoadingObservedChat(false);
         }
+      } else {
+          // Limpiar mensajes si no estamos en modo observación o faltan datos
+          if (!isInitialRender.current) {
+            setObservedChatMessages([]);
+            setObservedChatError(null);
+            setLoadingObservedChat(false);
+          }
       }
     };
 
     fetchObservedChat();
-  }, [adminView, currentUser, selectedContactData, selectedTeacher]);
+    isInitialRender.current = false;
+  }, [chatMode, currentUser, selectedContactData, selectedTeacher]);
+
+  // Determinar si el panel derecho de chat debe estar visible
+  // En escritorio (lg:block), solo si hay un contacto seleccionado.
+  // En móvil (block/hidden), según el estado de mobileView.
+  const isChatPanelVisibleDesktop = selectedContactId !== null;
+  const isChatPanelVisibleMobile = mobileView === 'chat';
+
+
+  const getChatPanelPlaceholderMessage = () => {
+    if (currentUser?.role_id === 1) { // Admin
+      if (adminView === 'teachers') {
+        return 'Selecciona un profesor para ver sus alumnos o su chat.';
+      } else if (adminView === 'students' || adminView === 'all-students') {
+        return 'Selecciona un alumno para ver su historial de chat.';
+      }
+    }
+    // Para usuarios normales o como fallback general
+    return 'Selecciona un contacto para comenzar a chatear.';
+  };
 
   return (
-    <div className="flex flex-col h-full"> {/* h-screen para ocupar toda la altura */}
+    <div className="flex flex-col h-full">
       {/* Encabezado global de Mensajes */}
       <div className="bg-white shadow p-4 border-b">
         <h1 className="text-xl font-semibold text-gray-800 flex items-center">
@@ -145,17 +198,29 @@ const MessagingPage: React.FC = () => {
             </div>
         )}
 
-        {/* Admin-specific mobile back button (for chat observation) */}
-        {currentUser?.role_id === 1 && mobileView === 'chat' && selectedContactId && adminView === 'chat-observation' && (
+        {/* Admin-specific mobile back button for students view when observing chat */}
+        {currentUser?.role_id === 1 && mobileView === 'chat' && chatMode === 'observation' && (
             <div className="lg:hidden p-2 bg-gray-100 border-b">
                 <button
-                    onClick={handleBackToStudents}
+                    onClick={handleBackToStudents} // Volverá a la lista de alumnos del profesor
                     className="px-3 py-1 text-blue-500 flex items-center hover:text-blue-600"
                 >
-                    <ArrowLeft className="inline-block mr-1" size={16} /> Volver a Alumnos
+                    <ChevronLeft className="inline-block mr-1" size={16} /> Volver a Alumnos
                 </button>
             </div>
         )}
+        {/* Admin-specific mobile back button for all-students view when direct chatting */}
+        {currentUser?.role_id === 1 && mobileView === 'chat' && chatMode === 'direct-chat' && adminView === 'all-students' && (
+            <div className="lg:hidden p-2 bg-gray-100 border-b">
+                <button
+                    onClick={handleBackToAllStudents} // Nueva función para volver a "Todos los Alumnos"
+                    className="px-3 py-1 text-blue-500 flex items-center hover:text-blue-600"
+                >
+                    <ChevronLeft className="inline-block mr-1" size={16} /> Volver a Alumnos
+                </button>
+            </div>
+        )}
+
 
         {/* Contacts list / Admin view list */}
         <div
@@ -164,52 +229,44 @@ const MessagingPage: React.FC = () => {
             lg:block
             w-full lg:w-1/3 border-r
             overflow-y-auto h-full
-            ${currentUser?.role_id !== 1 && mobileView === 'contacts' ? '' : 'lg:border-r'} {/* Eliminar border-r en móvil si no es la vista de contactos */}
           `}
         >
           <ContactsList
-            onSelectChatTarget={(userId, userData) => {
-              handleSelectChatTarget(userId, userData);
-              if (currentUser?.role_id === 1 && adminView === 'students') {
-                  setAdminView('chat-observation');
-              }
-            }}
+            onSelectChatTarget={handleSelectChatTarget}
             selectedChatTargetId={selectedContactId}
             currentAdminView={adminView}
             setCurrentAdminView={setAdminView}
             selectedTeacherForStudents={selectedTeacher}
             onSetSelectedTeacher={setSelectedTeacher}
+            onClearChatPanel={resetChatPanel}
           />
         </div>
 
-        {/* Chat area */}
+        {/* Chat area (Derecha) */}
         <div
           className={`
-            ${mobileView === 'chat' && selectedContactId ? 'block' : 'hidden'}
-            lg:block
+            ${isChatPanelVisibleMobile ? 'block' : 'hidden'}
+            lg:${isChatPanelVisibleDesktop ? 'block' : 'hidden'}
             w-full lg:w-2/3 flex flex-col h-full
-            ${mobileView === 'chat' ? 'p-0' : 'lg:p-0'} {/* Eliminar padding en chat completo para móvil */}
+            ${isChatPanelVisibleMobile ? 'p-0' : 'lg:p-0'}
           `}
         >
           {selectedContactId && selectedContactData ? (
             <Chat
                 recipientId={selectedContactId}
                 recipientData={selectedContactData}
-                isObservationMode={currentUser?.role_id === 1 && adminView === 'chat-observation'}
+                isObservationMode={chatMode === 'observation'}
                 observationMessages={observedChatMessages}
                 observationLoading={loadingObservedChat}
                 observationError={observedChatError}
-                onBackToContacts={handleBackToContacts}
+                onBackToContacts={handleBackToStudents} // Esto está bien si solo aplica para volver de alumnos de un profesor
+                                                      // Para 'Todos los Alumnos', el botón de navegación ya llama a resetChatPanel
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-gray-100">
               <MessageSquare className="w-12 h-12 mb-4 text-gray-300" />
               <p className="text-center px-4">
-                {currentUser?.role_id === 1
-                  ? (adminView === 'teachers' ? 'Selecciona un profesor para ver sus alumnos o su chat.' :
-                     adminView === 'students' ? 'Selecciona un alumno para ver su historial de chat.' :
-                     'Selecciona un contacto para ver el chat.')
-                  : 'Selecciona un contacto para comenzar a chatear.'}
+                {getChatPanelPlaceholderMessage()}
               </p>
             </div>
           )}
