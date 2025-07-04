@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react'; // Añadido useCallback
-// import { supabase } from '../../lib/supabase'; // No usado directamente en este componente
+// src/components/CreateRoomForm.tsx
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Añadido useMemo
 import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types';
-import { Calendar, Clock, Users, Info } from 'lucide-react';
+import { Calendar, Clock, Users, Info, Search } from 'lucide-react'; // Añadimos Search para el buscador
 
 const API_URL = import.meta.env.VITE_API_URL;
-// const token = localStorage.getItem('token'); // No necesitas esta línea globalmente
 
 const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated }) => {
   const { currentUser } = useAuth();
@@ -14,14 +14,18 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
-  const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
-  const [allStudents, setAllStudents] = useState<User[]>([]);
+  const [selectedParticipants, setSelectedParticipants] = useState<number[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Usa useCallback para fetchStudents
-  const fetchStudents = useCallback(async () => {
+  // Nuevos estados para el filtro y buscador
+  const [roleFilter, setRoleFilter] = useState<'All' | 'Admin' | 'Teacher' | 'Student'>('All');
+  const [searchTerm, setSearchTerm] = useState('');
+
+
+  const fetchAllUsers = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -42,17 +46,32 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
       }
 
       const users = await response.json();
-      const students = users.filter((user: any) => user.role?.description === 'Student');
-      setAllStudents(students);
+
+      // FILTRADO INICIAL: Excluir al usuario actual
+      const filteredUsers = users.filter((user: User) => user.id !== currentUser?.id);
+
+      if (currentUser?.role?.description === 'Admin') {
+        setAllUsers(filteredUsers);
+      } else if (currentUser?.role?.description === 'Teacher') {
+        const students = filteredUsers.filter((user: any) =>
+          user.role?.description === 'Student' &&
+          user.assigned_teacher_ids && // Asegúrate de que `assigned_teacher_ids` se esté enviando desde el backend para alumnos
+          user.assigned_teacher_ids.includes(currentUser.id)
+        );
+        setAllUsers(students);
+      } else {
+        setAllUsers([]);
+      }
+
     } catch (error: any) {
-      console.error('Error fetching students:', error.message);
-      setError('Error al cargar los estudiantes');
+      console.error('Error fetching users:', error.message);
+      setError('Error al cargar los usuarios');
     }
-  }, [API_URL]); // Dependencia para useCallback
+  }, [API_URL, currentUser]);
 
   useEffect(() => {
-    fetchStudents();
-  }, [fetchStudents]); // fetchStudents es una dependencia estable
+    fetchAllUsers();
+  }, [fetchAllUsers]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,10 +116,10 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
           teacher_id: currentUser.id,
           start_time: startDateTime.toISOString(),
           end_time: endDateTime.toISOString(),
-          is_active: true, // Por defecto al crearla
-          is_recording: false, // Por defecto
-          participants: selectedStudents,
-          created_at: new Date().toISOString(), // Laravel/DB suelen manejar esto automáticamente
+          is_active: true,
+          is_recording: false,
+          participants: selectedParticipants,
+          created_at: new Date().toISOString(),
         }),
       });
 
@@ -113,13 +132,12 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
       }
 
       setSuccess(true);
-      // Limpiar campos después de éxito
       setName('');
       setDescription('');
       setDate('');
       setStartTime('');
       setEndTime('');
-      setSelectedStudents([]);
+      setSelectedParticipants([]);
 
       setTimeout(() => {
         setSuccess(false);
@@ -133,33 +151,66 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
     }
   };
 
-  const handleStudentToggle = (studentId: number) => {
-    setSelectedStudents((prev) =>
-      prev.includes(studentId)
-        ? prev.filter((id) => id !== studentId)
-        : [...prev, studentId]
+  const handleParticipantToggle = (userId: number) => {
+    setSelectedParticipants((prev) =>
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId]
     );
   };
 
+  const getRoleTagClass = (roleDescription: string) => {
+    switch (roleDescription) {
+      case 'Admin':
+        return 'bg-purple-100 text-purple-800';
+      case 'Teacher':
+        return 'bg-blue-100 text-blue-800';
+      case 'Student':
+        return 'bg-green-100 text-green-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Lógica para filtrar y buscar usuarios
+  const displayedUsers = useMemo(() => {
+    let filtered = allUsers;
+
+    // 1. Filtrar por rol
+    if (roleFilter !== 'All') {
+      filtered = filtered.filter(user => user.role?.description === roleFilter);
+    }
+
+    // 2. Filtrar por término de búsqueda (nombre)
+    if (searchTerm) {
+      const lowerCaseSearchTerm = searchTerm.toLowerCase();
+      filtered = filtered.filter(user =>
+        user.name?.toLowerCase().includes(lowerCaseSearchTerm) ||
+        user.email?.toLowerCase().includes(lowerCaseSearchTerm) // Opcional: buscar también por email
+      );
+    }
+    return filtered;
+  }, [allUsers, roleFilter, searchTerm]);
+
+
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-4 sm:p-6"> {/* Padding responsivo */}
+    <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-4 sm:p-6">
       <h2 className="text-xl font-semibold text-gray-800 mb-4 sm:mb-6">Crear Nueva Sala</h2>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md flex items-start text-sm"> {/* Tamaño de texto responsivo */}
+        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md flex items-start text-sm">
           <Info className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {success && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md text-sm"> {/* Tamaño de texto responsivo */}
+        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md text-sm">
           Sala creada exitosamente
         </div>
       )}
 
       <div className="space-y-4">
-        {/* Nombre y descripción */}
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
             Nombre de la Sala *
@@ -169,7 +220,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" // Tamaño de texto responsivo
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
             required
           />
         </div>
@@ -182,14 +233,13 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
             id="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" // Tamaño de texto responsivo
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
             rows={3}
             required
           />
         </div>
 
-        {/* Fecha y horario */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4"> {/* Gap y columnas responsivas */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <div>
             <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
               Fecha *
@@ -201,7 +251,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                 id="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm" // Tamaño de texto responsivo
+                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm"
                 required
               />
             </div>
@@ -218,7 +268,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                 id="startTime"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm" // Tamaño de texto responsivo
+                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm"
                 required
               />
             </div>
@@ -235,46 +285,83 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                 id="endTime"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm" // Tamaño de texto responsivo
+                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm"
                 required
               />
             </div>
           </div>
         </div>
 
-        {/* Selección de alumnos */}
+        {/* Selección de Usuarios (Participantes) */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             <div className="flex items-center">
               <Users className="w-5 h-5 mr-1 text-gray-500" />
-              Seleccionar Alumnos
+              Seleccionar Participantes
             </div>
           </label>
-          <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2">
-            {allStudents.length === 0 ? (
-              <p className="text-gray-500 text-sm p-2">No hay alumnos disponibles</p>
+
+          {/* Filtros de rol y buscador */}
+          <div className="mb-3 flex flex-col sm:flex-row gap-2 sm:gap-3 items-center">
+            {/* Filtro por Rol */}
+            <div className="flex-grow w-full sm:w-auto">
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value as 'All' | 'Admin' | 'Teacher' | 'Student')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-orange-500 focus:border-orange-500"
+              >
+                <option value="All">Todos los Roles</option>
+                <option value="Admin">Administradores</option>
+                <option value="Teacher">Profesores</option>
+                <option value="Student">Alumnos</option>
+              </select>
+            </div>
+
+            {/* Buscador por Nombre/Email */}
+            <div className="relative flex-grow w-full sm:w-auto">
+              <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar por nombre o email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-orange-500 focus:border-orange-500"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-md p-2">
+            {displayedUsers.length === 0 ? (
+              <p className="text-gray-500 text-sm p-2 text-center">No hay usuarios que coincidan con los filtros.</p>
             ) : (
-              allStudents.map((student) => (
-                <div key={student.id} className="flex items-center p-2 hover:bg-gray-50">
+              displayedUsers.map((user) => (
+                <div key={user.id} className="flex items-center p-2 hover:bg-gray-50">
                   <input
                     type="checkbox"
-                    id={`student-${student.id}`}
-                    checked={selectedStudents.includes(student.id)}
-                    onChange={() => handleStudentToggle(student.id)}
-                    className="h-4 w-4 text-orange-600 focus:ring-orange-500" // Estilo de foco
+                    id={`user-${user.id}`}
+                    checked={selectedParticipants.includes(user.id)}
+                    onChange={() => handleParticipantToggle(user.id)}
+                    className="h-4 w-4 text-orange-600 focus:ring-orange-500"
                   />
                   <label
-                    htmlFor={`student-${student.id}`}
-                    className="ml-2 block text-sm text-gray-700 cursor-pointer"
+                    htmlFor={`user-${user.id}`}
+                    className="ml-2 flex items-center text-sm text-gray-700 cursor-pointer w-full" // Añadimos justify-between
                   >
-                    {student.name || 'Alumno sin nombre'}
+                    <span>{user.name || 'Usuario sin nombre'}</span>
+                    {user.role && (
+                      <span
+                        className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${getRoleTagClass(user.role.description)}`}
+                      >
+                        {user.role.description}
+                      </span>
+                    )}
                   </label>
                 </div>
               ))
             )}
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Seleccionados: {selectedStudents.length} alumno{selectedStudents.length !== 1 ? 's' : ''}
+            Seleccionados: {selectedParticipants.length} usuario{selectedParticipants.length !== 1 ? 's' : ''}
           </p>
         </div>
       </div>
@@ -283,7 +370,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
         <button
           type="submit"
           disabled={loading}
-          className={`w-full py-2 px-4 rounded-md text-white font-medium text-base 
+          className={`w-full py-2 px-4 rounded-md text-white font-medium text-base
             ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'}
             transition-colors`}
         >
