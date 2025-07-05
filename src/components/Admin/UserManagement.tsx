@@ -301,7 +301,8 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
 // --- Componente Principal UserManagement ---
 const UserManagement: React.FC = () => {
   const { currentUser, loading: authLoading } = useAuth();
-
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -444,52 +445,60 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const handleCreateUser = async (newUserData: UserFormData) => {
-    setCreateError(null);
-    setLoading(true);
+ const handleCreateUser = async (newUserData: UserFormData) => {
+  setCreateError(null);
+  setLoading(true);
 
-    if (currentUserId === null) {
-      setCreateError("No se pudo obtener el ID del usuario actual para asignar. Intente recargar la página o iniciar sesión nuevamente.");
-      setLoading(false);
+  if (currentUserId === null) {
+    setCreateError("No se pudo obtener el ID del usuario actual para asignar. Intente recargar la página o iniciar sesión nuevamente.");
+    setLoading(false);
+    return;
+  }
+
+  const userDataToSend = {
+    ...newUserData,
+    assigned_by: currentUserId,
+  };
+
+  try {
+    const response = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(userDataToSend),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      const errorMessage = errorData.error && typeof errorData.error === 'object' ?
+        Object.values(errorData.error).flat().join(', ') :
+        errorData.message || 'Error al crear el usuario';
+      setCreateError(errorMessage);
       return;
     }
 
-    const userDataToSend = {
-      ...newUserData,
-      assigned_by: currentUserId,
-    };
+    await fetchUsers();
+    await fetchAvailableStudents();
+    await fetchAvailableTeachers();
 
-    try {
-      const response = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(userDataToSend),
-      });
+    setShowCreateFormModal(false);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        const errorMessage = errorData.error && typeof errorData.error === 'object' ?
-          Object.values(errorData.error).flat().join(', ') :
-          errorData.message || 'Error al crear el usuario';
-        setCreateError(errorMessage);
-        return;
-      }
+    // Mostrar modal con las credenciales
+    setCreatedCredentials({
+      email: newUserData.email,
+      password: newUserData.password || '',
+    });
+    setShowCredentialsModal(true);
 
-      await fetchUsers();
-      await fetchAvailableStudents();
-      await fetchAvailableTeachers();
-
-      setShowCreateFormModal(false);
-    } catch (error) {
-      console.error('Error creating user:', error);
-      setCreateError('Error al crear el usuario');
-    } finally {
-      setLoading(false);
-    }
-  };
+  } catch (error) {
+    console.error('Error creating user:', error);
+    setCreateError('Error al crear el usuario');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleDeleteUser = async (userId: number) => {
     if (!confirm('¿Estás seguro de que deseas eliminar este usuario? Esta acción es irreversible.')) return;
@@ -665,7 +674,55 @@ const UserManagement: React.FC = () => {
           </tbody>
         </table>
       </div>
-
+      {showCredentialsModal && createdCredentials && (
+  <ModalWrapper
+    title="Usuario Creado"
+    onClose={() => {
+      setShowCredentialsModal(false);
+      setCreatedCredentials(null);
+    }}
+  >
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Correo Electrónico</label>
+        <div className="flex items-center border rounded px-3 py-2">
+          <input
+            type="text"
+            readOnly
+            className="flex-1 outline-none text-gray-800"
+            value={createdCredentials.email}
+          />
+          <button
+            onClick={() => navigator.clipboard.writeText(createdCredentials.email)}
+            className="ml-2 text-blue-600 hover:underline text-sm"
+          >
+            Copiar
+          </button>
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+        <div className="flex items-center border rounded px-3 py-2">
+          <input
+            type="text"
+            readOnly
+            className="flex-1 outline-none text-gray-800"
+            value={createdCredentials.password}
+          />
+          <button
+            onClick={() => navigator.clipboard.writeText(createdCredentials.password)}
+            className="ml-2 text-blue-600 hover:underline text-sm"
+          >
+            Copiar
+          </button>
+        </div>
+      </div>
+      <div className="text-sm text-gray-500">
+        Guarda estos datos para compartirlos con el nuevo usuario.
+      </div>
+    </div>
+  </ModalWrapper>
+)}
       {/* Modal de Creación de Usuario */}
       {showCreateFormModal && (
         <ModalWrapper
