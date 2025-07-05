@@ -9,8 +9,9 @@ import { useCall } from '../../contexts/CallContext';
 import {
   Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle,
   MessageSquare, PhoneOff, Minimize2, Maximize2, Users, // <-- NUEVO: Íconos de minimizar/maximizar
-  X
+  X, Move
 } from 'lucide-react';
+
 interface VideoRoomProps {
   roomId: string;
   onCallEnded: () => void;
@@ -43,6 +44,13 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
   const [error, setError] = useState<string | null>(null);
   // const [isTeacher, setIsTeacher] = useState(false); // Determinar si el usuario actual es profesor
   const streamLogCountsRef = useRef<Record<string, number>>({});
+
+  // NUEVO: Estados para drag and drop
+  const [widgetPosition, setWidgetPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const widgetRef = useRef<HTMLDivElement>(null);
+
 // En VideoRoom.tsx, dentro del componente:
 const [hasJoinedChannel, setHasJoinedChannel] = useState(false);
 const [isSharingScreen, setIsSharingScreen] = useState(false);
@@ -73,6 +81,118 @@ const [participants, setParticipants] = useState<Record<string, {
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
+
+  // NUEVO: Funciones para drag and drop
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!widgetRef.current) return;
+    
+    const rect = widgetRef.current.getBoundingClientRect();
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    });
+    setIsDragging(true);
+    e.preventDefault();
+  }, []);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!widgetRef.current) return;
+    
+    const rect = widgetRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    setDragOffset({
+      x: touch.clientX - rect.left,
+      y: touch.clientY - rect.top
+    });
+    setIsDragging(true);
+    e.preventDefault();
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging) return;
+    
+    const newX = e.clientX - dragOffset.x;
+    const newY = e.clientY - dragOffset.y;
+    
+    // Restricciones para mantener el widget dentro de la pantalla
+    const maxX = window.innerWidth - (widgetRef.current?.offsetWidth || 0);
+    const maxY = window.innerHeight - (widgetRef.current?.offsetHeight || 0);
+    
+    setWidgetPosition({
+      x: Math.max(0, Math.min(newX, maxX)),
+      y: Math.max(0, Math.min(newY, maxY))
+    });
+  }, [isDragging, dragOffset]);
+
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (!isDragging) return;
+    
+    const touch = e.touches[0];
+    const newX = touch.clientX - dragOffset.x;
+    const newY = touch.clientY - dragOffset.y;
+    
+    // Restricciones para mantener el widget dentro de la pantalla
+    const maxX = window.innerWidth - (widgetRef.current?.offsetWidth || 0);
+    const maxY = window.innerHeight - (widgetRef.current?.offsetHeight || 0);
+    
+    setWidgetPosition({
+      x: Math.max(0, Math.min(newX, maxX)),
+      y: Math.max(0, Math.min(newY, maxY))
+    });
+    e.preventDefault();
+  }, [isDragging, dragOffset]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  // Efecto para agregar event listeners globales
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('touchend', handleTouchEnd);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('touchmove', handleTouchMove);
+        document.removeEventListener('touchend', handleTouchEnd);
+      };
+    }
+  }, [isDragging, handleMouseMove, handleMouseUp, handleTouchMove, handleTouchEnd]);
+
+  // Inicializar posición por defecto cuando se minimiza
+  useEffect(() => {
+    if (isCallMinimized && widgetPosition.x === 0 && widgetPosition.y === 0) {
+      // Posición inicial bottom-right con margen
+      setWidgetPosition({
+        x: window.innerWidth - 340, // 320px width + 20px margin
+        y: window.innerHeight - 420  // 400px height + 20px margin
+      });
+    }
+  }, [isCallMinimized, widgetPosition]);
+
+    const handleDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    if (widgetRef.current) {
+      const rect = widgetRef.current.getBoundingClientRect();
+      setDragOffset({
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      });
+    }
+  }, []);
   useEffect(() => {
     Object.keys(participants).map(id => ({
         id,
@@ -155,31 +275,6 @@ const [participants, setParticipants] = useState<Record<string, {
     console.log("Compartir pantalla detenido.");
   }
 }, [localStream]);
-// const handleCallCleanup = useCallback(() => {
-//     console.log('[VideoRoom Cleanup] Iniciando limpieza de la llamada...');
-//     stopLocalStream();
-//     stopScreenShare();
-
-//     // Cierra todas las PeerConnections
-//     Object.values(peerConnectionsRef.current).forEach(pc => {
-//       pc.close();
-//     });
-//     peerConnectionsRef.current = {}; // Reinicia el objeto de PeerConnections
-
-//     setParticipants({}); // Limpia los participantes
-
-//     if (channelRef.current) {
-//       console.log(`[VideoRoom Cleanup] Dejando canal ${channelRef.current.name}`);
-//       // CAMBIO AQUÍ: Llamar al método leave() del propio objeto channel
-//       channelRef.current.leave(); // Esto enviará la señal de UNSUBSCRIBE y limpiará el canal internamente
-//       channelRef.current = null; // Limpiar la referencia al canal después de dejarlo
-//     }
-//     setHasJoinedChannel(false);
-
-//     // Notifica al padre (Layout) que la llamada ha terminado
-//     onCallEnded(); // Esto debería activar el desmontaje de VideoRoom en Layout
-//     console.log('[VideoRoom Cleanup] Limpieza completa. Notificando a Layout.');
-//   }, [stopLocalStream, stopScreenShare, onCallEnded]);
 
   // Dentro de tu función sendSignal:
   const sendSignal = useCallback(async (toPeerId: string, signalData: any) => {
@@ -200,6 +295,7 @@ const [participants, setParticipants] = useState<Record<string, {
       console.error(`[SIGNAL OUT ERROR] Error al enviar señal ${signalData.type} de ${currentUser?.id} a ${toPeerId}:`, error);
     }
   }, [currentUser, channelRef]); // Asegúrate de que currentUser esté en las dependencias si lo usas
+
   // --- Función auxiliar para obtener/crear RTCPeerConnection ---
     const getOrCreatePeerConnection = useCallback((peerId: string) => {
     if (!peerConnectionsRef.current[peerId]) {
@@ -1362,12 +1458,23 @@ let totalVideosInGrid = 0;
 
        {/* Widget minimizado en DESKTOP (muestra cámaras y más controles) */}
       {isCallMinimized && ( // This div is for the desktop minimized widget
-         <div className={`
-           hidden md:flex fixed bottom-4 right-4 z-40
-           w-[320px] h-[400px] rounded-lg shadow-xl overflow-hidden bg-gray-950 flex-col
-         `}>
+         <div 
+           ref={widgetRef}
+           className={`
+             hidden md:flex fixed z-40
+             w-[320px] h-[400px] rounded-lg shadow-xl overflow-hidden bg-gray-950 flex-col
+             ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}
+             transition-shadow duration-200 hover:shadow-2xl
+           `}
+           style={{
+             left: `${widgetPosition.x}px`,
+             top: `${widgetPosition.y}px`,
+           }}
+           onMouseDown={handleMouseDown}
+           onTouchStart={handleTouchStart}
+         >
            {/* Contenido de videos en miniatura para desktop minimizado */}
-           <div className="flex-1 flex flex-col bg-gray-950 rounded-lg overflow-hidden p-2">
+           <div className="flex-1 flex flex-col bg-gray-950 rounded-lg overflow-hidden p-2 pointer-events-none">
              {/* Pantalla compartida principal en miniatura (si aplica) */}
              {currentScreenShareStream && (
                <div className="w-full h-3/4 mb-2 bg-gray-800 rounded-md flex items-center justify-center overflow-hidden">
@@ -1449,7 +1556,7 @@ let totalVideosInGrid = 0;
              </div>
            </div>
            {/* Controles del widget minimizado grande (recuperados) */}
-           <div className="flex justify-center gap-2 p-3 bg-gray-800 border-t border-gray-700 flex-wrap">
+           <div className="flex justify-center gap-2 p-3 bg-gray-800 border-t border-gray-700 flex-wrap pointer-events-auto">
              <button
                onClick={toggleMic}
                className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
@@ -1501,12 +1608,24 @@ let totalVideosInGrid = 0;
        {/* Widget minimizado en MOBILE (solo iconos y contador) */}
 
       {isCallMinimized && ( // This div is for the mobile minimized widget
-         <div className={`
-           md:hidden fixed bottom-4 right-4 z-50 flex flex-col p-2 bg-gray-900 rounded-lg shadow-lg
-           w-36 h-24
-         `}>
+         <div 
+           ref={widgetRef}
+           className={`
+             md:hidden fixed z-50 flex flex-col p-2 bg-gray-900 rounded-lg shadow-lg
+             w-36 h-24
+             ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}
+           `}
+           style={{
+             left: widgetPosition.x === 0 ? 'auto' : `${widgetPosition.x}px`,
+             top: widgetPosition.y === 0 ? 'auto' : `${widgetPosition.y}px`,
+             right: widgetPosition.x === 0 ? '16px' : 'auto',
+             bottom: widgetPosition.y === 0 ? '16px' : 'auto',
+           }}
+           onMouseDown={handleMouseDown}
+           onTouchStart={handleTouchStart}
+         >
            {/* Contenido del widget minimizado */}
-           <div className="flex items-center justify-center flex-grow text-gray-400 text-sm">
+           <div className="flex items-center justify-center flex-grow text-gray-400 text-sm pointer-events-none">
              {currentScreenShareStream ? (
                <div className="flex flex-col items-center">
                  <ScreenShare className="w-6 h-6 mb-1" />
@@ -1520,7 +1639,15 @@ let totalVideosInGrid = 0;
              )}
            </div>
            {/* Controles de minimizado */}
-           <div className="flex justify-center gap-1 mt-2">
+           <button
+               onMouseDown={handleDragStart}
+               onTouchStart={handleDragStart}
+               className={`w-8 h-8 rounded-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+               title="Arrastrar widget"
+             >
+               <Move size={14} />
+             </button>
+           <div className="flex justify-center gap-1 mt-2 pointer-events-auto">
              <button
                onClick={toggleMinimizeCall}
                className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"

@@ -1,229 +1,214 @@
-// src/components/Layout.tsx
+import React, { useState, useEffect } from 'react';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+import { useCall } from '../../contexts/CallContext';
+import VideoRoom from '../VideoRoom/VideoRoom';
+import {
+  Video,
+  MessageSquare,
+  Users,
+  LogOut,
+  Menu,
+  X,
+  UserCircle
+} from 'lucide-react';
+import logo from '../../assets/logo.png';
 
- import React, { useState, useEffect } from 'react';
- import { Outlet, NavLink, useNavigate } from 'react-router-dom';
- import { useAuth } from '../../contexts/AuthContext';
- import { useCall } from '../../contexts/CallContext';
- import VideoRoom from '../VideoRoom/VideoRoom';
- import {
-   Video,
-   MessageSquare,
-   Users,
-   LogOut,
-   Menu,
-   X,
-   UserCircle
- } from 'lucide-react';
- import logo from '../../assets/logo.png';
+const Layout: React.FC = () => {
+  const { currentUser, logout } = useAuth();
+  const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { activeRoomId, endCall, isCallMinimized, toggleMinimizeCall } = useCall();
 
- const Layout: React.FC = () => {
-   const { currentUser, logout } = useAuth();
-   const navigate = useNavigate();
-   const [sidebarOpen, setSidebarOpen] = useState(false);
-   const { activeRoomId, endCall, isCallMinimized, toggleMinimizeCall } = useCall();
+  const handleLogout = async () => {
+    try {
+      if (activeRoomId) {
+        endCall();
+      }
+      await logout();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
+  };
 
-   // We no longer need isMobileScreen state here for the VideoRoom container logic
-   // const [isMobileScreen, setIsMobileScreen] = useState(window.innerWidth < 768);
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+  };
 
-   // useEffect(() => {
-   //   const handleResize = () => {
-   //     setIsMobileScreen(window.innerWidth < 768);
-   //   };
+  const getRoleLabel = () => {
+    if (!currentUser) return '';
+    switch (currentUser.role_description) {
+      case 'Admin': return 'Administrador';
+      case 'Teacher': return 'Profesor';
+      case 'Student': return 'Alumno';
+      default: return currentUser.role_description;
+    }
+  };
 
-   //   window.addEventListener('resize', handleResize);
-   //   return () => {
-   //     window.removeEventListener('resize', handleResize);
-   //   };
-   // }, []);
+  return (
+    <div className="flex h-screen bg-gray-50">
+      {/* Mobile sidebar backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-gray-900 bg-opacity-50 lg:hidden"
+          onClick={closeSidebar}
+        ></div>
+      )}
 
-   const handleLogout = async () => {
-     try {
-       if (activeRoomId) {
-         endCall();
-       }
-       await logout();
-       navigate('/login');
-     } catch (error) {
-       console.error('Error logging out:', error);
-     }
-   };
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed lg:static inset-y-0 left-0 z-30
+          w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+      >
+        <div className="flex flex-col h-full">
+          <div className="flex flex-col items-center justify-center p-4 border-b text-center relative">
+            <img
+              src={logo}
+              alt="Logo English New Path"
+              className="h-16 w-16 object-contain mb-2"
+            />
+            <h1 className="text-sm font-semibold text-gray-700 leading-tight">
+              English New Path<br />Academia de Inglés online
+            </h1>
+            <button
+              className="absolute right-4 top-4 lg:hidden text-gray-500 hover:text-gray-700"
+              onClick={closeSidebar}
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
 
-   const closeSidebar = () => {
-     setSidebarOpen(false);
-   };
+          {currentUser && (
+            <>
+              <div className="p-4 border-b">
+                <div className="flex items-center">
+                  {currentUser.photo_url ? (
+                    <img
+                      src={currentUser.photo_url}
+                      alt={currentUser.name}
+                      className="w-10 h-10 rounded-full mr-3"
+                    />
+                  ) : (
+                    <UserCircle className="w-10 h-10 text-gray-400 mr-3" />
+                  )}
+                  <div>
+                    <div className="font-medium text-gray-800">{currentUser.name}</div>
+                    <div className="text-sm text-gray-500">{getRoleLabel()}</div>
+                  </div>
+                </div>
+              </div>
 
-   const getRoleLabel = () => {
-     if (!currentUser) return '';
-     switch (currentUser.role_description) {
-       case 'Admin': return 'Administrador';
-       case 'Teacher': return 'Profesor';
-       case 'Student': return 'Alumno';
-       default: return currentUser.role_description;
-     }
-   };
+              <nav className="flex-1 p-4 space-y-1">
+                <NavLink
+                  to="/rooms"
+                  className={({ isActive }) => `
+                    flex items-center px-4 py-2 rounded-md text-sm font-medium
+                    ${isActive
+                      ? 'bg-blue-50 text-orange-700'
+                      : 'text-gray-700 hover:bg-gray-100'}
+                  `}
+                  onClick={closeSidebar}
+                >
+                  <Video className="w-5 h-5 mr-3" />
+                  Salas de Clase
+                </NavLink>
 
-   return (
-     <div className="flex h-screen bg-gray-50">
-       {/* Mobile sidebar backdrop */}
-       {sidebarOpen && (
-         <div
-           className="fixed inset-0 z-20 bg-gray-900 bg-opacity-50 lg:hidden"
-           onClick={closeSidebar}
-         ></div>
-       )}
+                <NavLink
+                  to="/messages"
+                  className={({ isActive }) => `
+                    flex items-center px-4 py-2 rounded-md text-sm font-medium
+                    ${isActive
+                      ? 'bg-blue-50 text-orange-700'
+                      : 'text-gray-700 hover:bg-gray-100'}
+                  `}
+                  onClick={closeSidebar}
+                >
+                  <MessageSquare className="w-5 h-5 mr-3" />
+                  Mensajes
+                </NavLink>
 
-       {/* Sidebar */}
-       <aside
-         className={`
-           fixed lg:static inset-y-0 left-0 z-30
-           w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out
-           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-         `}
-       >
-         <div className="flex flex-col h-full">
-           <div className="flex flex-col items-center justify-center p-4 border-b text-center relative">
-             <img
-               src={logo}
-               alt="Logo English New Path"
-               className="h-16 w-16 object-contain mb-2"
-             />
-             <h1 className="text-sm font-semibold text-gray-700 leading-tight">
-               English New Path<br />Academia de Inglés online
-             </h1>
-             <button
-               className="absolute right-4 top-4 lg:hidden text-gray-500 hover:text-gray-700"
-               onClick={closeSidebar}
-             >
-               <X className="w-6 h-6" />
-             </button>
-           </div>
+                {currentUser.role_description === 'Admin' && (
+                  <NavLink
+                    to="/admin/users"
+                    className={({ isActive }) => `
+                      flex items-center px-4 py-2 rounded-md text-sm font-medium
+                      ${isActive
+                        ? 'bg-blue-50 text-orange-700'
+                        : 'text-gray-700 hover:bg-gray-100'}
+                    `}
+                    onClick={closeSidebar}
+                  >
+                    <Users className="w-5 h-5 mr-3" />
+                    Gestión de Usuarios
+                  </NavLink>
+                )}
+              </nav>
 
-           {currentUser && (
-             <>
-               <div className="p-4 border-b">
-                 <div className="flex items-center">
-                   {currentUser.photo_url ? (
-                     <img
-                       src={currentUser.photo_url}
-                       alt={currentUser.name}
-                       className="w-10 h-10 rounded-full mr-3"
-                     />
-                   ) : (
-                     <UserCircle className="w-10 h-10 text-gray-400 mr-3" />
-                   )}
-                   <div>
-                     <div className="font-medium text-gray-800">{currentUser.name}</div>
-                     <div className="text-sm text-gray-500">{getRoleLabel()}</div>
-                   </div>
-                 </div>
-               </div>
+              <div className="p-4 border-t mt-auto">
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-100"
+                >
+                  <LogOut className="w-5 h-5 mr-3" />
+                  Cerrar Sesión
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </aside>
 
-               <nav className="flex-1 p-4 space-y-1">
-                 <NavLink
-                   to="/rooms"
-                   className={({ isActive }) => `
-                     flex items-center px-4 py-2 rounded-md text-sm font-medium
-                     ${isActive
-                       ? 'bg-blue-50 text-orange-700'
-                       : 'text-gray-700 hover:bg-gray-100'}
-                   `}
-                   onClick={closeSidebar}
-                 >
-                   <Video className="w-5 h-5 mr-3" />
-                   Salas de Clase
-                 </NavLink>
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Top header */}
+        <header className="bg-white shadow-sm z-10">
+          <div className="px-4 py-3 flex items-center justify-between">
+            <button
+              className="lg:hidden text-gray-500 focus:outline-none"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="w-6 h-6" />
+            </button>
 
-                 <NavLink
-                   to="/messages"
-                   className={({ isActive }) => `
-                     flex items-center px-4 py-2 rounded-md text-sm font-medium
-                     ${isActive
-                       ? 'bg-blue-50 text-orange-700'
-                       : 'text-gray-700 hover:bg-gray-100'}
-                   `}
-                   onClick={closeSidebar}
-                 >
-                   <MessageSquare className="w-5 h-5 mr-3" />
-                   Mensajes
-                 </NavLink>
+            <div className="flex-1 flex justify-center lg:justify-start">
+              <h2 className="text-lg font-semibold text-gray-800 lg:hidden">English New Path</h2>
+            </div>
+          </div>
+        </header>
 
-                 {currentUser.role_description === 'Admin' && (
-                   <NavLink
-                     to="/admin/users"
-                     className={({ isActive }) => `
-                       flex items-center px-4 py-2 rounded-md text-sm font-medium
-                       ${isActive
-                         ? 'bg-blue-50 text-orange-700'
-                         : 'text-gray-700 hover:bg-gray-100'}
-                     `}
-                     onClick={closeSidebar}
-                   >
-                     <Users className="w-5 h-5 mr-3" />
-                     Gestión de Usuarios
-                   </NavLink>
-                 )}
-               </nav>
+        {/* Content area */}
+        <main className="flex-1 overflow-x-hidden lg:overflow-y-auto bg-gray-50">
+          <div className="container mx-auto p-0 lg:p-4 h-full">
+            <Outlet />
+          </div>
+        </main>
+      </div>
 
-               <div className="p-4 border-t mt-auto">
-                 <button
-                   onClick={handleLogout}
-                   className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-100"
-                 >
-                   <LogOut className="w-5 h-5 mr-3" />
-                   Cerrar Sesión
-                 </button>
-               </div>
-             </>
-           )}
-         </div>
-       </aside>
+      {/* VideoRoom container - Updated to support draggable widget */}
+      {activeRoomId && (
+        <div className={`
+          fixed z-40 transition-all duration-300 ease-in-out
+          ${isCallMinimized
+            ? 'pointer-events-none' // Allow the VideoRoom widget to handle its own positioning and pointer events
+            : 'inset-0 bg-black bg-opacity-75 flex items-center justify-center pointer-events-auto'
+          }
+        `}>
+          <VideoRoom
+            roomId={activeRoomId}
+            onCallEnded={endCall}
+            isTeacher={currentUser?.role_description === 'Teacher'}
+            isCallMinimized={isCallMinimized}
+            toggleMinimizeCall={toggleMinimizeCall}
+            handleCallCleanup={endCall}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
 
-       {/* Main content */}
-       <div className="flex-1 flex flex-col overflow-hidden">
-         {/* Top header */}
-         <header className="bg-white shadow-sm z-10">
-           <div className="px-4 py-3 flex items-center justify-between">
-             <button
-               className="lg:hidden text-gray-500 focus:outline-none"
-               onClick={() => setSidebarOpen(true)}
-             >
-               <Menu className="w-6 h-6" />
-             </button>
-
-             <div className="flex-1 flex justify-center lg:justify-start">
-               <h2 className="text-lg font-semibold text-gray-800 lg:hidden">English New Path</h2>
-             </div>
-           </div>
-         </header>
-
-         {/* Content area */}
-         <main className="flex-1 overflow-x-hidden lg:overflow-y-auto bg-gray-50">
-           <div className="container mx-auto p-0 lg:p-4 h-full">
-             <Outlet />
-           </div>
-         </main>
-       </div>
-
-       {activeRoomId && (
-         <div className={`
-           fixed bg-black bg-opacity-75 z-40
-           transition-all duration-300 ease-in-out
-           ${isCallMinimized
-            ? 'bottom-4 right-4 w-fit h-fit' // Use w-fit h-fit to let VideoRoom dictate size
-             : 'inset-0 flex items-center justify-center'
-           }
-         `}>
-           <VideoRoom
-             roomId={activeRoomId}
-             isTeacher={currentUser?.role_description === 'Teacher'}
-             isCallMinimized={isCallMinimized}
-             toggleMinimizeCall={toggleMinimizeCall}
-             handleCallCleanup={endCall}
-           />
-         </div>
-       )}
-     </div>
-   );
- };
-
- export default Layout;
+export default Layout;
