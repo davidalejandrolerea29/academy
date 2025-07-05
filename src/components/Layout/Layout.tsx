@@ -193,7 +193,7 @@ const Layout: React.FC = () => {
         <div className={`
           fixed z-40 transition-all duration-300 ease-in-out
           ${isCallMinimized
-            ? 'pointer-events-none' // Allow the VideoRoom widget to handle its own positioning and pointer events
+            ? '' // <--- ¡CAMBIO CLAVE AQUÍ! REMOVE pointer-events-none
             : 'inset-0 bg-black bg-opacity-75 flex items-center justify-center pointer-events-auto'
           }
         `}>
