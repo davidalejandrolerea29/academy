@@ -193,7 +193,7 @@ const MessagingPage: React.FC = () => {
       }
 
       // Suscribirse al canal privado del usuario para notificaciones de contadores
-      const shouldSubscribeToUserChannel = currentUser.role_id === 2 || currentUser.role_id === 3; // Estudiantes y Profesores
+      const shouldSubscribeToUserChannel = currentUser.role_id === 1 || currentUser.role_id === 2 || currentUser.role_id === 3; // Estudiantes y Profesores
 
       if (shouldSubscribeToUserChannel && !userChannelRef.current) {
         console.log(`Subscribing to private-user.${currentUser.id}`);
