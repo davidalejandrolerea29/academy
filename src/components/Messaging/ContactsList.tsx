@@ -9,13 +9,12 @@ const API_URL = import.meta.env.VITE_API_URL;
 interface ContactsListProps {
   onSelectChatTarget: (userId: number, userData: User) => void;
   selectedChatTargetId: string | null;
-
   currentAdminView: 'contacts' | 'teachers' | 'students' | 'chat-observation' | 'all-students';
   setCurrentAdminView: (view: 'contacts' | 'teachers' | 'students' | 'chat-observation' | 'all-students') => void;
   selectedTeacherForStudents?: User | null;
   onSetSelectedTeacher: (teacher: User | null) => void;
-  // Agregamos una prop para notificar a MessagingPage que debe limpiar el chat
   onClearChatPanel: () => void;
+  unreadCounts: { [contactId: string]: number }; // <-- ¡NUEVA PROP!
 }
 
 const ContactsList: React.FC<ContactsListProps> = ({
@@ -25,7 +24,8 @@ const ContactsList: React.FC<ContactsListProps> = ({
   setCurrentAdminView,
   selectedTeacherForStudents,
   onSetSelectedTeacher,
-  onClearChatPanel, // Recibimos la nueva prop
+  onClearChatPanel,
+  unreadCounts, // Recibimos la nueva prop
 }) => {
   const { currentUser } = useAuth();
   const [listItems, setListItems] = useState<User[]>([]);
@@ -100,7 +100,6 @@ const ContactsList: React.FC<ContactsListProps> = ({
     return <div className="p-4 text-center text-red-500">Error: {error}</div>;
   }
 
-  // Determine the title to display based on the current view
   const getHeaderTitle = () => {
     if (currentUser?.role_id === 1) {
       if (currentAdminView === 'teachers') return 'Profesores';
@@ -111,7 +110,6 @@ const ContactsList: React.FC<ContactsListProps> = ({
     return 'Mis Contactos';
   };
 
-  // Helper function to get the empty list message
   const getEmptyListMessage = () => {
     if (currentUser?.role_id === 1) {
       if (currentAdminView === 'teachers') {
@@ -125,7 +123,6 @@ const ContactsList: React.FC<ContactsListProps> = ({
     return 'No tienes contactos.';
   };
 
-
   return (
     <div className="h-full bg-white overflow-y-auto shadow-sm">
       {currentUser?.role_id === 1 && (
@@ -135,7 +132,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
               onClick={() => {
                 setCurrentAdminView('teachers');
                 onSetSelectedTeacher(null);
-                onClearChatPanel(); // Llama a la función de limpieza en MessagingPage
+                onClearChatPanel();
               }}
               className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'teachers' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
@@ -145,7 +142,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
               onClick={() => {
                 setCurrentAdminView('all-students');
                 onSetSelectedTeacher(null);
-                onClearChatPanel(); // Llama a la función de limpieza en MessagingPage
+                onClearChatPanel();
               }}
               className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'all-students' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
@@ -167,7 +164,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
             onClick={() => {
               setCurrentAdminView('teachers');
               onSetSelectedTeacher(null);
-              onClearChatPanel(); // Llama a la función de limpieza en MessagingPage
+              onClearChatPanel();
             }}
             className="flex items-center text-orange-500 hover:text-orange-600 text-sm"
           >
@@ -178,7 +175,6 @@ const ContactsList: React.FC<ContactsListProps> = ({
         <h2 className={`text-md font-semibold text-gray-700 ${currentUser?.role_id === 1 && currentAdminView === 'students' ? 'ml-auto' : 'mx-auto'}`}>
           {getHeaderTitle()}
         </h2>
-        {/* Spacer to center the title if there's a button on the left */}
         {currentUser?.role_id === 1 && currentAdminView === 'students' && (
           <div className="w-4 h-4 mr-1 invisible"></div>
         )}
@@ -187,39 +183,48 @@ const ContactsList: React.FC<ContactsListProps> = ({
       <ul>
         {listItems.length === 0 ? (
           <li className="p-4 text-gray-500 text-center text-sm">
-            {getEmptyListMessage()} {/* Call the helper function here */}
+            {getEmptyListMessage()}
           </li>
         ) : (
-          listItems.map((item) => (
-            <li
-              key={item.id}
-              className={`flex items-center p-3 border-b cursor-pointer hover:bg-blue-50 ${
-                selectedChatTargetId === String(item.id) ? 'bg-blue-100' : ''
-              }`}
-              onClick={() => {
-                if (currentUser?.role_id === 1) {
-                  if (currentAdminView === 'teachers') {
-                    onSetSelectedTeacher(item);
-                    setCurrentAdminView('students');
-                  } else if (currentAdminView === 'students' || currentAdminView === 'all-students' || currentAdminView === 'chat-observation') {
-                    // Solo seleccionamos el chat si es un ID de usuario real
-                    if (item.id !== 0) {
-                      onSelectChatTarget(item.id, item);
+          listItems.map((item) => {
+            // Obtener el contador de mensajes no leídos para este contacto
+            const unreadCount = unreadCounts[item.id] || 0;
+            return (
+              <li
+                key={item.id}
+                className={`flex items-center p-3 border-b cursor-pointer hover:bg-blue-50 ${
+                  selectedChatTargetId === String(item.id) ? 'bg-blue-100' : ''
+                }`}
+                onClick={() => {
+                  if (currentUser?.role_id === 1) {
+                    if (currentAdminView === 'teachers') {
+                      onSetSelectedTeacher(item);
+                      setCurrentAdminView('students');
+                    } else if (currentAdminView === 'students' || currentAdminView === 'all-students' || currentAdminView === 'chat-observation') {
+                      if (item.id !== 0) {
+                        onSelectChatTarget(item.id, item);
+                      }
                     }
+                  } else {
+                    onSelectChatTarget(item.id, item);
                   }
-                } else {
-                  onSelectChatTarget(item.id, item);
-                }
-              }}
-            >
-              <div className="flex-1">
-                <div className="font-medium text-gray-800">{item.name}</div>
-                <div className="text-sm text-gray-500 capitalize">
-                  {item.role_id === 2 ? 'Profesor' : (item.role_id === 3 ? 'Estudiante' : 'Usuario')}
+                }}
+              >
+                <div className="flex-1">
+                  <div className="font-medium text-gray-800">{item.name}</div>
+                  <div className="text-sm text-gray-500 capitalize">
+                    {item.role_id === 2 ? 'Profesor' : (item.role_id === 3 ? 'Estudiante' : 'Usuario')}
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))
+                {/* --- ¡NUEVO! Mostrar el contador de mensajes no leídos --- */}
+                {unreadCount > 0 && (
+                  <span className="ml-2 px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                    {unreadCount}
+                  </span>
+                )}
+              </li>
+            );
+          })
         )}
       </ul>
     </div>
