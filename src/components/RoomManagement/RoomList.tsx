@@ -46,10 +46,6 @@ interface RoomFrontend extends Omit<Room, 'start_time' | 'end_time' | 'participa
   } | null;
   participants: Participant[];
   messages?: Message[];
-  // Asegúrate de que 'creator_id' o 'user_id' o similar exista en tu tipo Room
-  // Si tu backend devuelve el ID del creador en 'teacher_id' (incluso si es un admin quien la creó),
-  // entonces eso es lo que usaremos. Si tienes un campo 'created_by_user_id', úsalo.
-  // Para este ejemplo, asumiré que 'teacher_id' es el ID del creador de la sala.
   teacher_id: number; // Asegúrate de que este campo exista en tu tipo `Room` o agrégalo.
 }
 
@@ -87,8 +83,6 @@ const RoomList: React.FC = () => {
         ...room,
         start_time: new Date(room.start_time),
         end_time: new Date(room.end_time),
-        // Asegúrate de que room.teacher_id viene del backend y es el ID del creador
-        // Si el backend devuelve un campo diferente para el creador (ej: created_by), úsalo aquí.
         teacher_id: room.teacher_id, // Asumiendo que teacher_id es el creador.
       }));
       console.log('Mapped Rooms:', mappedRooms);
@@ -248,11 +242,11 @@ const RoomList: React.FC = () => {
 
             const uniqueParticipants = new Set(room.participants.map(p => p.user_id)).size;
 
-            // *** LÓGICA CLAVE AQUÍ: Determinar si el botón "Unirse" debe mostrarse ***
+            // *** LÓGICA CLAVE REVISADA AQUÍ: Determinar si el botón "Unirse" debe mostrarse ***
             let canJoinRoom = false;
             if (currentUser?.role?.description === 'Admin') {
-                // Admin solo puede unirse si es el creador de la sala
-                canJoinRoom = isLive && room.teacher_id === currentUser.id;
+                // Admin puede unirse si la sala está en vivo Y (es el creador O es un participante)
+                canJoinRoom = isLive && (room.teacher_id === currentUser.id || room.participants.some(p => p.user_id === currentUser.id));
             } else if (currentUser?.role?.description === 'Teacher') {
                 // Profesor solo puede unirse si es el creador de la sala
                 canJoinRoom = isLive && room.teacher_id === currentUser.id;
@@ -300,24 +294,28 @@ const RoomList: React.FC = () => {
 
                   {/* PRIMERA FILA DE BOTONES: Unirse/Ver Sala y Activar/Desactivar */}
                   <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-2">
-                    {canJoinRoom ? ( // Usa la nueva variable canJoinRoom
-                      <button
-                        onClick={() => startCall(String(room.id))}
-                        className="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-md flex items-center justify-center text-sm transition-colors w-full flex-grow"
-                      >
-                        <Video className="w-4 h-4 mr-2" />
-                        Unirse
-                      </button>
+                    {isLive ? ( // Solo mostramos el botón "Unirse" si la sala está "En curso"
+                      canJoinRoom ? ( // Si el usuario actual puede unirse
+                        <button
+                          onClick={() => startCall(String(room.id))}
+                          className="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-md flex items-center justify-center text-sm transition-colors w-full flex-grow"
+                        >
+                          <Video className="w-4 h-4 mr-2" />
+                          Unirse
+                        </button>
+                      ) : (
+                        // Mensajes cuando no puede unirse (pero la sala está en vivo)
+                        <span className="text-sm text-gray-500 px-3 py-2 w-full text-center sm:text-left flex-grow">
+                          No tienes permiso para unirte a esta sala.
+                        </span>
+                      )
                     ) : (
-                      // Muestra un mensaje o un espacio si no puede unirse
+                      // Mensajes cuando la sala no está en vivo
                       <span className="text-sm text-gray-500 px-3 py-2 w-full text-center sm:text-left flex-grow">
-                        {isLive
-                          ? currentUser?.role?.description === 'Admin' && room.teacher_id !== currentUser.id
-                            ? 'Gestionar sala' // Mensaje específico para admin que no es creador
-                            : 'No disponible' // Mensaje general para otros casos
-                          : room.start_time > now ? 'Próximamente' : 'Finalizada'}
+                        {room.start_time > now ? 'Próximamente' : 'Finalizada'}
                       </span>
                     )}
+
 
                     {(currentUser?.role?.description === 'Admin' || (currentUser?.role?.description === 'Teacher' && room.teacher_id === currentUser.id)) && (
                       <button
