@@ -1,4 +1,5 @@
 // src/components/Messaging/ContactsList.tsx
+
 import React, { useState, useEffect } from 'react';
 import { User } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
@@ -14,7 +15,7 @@ interface ContactsListProps {
   selectedTeacherForStudents?: User | null;
   onSetSelectedTeacher: (teacher: User | null) => void;
   onClearChatPanel: () => void;
-  unreadCounts: { [contactId: string]: number }; // <-- ¡NUEVA PROP!
+  unreadCounts: { [contactId: string]: number };
 }
 
 const ContactsList: React.FC<ContactsListProps> = ({
@@ -25,7 +26,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
   selectedTeacherForStudents,
   onSetSelectedTeacher,
   onClearChatPanel,
-  unreadCounts, // Recibimos la nueva prop
+  unreadCounts,
 }) => {
   const { currentUser } = useAuth();
   const [listItems, setListItems] = useState<User[]>([]);
@@ -44,9 +45,16 @@ const ContactsList: React.FC<ContactsListProps> = ({
       if (currentUser.role_id === 1) { // If it's an Admin
         if (currentAdminView === 'teachers') {
           url = `${API_URL}/auth/admin/teachers`;
-        } else if (currentAdminView === 'students' || currentAdminView === 'chat-observation' || currentAdminView === 'all-students') {
-          url = `${API_URL}/auth/admin/students`;
-        } else {
+        } else if (currentAdminView === 'all-students') { // Nueva condición para "Todos los Alumnos"
+          url = `${API_URL}/auth/admin/students`; // Esta ruta ahora solo para ALL-STUDENTS
+        } else if (currentAdminView === 'students') { // ¡NUEVO! Alumnos por profesor
+          if (!selectedTeacherForStudents) {
+            setListItems([]); // Si no hay profesor seleccionado, no hay alumnos para mostrar
+            setLoading(false);
+            return;
+          }
+          url = `${API_URL}/auth/admin/teachers/${selectedTeacherForStudents.id}/students`;
+        } else { // chat-observation (si la activas)
           setListItems([]);
           setLoading(false);
           return;
@@ -55,6 +63,8 @@ const ContactsList: React.FC<ContactsListProps> = ({
         url = `${API_URL}/auth/contacts`;
         isContactsList = true;
       }
+
+      console.log("Fetching URL:", url); // Log para depuración
 
       const response = await fetch(url, {
         method: 'GET',
@@ -74,9 +84,10 @@ const ContactsList: React.FC<ContactsListProps> = ({
       } else if (currentUser.role_id === 1) {
         if (currentAdminView === 'teachers') {
           setListItems(data.teachers || []);
-        } else if (currentAdminView === 'students' || currentAdminView === 'chat-observation' || currentAdminView === 'all-students') {
+        } else if (currentAdminView === 'all-students' || currentAdminView === 'students') { // Ahora 'students' también viene de esta rama
           setListItems(data.students || []);
         }
+        // No necesitamos `chat-observation` aquí a menos que tu backend tenga una ruta específica para ello.
       }
     } catch (err: any) {
       console.error('Error fetching list items:', err);
@@ -87,10 +98,17 @@ const ContactsList: React.FC<ContactsListProps> = ({
   };
 
   useEffect(() => {
+    // Se activa la búsqueda de items solo si es un admin o si currentAdminView es 'contacts'
+    // Y, crucial, si es 'students', selectedTeacherForStudents debe existir para que la URL sea válida.
     if (currentUser && (currentUser.role_id === 1 || currentAdminView === 'contacts')) {
+      if (currentAdminView === 'students' && !selectedTeacherForStudents) {
+        setListItems([]); // Limpiar la lista si no hay profesor seleccionado en la vista 'students'
+        setLoading(false);
+        return;
+      }
       fetchItems();
     }
-  }, [currentUser, currentAdminView, selectedTeacherForStudents]);
+  }, [currentUser, currentAdminView, selectedTeacherForStudents]); // selectedTeacherForStudents como dependencia es crucial
 
   if (loading) {
     return <div className="p-4 text-center">Cargando...</div>;
