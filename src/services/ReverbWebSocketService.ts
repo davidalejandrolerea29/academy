@@ -525,7 +525,7 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
 // Define la URL base de tu API desde las variables de entorno de Vite
 // ReverbWebSocketService.ts
 
-const API_URL = import.meta.env.VITE_API_URL; // Esto será 'https://english-meet.duckdns.org/api/v1' en prod, o 'http://localhost:8000/api/v1' en local
+const API_URL = import.meta.env.VITE_API_URL; // Esto será 'https://portalnewpath.com/api/v1' en prod, o 'http://localhost:8000/api/v1' en local
 
 let reverbServiceInstance: ReverbWebSocketService | null = null;
 
@@ -542,7 +542,7 @@ export const createReverbWebSocketService = (token: string): ReverbWebSocketServ
     let forceTLS: boolean;
 
     // Detectar si estamos en producción (basado en el dominio)
-    if (apiHost === 'english-meet.duckdns.org') {
+    if (apiHost === 'portalnewpath.com') {
       wsHost = apiHost;
       wsPort = 443; // En producción, usamos el puerto HTTPS estándar
       authEndpoint = `https://${apiHost}/broadcasting/auth`; // Sin el puerto 3000, Apache lo redirige
