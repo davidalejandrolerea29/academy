@@ -1386,7 +1386,7 @@ return (
                             <ScreenShare size={20} />
                         </button> */}
 
-                        {isTeacher && (
+                        {/* {isTeacher && (
                            <button
                              onClick={toggleRecording}
                              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
@@ -1394,7 +1394,7 @@ return (
                            >
                              <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
                            </button>
-                         )}
+                         )} */}
 
                         <button
                             onClick={() => setIsChatOpenMobile(prev => !prev)}
@@ -1478,7 +1478,7 @@ return (
                             <ScreenShare size={20} />
                         </button>
 
-                        {isTeacher && (
+                        {/* {isTeacher && (
                            <button
                              onClick={toggleRecording}
                              className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
@@ -1486,7 +1486,7 @@ return (
                            >
                              <StopCircle size={20} className={isRecording ? 'text-red-500' : ''} />
                            </button>
-                         )}
+                         )} */}
 
                         {/* Botón de CERRAR Chat (visible solo en el overlay móvil) */}
                         <button
