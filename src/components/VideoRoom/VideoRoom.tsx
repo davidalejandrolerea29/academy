@@ -1657,7 +1657,7 @@ return (
                         >
                             <ScreenShare size={18} />
                         </button>
-                        {isTeacher && (
+                        {/* {isTeacher && (
                            <button
                              onClick={toggleRecording}
                              className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
@@ -1665,7 +1665,7 @@ return (
                            >
                              <StopCircle size={18} className={isRecording ? 'text-red-500' : ''} />
                            </button>
-                         )}
+                         )} */}
                         <button
                             onClick={toggleMinimizeCall}
                             className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
