@@ -13,33 +13,34 @@ import {
   Menu,
   X,
   UserCircle,
-  WifiOff, // Icono para desconectado
-  Wifi,    // Icono para conectado
-  Loader // Icono para conectando
+  WifiOff,
+  Wifi,
+  Loader,
+  AlertCircle // Icono para alerta de sesión
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
-
-// Importa tu servicio WebSocket
+import axios from 'axios'; // Importa axios
 import { createReverbWebSocketService, ReverbWebSocketService } from '../../services/ReverbWebSocketService';
 
 const Layout: React.FC = () => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, setAuthToken } = useAuth(); // Agrega setAuthToken si existe en tu contexto
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { activeRoomId, endCall, isCallMinimized, toggleMinimizeCall } = useCall();
 
-  // --- NUEVOS ESTADOS PARA EL INDICADOR DE CONEXIÓN ---
   const [isWebSocketConnected, setIsWebSocketConnected] = useState<boolean>(false);
-  const [isConnecting, setIsConnecting] = useState<boolean>(true); // Empezamos como conectando
+  const [isConnecting, setIsConnecting] = useState<boolean>(true);
   const [webSocketService, setWebSocketService] = useState<ReverbWebSocketService | null>(null);
-  // ---------------------------------------------------
+
+  // --- NUEVO ESTADO PARA EL MODAL DE SESIÓN EXPIRADA ---
+  const [showSessionExpiredModal, setShowSessionExpiredModal] = useState<boolean>(false);
+  // ----------------------------------------------------
 
   useEffect(() => {
     if (currentUser?.token) {
       const service = createReverbWebSocketService(currentUser.token);
       setWebSocketService(service);
 
-      // --- SUSCRIBIRSE A EVENTOS GLOBALES DE CONEXIÓN ---
       const handleConnected = () => {
         setIsWebSocketConnected(true);
         setIsConnecting(false);
@@ -48,21 +49,20 @@ const Layout: React.FC = () => {
 
       const handleDisconnected = () => {
         setIsWebSocketConnected(false);
-        // Cuando se desconecta, volvemos a 'conectando' hasta que se reestablezca o falle
         setIsConnecting(true);
         console.log('UI: WebSocket está DESCONECTADO (intentando reconectar...).');
       };
 
       const handleError = (error: any) => {
         console.error('UI: WebSocket ERROR:', error);
-        // Podrías poner isConnecting en false y mostrar un error crítico si es persistente
       };
 
       const handlePermanentlyDisconnected = () => {
         setIsWebSocketConnected(false);
         setIsConnecting(false);
         console.error('UI: WebSocket permanentemente desconectado.');
-        // Aquí podrías mostrar un mensaje grande al usuario para que recargue la página o revise su conexión
+        // Aquí podrías querer mostrar el modal si la desconexión es por token
+        // Sin embargo, es más fiable que el interceptor de Axios lo haga.
       };
 
       service.on('connected', handleConnected);
@@ -70,37 +70,69 @@ const Layout: React.FC = () => {
       service.on('error', handleError);
       service.on('permanently_disconnected', handlePermanentlyDisconnected);
 
-      // Intentar conectar el servicio al montar el Layout
-      // Si ya estaba conectado, el `connect()` resolverá de inmediato.
-      // Si no, iniciará la conexión.
       service.connect().then(() => {
-        handleConnected(); // Si la conexión ya estaba abierta al montar
+        handleConnected();
       }).catch((e) => {
         console.error("Layout: Error inicial al conectar ReverbService:", e);
-        // Si hay un error inicial, también marcamos como no conectado.
         setIsWebSocketConnected(false);
         setIsConnecting(false);
       });
 
-      // --- LIMPIEZA AL DESMONTAR ---
       return () => {
         console.log('UI: Limpiando listeners de WebSocket.');
         service.off('connected', handleConnected);
         service.off('disconnected', handleDisconnected);
         service.off('error', handleError);
         service.off('permanently_disconnected', handlePermanentlyDisconnected);
-        // NO desconectes el servicio global aquí, ya que otros componentes lo usarán.
-        // Solo limpia los listeners de este componente.
       };
     }
-  }, [currentUser?.token]); // Re-ejecutar si el token del usuario cambia
+  }, [currentUser?.token]);
+
+  // --- EFECTO PARA CONFIGURAR EL INTERCEPTOR DE AXIOS ---
+  useEffect(() => {
+    // Solo configurar el interceptor si hay un token
+    if (!currentUser?.token) {
+      // Si no hay token, limpia el interceptor si existe para evitar llamadas no autenticadas
+      axios.interceptors.response.eject(authInterceptor); // Asegúrate de tener una referencia
+      return;
+    }
+
+    const authInterceptor = axios.interceptors.response.use(
+      (response) => response, // Si la respuesta es exitosa, no hacemos nada
+      (error) => {
+        // Si el error es un 401 (Unauthorized) y el usuario está logueado
+        if (error.response && error.response.status === 401 && currentUser) {
+          console.warn('API: Sesión expirada (401 Unauthorized). Mostrando modal.');
+          setShowSessionExpiredModal(true); // Muestra el modal
+          // Opcional: limpiar el token del localStorage y del estado de autenticación
+          // para evitar que se sigan haciendo peticiones con un token inválido.
+          logout(); // Limpia el token y currentUser del contexto
+          if (webSocketService) {
+            webSocketService.disconnect(); // Desconecta el WS si el token caducó
+          }
+        }
+        return Promise.reject(error); // Rechaza la promesa del error para que el componente que hizo la llamada lo maneje
+      }
+    );
+
+    // Limpieza: Retirar el interceptor cuando el componente se desmonte o el token cambie
+    return () => {
+      axios.interceptors.response.eject(authInterceptor);
+    };
+  }, [currentUser, logout, webSocketService]); // Dependencias para re-ejecutar el efecto
+
+  // --- Manejador para el botón "Entendido" del modal ---
+  const handleModalClose = () => {
+    setShowSessionExpiredModal(false);
+    navigate('/login'); // Redirige a la página de login
+    window.location.reload(); // Recarga la página para asegurar un estado limpio
+  };
 
   const handleLogout = async () => {
     try {
       if (activeRoomId) {
         endCall();
       }
-      // Antes de hacer logout, desconecta el servicio WebSocket
       if (webSocketService) {
         webSocketService.disconnect();
       }
@@ -125,10 +157,9 @@ const Layout: React.FC = () => {
     }
   };
 
-  // --- Lógica para mostrar el estado de la conexión ---
   const getConnectionStatus = () => {
     if (!currentUser) {
-      return null; // No mostrar si no hay usuario logueado
+      return null;
     }
     if (isConnecting) {
       return (
@@ -156,7 +187,8 @@ const Layout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Mobile sidebar backdrop */}
+      {/* ... (sidebar y header existentes) ... */}
+
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-gray-900 bg-opacity-50 lg:hidden"
@@ -164,7 +196,6 @@ const Layout: React.FC = () => {
         ></div>
       )}
 
-      {/* Sidebar */}
       <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-30
@@ -270,9 +301,7 @@ const Layout: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top header */}
         <header className="bg-white shadow-sm z-10">
           <div className="px-4 py-3 flex items-center justify-between">
             <button
@@ -286,16 +315,12 @@ const Layout: React.FC = () => {
               <h2 className="text-lg font-semibold text-gray-800 lg:hidden">English New Path</h2>
             </div>
 
-            {/* --- INDICADOR DE CONEXIÓN AÑADIDO AQUÍ --- */}
-            <div className="ml-auto mr-4"> {/* Alinea a la derecha y añade margen */}
+            <div className="ml-auto mr-4">
               {getConnectionStatus()}
             </div>
-            {/* ------------------------------------------- */}
-
           </div>
         </header>
 
-        {/* Content area */}
         <main className="flex-1 overflow-x-hidden lg:overflow-y-auto bg-gray-50">
           <div className="container mx-auto p-0 lg:p-4 h-full">
             <Outlet />
@@ -303,12 +328,11 @@ const Layout: React.FC = () => {
         </main>
       </div>
 
-      {/* VideoRoom container - Updated to support draggable widget */}
       {activeRoomId && (
         <div className={`
           fixed z-40 transition-all duration-300 ease-in-out
           ${isCallMinimized
-            ? '' // Mantén esto si no quieres que el video flotante sea interactivo cuando minimizado
+            ? ''
             : 'inset-0 bg-black bg-opacity-75 flex items-center justify-center pointer-events-auto'
           }
         `}>
@@ -322,6 +346,28 @@ const Layout: React.FC = () => {
           />
         </div>
       )}
+
+      {/* --- MODAL DE SESIÓN EXPIRADA --- */}
+      {showSessionExpiredModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-75">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm mx-auto text-center">
+            <div className="flex justify-center mb-4">
+              <AlertCircle className="w-12 h-12 text-red-500" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-3">Sesión Expirada</h3>
+            <p className="text-gray-700 mb-6">
+              Tu sesión ha expirado. Por favor, vuelve a iniciar sesión para continuar.
+            </p>
+            <button
+              onClick={handleModalClose}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
+      {/* ------------------------------- */}
     </div>
   );
 };
