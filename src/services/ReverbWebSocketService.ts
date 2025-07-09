@@ -21,6 +21,7 @@ interface ChannelSubscription {
   listeners: Map<string, Set<Function>>; // Para almacenar múltiples callbacks por evento
   presenceMembers?: Map<string, any>; // Solo para canales de presencia (id -> info de miembro)
   // Puedes añadir más estado específico del canal si lo necesitas
+  lastProcessedMessageId?: number;
 }
 
 // Replicar la interfaz de un "canal" de Echo para compatibilidad en tus componentes
@@ -35,6 +36,9 @@ export interface EchoChannel {
   here: (callback: (members: any[]) => void) => void; // Lista inicial de miembros
   joining: (callback: (member: any) => void) => void; // Cuando un miembro se une
   leaving: (callback: (member: any) => void) => void; // Cuando un miembro se va
+  onMissedMessages: (callback: (messages: any[]) => void) => void; // Para escuchar mensajes perdidos
+  setLastProcessedMessageId: (messageId: number) => void; // Para que el componente actualice el ID
+
   // Propiedad para acceder a los miembros actuales del canal de presencia (solo lectura)
   members: Map<string, any>; // Devuelve un Map<string, any>
 }
@@ -218,6 +222,7 @@ private dispatchToChannelListeners(message: any) {
 
         // --- MANEJO DE EVENTOS INTERNOS DE REVERB/PUSHER ---
         // Estos eventos tienen prioridad y son manejados por su nombre exacto.
+       
         if (message.event === 'pusher_internal:subscription_succeeded') {
             // console.log(`ReverbWebSocketService: Recibido pusher_internal:subscription_succeeded para canal: ${message.channel}`);
             if (parsedData.presence && parsedData.presence.data) {
@@ -287,6 +292,12 @@ private dispatchToChannelListeners(message: any) {
             //     console.warn(`ReverbWebSocketService: Evento no despachado para canal "${message.channel}", evento "${message.event}". No hay listener registrado para este formato.`);
             // }
         }
+        if (message.event === 'messagecreatedprivate' && parsedData.message?.id) {
+            // Actualiza el ID del último mensaje procesado
+            if (!channelData.lastProcessedMessageId || parsedData.message.id > channelData.lastProcessedMessageId) {
+                channelData.lastProcessedMessageId = parsedData.message.id;
+            }
+        }
     }
 }
   // --- Métodos para unirse a Canales (replicando Echo) ---
@@ -352,7 +363,32 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
     }
 
     const channelSubscription = this.getOrCreateChannelSubscription(channelName);
+    if (channelSubscription.lastProcessedMessageId) {
+        // Hacer una petición HTTP a tu backend de Laravel para obtener mensajes
+        // más nuevos que 'lastProcessedMessageId' para este 'channelName'
+        try {
+            const missedMessagesResponse = await axios.get(
+                `${this.options.apiUrl}/chats/${channelName}/messages/after/${channelSubscription.lastProcessedMessageId}`,
+                { headers: { Authorization: `Bearer ${this.options.token}` } }
+            );
+            const missedMessages = missedMessagesResponse.data.messages; // Ajusta según tu API
+            console.log(`ReverbWebSocketService: Retrieved ${missedMessages.length} missed messages for channel ${channelName}`);
 
+            // Procesar y añadir estos mensajes al UI, asegurándote de no duplicarlos.
+            // Podrías emitir un evento especial o tener un callback para esto.
+            // Por ejemplo, un nuevo listener en el objeto EchoChannel:
+            channelSubscription.listeners.get('missed_messages')?.forEach(cb => cb(missedMessages));
+
+            // Actualizar el lastProcessedMessageId si hay nuevos mensajes
+            if (missedMessages.length > 0) {
+                const latestMissedId = Math.max(...missedMessages.map((m: any) => m.id));
+                channelSubscription.lastProcessedMessageId = latestMissedId;
+            }
+
+        } catch (error) {
+            console.error(`ReverbWebSocketService: Failed to retrieve missed messages for channel ${channelName}:`, error);
+        }
+    }
     // Mock de objeto de canal Echo para usar en tus componentes
     const echoChannel: EchoChannel = {
       listen: (eventName: string, callback: Function) => {
@@ -399,6 +435,17 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
           channelSubscription.listeners.set('subscribed', new Set());
         }
         channelSubscription.listeners.get('subscribed')?.add(callback);
+      },
+      onMissedMessages: (callback: (messages: any[]) => void) => {
+          if (!channelSubscription.listeners.has('missed_messages')) {
+              channelSubscription.listeners.set('missed_messages', new Set());
+          }
+          channelSubscription.listeners.get('missed_messages')?.add(callback);
+      },
+
+      // Método para actualizar el lastProcessedMessageId desde el componente de chat
+      setLastProcessedMessageId: (messageId: number) => {
+          channelSubscription.lastProcessedMessageId = messageId;
       },
       error: (callback: Function) => {
         if (!channelSubscription.listeners.has('error')) {
