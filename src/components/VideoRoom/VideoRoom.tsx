@@ -459,33 +459,45 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
         };
 
         pc.onnegotiationneeded = async () => {
-            // No necesitas añadir tracks locales aquí de nuevo, ya los añadimos al crear la PC.
-            // Si cambian (ej. screen share), toggleScreenShare los gestionará y esto se disparará de nuevo.
+    if (pc.signalingState !== 'stable') {
+        console.warn(`[onnegotiationneeded] signalingState no es 'stable' (${pc.signalingState}). Retrasando oferta para ${peerId}.`);
+        return;
+    }
 
-            if (pc.signalingState !== 'stable') {
-                console.warn(`[onnegotiationneeded] signalingState no es 'stable' (${pc.signalingState}). Retrasando oferta para ${peerId}.`);
-                return;
+    // AÑADE ESTA LÓGICA DE NUEVO
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            // Asegúrate de que el track no ha sido añadido ya para evitar duplicados
+            // y que el track es de tipo 'live' (no ha terminado)
+            if (track.readyState === 'live' && !pc.getSenders().some(sender => sender.track === track)) {
+                pc.addTrack(track, localStream);
+                console.log(`[ON_NEGOTIATION] ✅ Añadido/re-añadido track local ${track.kind} a PC de ${peerId} durante negociación.`);
+            } else if (track.readyState !== 'live') {
+                console.warn(`[ON_NEGOTIATION] No se añade track ${track.kind} para ${peerId} porque no está 'live'.`);
             }
+        });
+    }
 
-            try {
-                const localUserId = parseInt(currentUser?.id.toString() || '0');
-                const remoteMemberId = parseInt(peerId);
-                const isInitiator = localUserId < remoteMemberId;
 
-                if (isInitiator) {
-                    console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
-                    console.log(`[SIGNAL OUT] Oferta enviada de ${currentUser?.id} a ${peerId}.`);
-                } else {
-                    console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
-                }
+    try {
+        const localUserId = parseInt(currentUser?.id.toString() || '0');
+        const remoteMemberId = parseInt(peerId);
+        const isInitiator = localUserId < remoteMemberId;
 
-            } catch (e) {
-                console.error(`[PC Event] Error en onnegotiationneeded para ${peerId}:`, e);
-            }
-        };
+        if (isInitiator) {
+            console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
+            console.log(`[SIGNAL OUT] Oferta enviada de ${currentUser?.id} a ${peerId}.`);
+        } else {
+            console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
+        }
+
+    } catch (e) {
+        console.error(`[PC Event] Error en onnegotiationneeded para ${peerId}:`, e);
+    }
+};
 
         pc.onconnectionstatechange = () => {
             console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
