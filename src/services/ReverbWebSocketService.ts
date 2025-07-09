@@ -61,6 +61,7 @@ export class ReverbWebSocketService {
   private maxReconnectAttempts = 10;
   private baseReconnectInterval = 1000; // 1 segundo
   private connectionPromise: Promise<string> | null = null; // Para evitar múltiples intentos de conexión
+  private activeChannelNames: Map<string, { isPresence: boolean, lastProcessedMessageId?: number }> = new Map();
 
 constructor(options: WebSocketServiceOptions) {
     this.options = options;
@@ -90,54 +91,67 @@ constructor(options: WebSocketServiceOptions) {
     }
 
     // Crear una nueva promesa de conexión
-    this.connectionPromise = new Promise((resolve, reject) => {
-      //console.log("ReverbWebSocketService: Establishing new Global WebSocket connection to", this.wsUrl);
+   this.connectionPromise = new Promise((resolve, reject) => {
       try {
         const ws = new WebSocket(this.wsUrl);
         this.globalWs = ws;
-        this.globalSocketId = null; // Reiniciar socketId al iniciar una nueva conexión
+        this.globalSocketId = null;
 
         ws.onopen = () => {
           //console.log('ReverbWebSocketService: Global WebSocket opened!');
-          this.reconnectAttempts = 0; // Resetear intentos al conectar exitosamente
+          this.reconnectAttempts = 0;
           this.clearReconnectTimeout();
-          this.emitGlobalEvent('connected'); // Emitir evento global de conexión
-          // Reverb/Pusher espera un ping inicial para establecer el socket_id
+          this.emitGlobalEvent('connected');
           ws.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
         };
 
         ws.onmessage = (event) => {
-          const message = JSON.parse(event.data);
-          // console.log('ReverbWebSocketService: Global WebSocket message:', message); // Para depuración
+            const message = JSON.parse(event.data);
+            // console.log('ReverbWebSocketService: Global WebSocket message:', message);
 
-          if (message.event === 'pusher:connection_established') {
-              const data = JSON.parse(message.data);
-              this.globalSocketId = data.socket_id;
-              console.log('ReverbWebSocketService: Global connection established, Socket ID:', this.globalSocketId);
-              // ¡Aquí es donde la promesa `connect()` se resuelve!
-              resolve(this.globalSocketId); // ESTO ES CLAVE
-          } else if (message.event === 'pusher:pong') {
-            // console.log('ReverbWebSocketService: Received global pong.');
-          }
+            if (message.event === 'pusher:connection_established') {
+                const data = JSON.parse(message.data);
+                this.globalSocketId = data.socket_id;
+                console.log('ReverbWebSocketService: Global connection established, Socket ID:', this.globalSocketId);
+                resolve(this.globalSocketId); // Resuelve la promesa de conexión
 
-          // Despachar el mensaje a los listeners de canales específicos
-          this.dispatchToChannelListeners(message);
+                // --- LÓGICA DE RE-SUSCRIPCIÓN TRAS ESTABLECER CONEXIÓN ---
+                this.activeChannelNames.forEach(async (channelInfo, channelName) => {
+                    try {
+                        console.log(`ReverbWebSocketService: Re-subscribing to channel: ${channelName}`);
+                        await this.subscribeChannel(channelName, channelInfo.isPresence);
+                    } catch (error) {
+                        console.error(`ReverbWebSocketService: Failed to re-subscribe to channel ${channelName}:`, error);
+                    }
+                });
+                // ---------------------------------------------------------
+            } else if (message.event === 'pusher:pong') {
+              // console.log('ReverbWebSocketService: Received global pong.');
+            }
+
+            // Despachar el mensaje a los listeners de canales específicos
+            this.dispatchToChannelListeners(message);
         };
-
+        // --- ¡AQUÍ ESTÁ EL CAMBIO CLAVE! onclose y onerror DEBEN ESTAR FUERA de onmessage ---
         ws.onclose = (event) => {
           console.warn('ReverbWebSocketService: Global WebSocket closed:', event.code, event.reason);
           this.globalSocketId = null;
           this.globalWs = null; // Limpiar la referencia para permitir nueva conexión
           this.connectionPromise = null; // Permitir un nuevo intento de conexión
 
-          // Notificar a los listeners globales y de canales sobre la desconexión
           this.emitGlobalEvent('disconnected', event);
           this.channels.forEach(channel => {
             channel.listeners.get('disconnected')?.forEach(cb => cb());
           });
 
           this.attemptReconnect(); // Intentar reconectar
-          reject(new Error(`WebSocket closed: ${event.code} - ${event.reason}`));
+          // No rechazar aquí si la reconexión se maneja internamente,
+          // a menos que quieras que la promesa original de 'connect' se rechace.
+          // Para un manejo de reconexión robusto, la promesa 'connect'
+          // solo debe resolverse si la conexión se establece.
+          // Si se cierra, el 'attemptReconnect' se encarga de la recurrencia.
+          // Por lo tanto, el 'reject' de la promesa global SOLO debe ser para errores al *crear* el WS.
+          // Si `connect()` ya resolvió, un 'onclose' posterior no debería volver a llamar a 'reject' de la promesa original.
         };
 
         ws.onerror = (error) => {
@@ -146,19 +160,21 @@ constructor(options: WebSocketServiceOptions) {
           this.globalWs = null; // Limpiar la referencia
           this.connectionPromise = null; // Permitir un nuevo intento
 
-          this.emitGlobalEvent('error', error); // Emitir evento global de error
+          this.emitGlobalEvent('error', error);
           this.channels.forEach(channel => {
             channel.listeners.get('error')?.forEach(cb => cb(error));
           });
 
-          this.attemptReconnect(); // Intentar reconectar también en caso de error
-          reject(error);
+          this.attemptReconnect();
+          // Similar al onclose, el reject aquí es para la promesa inicial de 'connect'
+          // si el error ocurre antes de que la conexión se establezca.
+          // Si ya se estableció, los errores subsecuentes deberían ser manejados por los eventos.
         };
 
-      } catch (e: any) {
+      } catch (e: any) { // Este catch atrapa errores SÍNCRONOS al crear `new WebSocket()`
         console.error('ReverbWebSocketService: Error creating global WebSocket:', e);
-        this.connectionPromise = null; // Asegurarse de liberar la promesa en caso de error sincrónico
-        reject(e);
+        this.connectionPromise = null;
+        reject(e); // Rechaza la promesa de conexión si falla la creación inicial
       }
     });
 
@@ -522,31 +538,23 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
   }
 
   // Métodos públicos para unirse a diferentes tipos de canales
-  public join(channelName: string): Promise<EchoChannel> {
-    // Los canales públicos en Reverb son simplemente canales privados sin autenticación Laravel (no necesitan 'private-')
-    // Sin embargo, Echo los maneja de forma diferente. Para compatibilidad, vamos a considerarlos como privados aquí
-    // ya que necesitan el 'socket_id' para unirse.
-    // Si tu canal 'video-room.{roomId}' es verdaderamente público y no requiere auth,
-    // puedes omitir el paso de 'authEndpoint' en 'subscribeChannel'.
-    // Pero si Laravel Reverb requiere auth para CUALQUIER canal (como suele ser con Redis/Pusher),
-    // entonces lo mantenemos como si fuera un canal "privado" en su suscripción lógica.
-    return this.subscribeChannel(channelName, false);
+  public async join(channelName: string): Promise<EchoChannel> {
+      // Registrar que este canal está "activo"
+      this.activeChannelNames.set(channelName, { isPresence: false });
+      return await this.subscribeChannel(channelName, false);
   }
   // Añade un método que no añada prefijos
   public customChannel(channelName: string): Promise<EchoChannel> {
       return this.subscribeChannel(channelName, false); // No añade prefijo, ni es de presencia
   }
-  public private(channelName: string): Promise<EchoChannel> {
-      // Si el Echo de Laravel/Pusher espera "private-", entonces tu función private() DEBE recibir "room.7"
-      // Y construir "private-room.7" aquí.
-      // Pero tu ChatBox.tsx ya te está dando "private-room.7".
-      // Entonces, o bien cambias ChatBox.tsx para pasar "room.7" a .private(),
-      // o cambias esta función para no añadir nada.
-      // POR AHORA, para arreglar el problema de inmediato:
-      return this.subscribeChannel(channelName, false); // NO añade el prefijo 'private-' aquí
+  public async private(channelName: string): Promise<EchoChannel> {
+      this.activeChannelNames.set(channelName, { isPresence: false });
+      return await this.subscribeChannel(channelName, false);
   }
-  public presence(channelName: string): Promise<EchoChannel> {
-      return this.subscribeChannel(`presence-${channelName}`, true); // Pide "presence-video-room.10"
+  public async presence(channelName: string): Promise<EchoChannel> {
+      const presenceChannelFullName = `presence-${channelName}`;
+      this.activeChannelNames.set(presenceChannelFullName, { isPresence: true });
+      return await this.subscribeChannel(presenceChannelFullName, true);
   }
 
   // Método para cerrar todas las conexiones y limpiar
@@ -562,6 +570,7 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
     this.clearReconnectTimeout();
     this.reconnectAttempts = 0;
     this.connectionPromise = null;
+    this.activeChannelNames.clear();
   }
 }
 
