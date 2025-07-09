@@ -1,3 +1,5 @@
+// src/components/Layout/Layout.tsx
+
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,9 +12,15 @@ import {
   LogOut,
   Menu,
   X,
-  UserCircle
+  UserCircle,
+  WifiOff, // Icono para desconectado
+  Wifi,    // Icono para conectado
+  Loader // Icono para conectando
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
+
+// Importa tu servicio WebSocket
+import { createReverbWebSocketService, ReverbWebSocketService } from '../../services/ReverbWebSocketService';
 
 const Layout: React.FC = () => {
   const { currentUser, logout } = useAuth();
@@ -20,10 +28,81 @@ const Layout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { activeRoomId, endCall, isCallMinimized, toggleMinimizeCall } = useCall();
 
+  // --- NUEVOS ESTADOS PARA EL INDICADOR DE CONEXIÓN ---
+  const [isWebSocketConnected, setIsWebSocketConnected] = useState<boolean>(false);
+  const [isConnecting, setIsConnecting] = useState<boolean>(true); // Empezamos como conectando
+  const [webSocketService, setWebSocketService] = useState<ReverbWebSocketService | null>(null);
+  // ---------------------------------------------------
+
+  useEffect(() => {
+    if (currentUser?.token) {
+      const service = createReverbWebSocketService(currentUser.token);
+      setWebSocketService(service);
+
+      // --- SUSCRIBIRSE A EVENTOS GLOBALES DE CONEXIÓN ---
+      const handleConnected = () => {
+        setIsWebSocketConnected(true);
+        setIsConnecting(false);
+        console.log('UI: WebSocket está CONECTADO.');
+      };
+
+      const handleDisconnected = () => {
+        setIsWebSocketConnected(false);
+        // Cuando se desconecta, volvemos a 'conectando' hasta que se reestablezca o falle
+        setIsConnecting(true);
+        console.log('UI: WebSocket está DESCONECTADO (intentando reconectar...).');
+      };
+
+      const handleError = (error: any) => {
+        console.error('UI: WebSocket ERROR:', error);
+        // Podrías poner isConnecting en false y mostrar un error crítico si es persistente
+      };
+
+      const handlePermanentlyDisconnected = () => {
+        setIsWebSocketConnected(false);
+        setIsConnecting(false);
+        console.error('UI: WebSocket permanentemente desconectado.');
+        // Aquí podrías mostrar un mensaje grande al usuario para que recargue la página o revise su conexión
+      };
+
+      service.on('connected', handleConnected);
+      service.on('disconnected', handleDisconnected);
+      service.on('error', handleError);
+      service.on('permanently_disconnected', handlePermanentlyDisconnected);
+
+      // Intentar conectar el servicio al montar el Layout
+      // Si ya estaba conectado, el `connect()` resolverá de inmediato.
+      // Si no, iniciará la conexión.
+      service.connect().then(() => {
+        handleConnected(); // Si la conexión ya estaba abierta al montar
+      }).catch((e) => {
+        console.error("Layout: Error inicial al conectar ReverbService:", e);
+        // Si hay un error inicial, también marcamos como no conectado.
+        setIsWebSocketConnected(false);
+        setIsConnecting(false);
+      });
+
+      // --- LIMPIEZA AL DESMONTAR ---
+      return () => {
+        console.log('UI: Limpiando listeners de WebSocket.');
+        service.off('connected', handleConnected);
+        service.off('disconnected', handleDisconnected);
+        service.off('error', handleError);
+        service.off('permanently_disconnected', handlePermanentlyDisconnected);
+        // NO desconectes el servicio global aquí, ya que otros componentes lo usarán.
+        // Solo limpia los listeners de este componente.
+      };
+    }
+  }, [currentUser?.token]); // Re-ejecutar si el token del usuario cambia
+
   const handleLogout = async () => {
     try {
       if (activeRoomId) {
         endCall();
+      }
+      // Antes de hacer logout, desconecta el servicio WebSocket
+      if (webSocketService) {
+        webSocketService.disconnect();
       }
       await logout();
       navigate('/login');
@@ -44,6 +123,35 @@ const Layout: React.FC = () => {
       case 'Student': return 'Alumno';
       default: return currentUser.role_description;
     }
+  };
+
+  // --- Lógica para mostrar el estado de la conexión ---
+  const getConnectionStatus = () => {
+    if (!currentUser) {
+      return null; // No mostrar si no hay usuario logueado
+    }
+    if (isConnecting) {
+      return (
+        <span className="flex items-center text-yellow-500 text-sm font-medium animate-pulse">
+          <Loader className="w-4 h-4 mr-1" />
+          Conectando...
+        </span>
+      );
+    }
+    if (isWebSocketConnected) {
+      return (
+        <span className="flex items-center text-green-600 text-sm font-medium">
+          <Wifi className="w-4 h-4 mr-1" />
+          Conectado
+        </span>
+      );
+    }
+    return (
+      <span className="flex items-center text-red-500 text-sm font-medium">
+        <WifiOff className="w-4 h-4 mr-1" />
+        Desconectado
+      </span>
+    );
   };
 
   return (
@@ -177,6 +285,13 @@ const Layout: React.FC = () => {
             <div className="flex-1 flex justify-center lg:justify-start">
               <h2 className="text-lg font-semibold text-gray-800 lg:hidden">English New Path</h2>
             </div>
+
+            {/* --- INDICADOR DE CONEXIÓN AÑADIDO AQUÍ --- */}
+            <div className="ml-auto mr-4"> {/* Alinea a la derecha y añade margen */}
+              {getConnectionStatus()}
+            </div>
+            {/* ------------------------------------------- */}
+
           </div>
         </header>
 
@@ -193,7 +308,7 @@ const Layout: React.FC = () => {
         <div className={`
           fixed z-40 transition-all duration-300 ease-in-out
           ${isCallMinimized
-            ? '' // <--- ¡CAMBIO CLAVE AQUÍ! REMOVE pointer-events-none
+            ? '' // Mantén esto si no quieres que el video flotante sea interactivo cuando minimizado
             : 'inset-0 bg-black bg-opacity-75 flex items-center justify-center pointer-events-auto'
           }
         `}>
