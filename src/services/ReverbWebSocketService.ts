@@ -379,30 +379,67 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
     }
 
     const channelSubscription = this.getOrCreateChannelSubscription(channelName);
-    if (channelSubscription.lastProcessedMessageId) {
-        // Hacer una petición HTTP a tu backend de Laravel para obtener mensajes
-        // más nuevos que 'lastProcessedMessageId' para este 'channelName'
-        try {
-            const missedMessagesResponse = await axios.get(
-                `${this.options.apiUrl}/chats/${channelName}/messages/after/${channelSubscription.lastProcessedMessageId}`,
-                { headers: { Authorization: `Bearer ${this.options.token}` } }
-            );
-            const missedMessages = missedMessagesResponse.data.messages; // Ajusta según tu API
-            console.log(`ReverbWebSocketService: Retrieved ${missedMessages.length} missed messages for channel ${channelName}`);
+    if (channelSubscription.lastProcessedMessageId !== undefined && channelSubscription.lastProcessedMessageId !== null) {
+        let contactIdForApi: string | null = null;
 
-            // Procesar y añadir estos mensajes al UI, asegurándote de no duplicarlos.
-            // Podrías emitir un evento especial o tener un callback para esto.
-            // Por ejemplo, un nuevo listener en el objeto EchoChannel:
-            channelSubscription.listeners.get('missed_messages')?.forEach(cb => cb(missedMessages));
+        // **Parte crítica: Extraer el contact_id del nombre del canal.**
+        // Asumiendo que tus canales privados de chat son del formato:
+        // 'private-room.{user1_id}-{user2_id}' o 'private-user.{user_id}'
+        // Y necesitamos el ID del *otro* usuario en el chat.
+        // `this.currentUserId` debe haber sido establecido previamente.
+        if (this.currentUserId) {
+            const parts = channelName.split('.');
+            if (parts.length > 1) {
+                const type = parts[0];
+                const idsString = parts[1];
 
-            // Actualizar el lastProcessedMessageId si hay nuevos mensajes
-            if (missedMessages.length > 0) {
-                const latestMissedId = Math.max(...missedMessages.map((m: any) => m.id));
-                channelSubscription.lastProcessedMessageId = latestMissedId;
+                if (type === 'private-room') {
+                    const ids = idsString.split('-');
+                    if (ids.length === 2) {
+                        contactIdForApi = (ids[0] === String(this.currentUserId)) ? ids[1] : ids[0];
+                    }
+                } else if (type === 'private-user') {
+                    // Esto es para un canal privado de usuario individual, no de chat de sala.
+                    // Si 'private-user.X' es para chat privado, entonces X es el contact_id.
+                    // Ajusta según cómo uses 'private-user'.
+                    contactIdForApi = idsString; // El ID del usuario destino
+                }
             }
+        }
 
-        } catch (error) {
-            console.error(`ReverbWebSocketService: Failed to retrieve missed messages for channel ${channelName}:`, error);
+        if (!contactIdForApi) {
+            console.warn(`ReverbWebSocketService: Could not determine contact_id from channel name '${channelName}' for message recovery. Skipping missed messages.`);
+        } else {
+            try {
+                // Aquí usamos la nueva ruta de API
+                // Asegúrate de que `API_URL` esté configurado correctamente en `createReverbWebSocketService`
+                // para que apunte a `https://portalnewpath.com/api/v1/auth` o `http://localhost:8000/api/v1/auth`
+                const missedMessagesResponse = await axios.get(
+                    `${API_URL}/auth/privatechat/after/${channelSubscription.lastProcessedMessageId}?contact_id=${contactIdForApi}`,
+                    { headers: { Authorization: `Bearer ${this.options.token}` } }
+                );
+
+                const missedMessages = missedMessagesResponse.data.messages;
+
+                if (Array.isArray(missedMessages)) {
+                    console.log(`ReverbWebSocketService: Retrieved ${missedMessages.length} missed messages for channel ${channelName}.`);
+
+                    // Dispara los mensajes perdidos a los listeners de missed_messages
+                    channelSubscription.listeners.get('missed_messages')?.forEach(cb => cb(missedMessages));
+
+                    // Actualizar el lastProcessedMessageId si hay nuevos mensajes
+                    if (missedMessages.length > 0) {
+                        const latestMissedId = Math.max(...missedMessages.map((m: any) => m.id));
+                        channelSubscription.setLastProcessedMessageId(latestMissedId);
+                        console.log(`ReverbWebSocketService: Updated lastProcessedMessageId for ${channelName} to ${latestMissedId}`);
+                    }
+                } else {
+                    console.warn(`ReverbWebSocketService: API response for missed messages on channel ${channelName} did not contain a valid 'messages' array.`, missedMessagesResponse.data);
+                }
+
+            } catch (error: any) {
+                console.error(`ReverbWebSocketService: Failed to retrieve missed messages for channel ${channelName}:`, error.response?.data || error.message);
+            }
         }
     }
     // Mock de objeto de canal Echo para usar en tus componentes
