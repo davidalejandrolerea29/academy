@@ -82,7 +82,105 @@ const [participants, setParticipants] = useState<Record<string, {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
 
+
+  const cleanupWebRTCAndReverb = useCallback(() => {
+    console.log("[CLEANUP GLOBAL] Iniciando limpieza completa de WebRTC y Reverb.");
+
+    // 1. Cerrar todas las RTCPeerConnections
+    Object.keys(peerConnectionsRef.current).forEach(peerId => {
+      const pc = peerConnectionsRef.current[peerId];
+      if (pc && pc.connectionState !== 'closed') {
+        pc.close();
+        console.log(`[CLEANUP GLOBAL] Cerrada RTCPeerConnection con ${peerId}.`);
+      }
+      delete peerConnectionsRef.current[peerId]; // Asegurarse de eliminar la referencia
+    });
+    peerConnectionsRef.current = {}; // Reiniciar el objeto de refs
+
+    // 2. Detener los tracks de los streams locales
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      setLocalStream(null); // Elimina la referencia del estado
+      console.log("[CLEANUP GLOBAL] Detenidos y limpiados tracks de localStream.");
+    }
+    if (screenShareStreamRef.current) {
+      screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+      screenShareStreamRef.current = null; // Elimina la referencia de la ref
+      setIsSharingScreen(false);
+      console.log("[CLEANUP GLOBAL] Detenidos y limpiados tracks de screenShareStream.");
+    }
+
+    // 3. Limpiar colas de ICE candidates
+    iceCandidatesQueueRef.current = {};
+    console.log("[CLEANUP GLOBAL] Cola de ICE candidates limpiada.");
+
+    // 4. Abandonar el canal de Reverb
+    if (channelRef.current) {
+      if (typeof channelRef.current.leave === 'function') {
+        channelRef.current.leave();
+        console.log(`[CLEANUP GLOBAL] Abandonado canal de Reverb: ${channelRef.current.name}.`);
+      } else {
+        console.warn("[CLEANUP GLOBAL] El canal de Reverb no tiene un método 'leave'.");
+      }
+      channelRef.current = null; // Elimina la referencia al canal
+    }
+
+    // 5. Limpiar el estado de participantes (todos se han ido)
+    setParticipants({});
+    console.log("[CLEANUP GLOBAL] Estado de participantes limpiado.");
+
+    // 6. Finalmente, notificar al componente padre
+    onCallEnded();
+    console.log("[CLEANUP GLOBAL] onCallEnded invocado. Limpieza completa.");
+  }, [localStream, onCallEnded]); // Asegúrate de incluir las dependencias correctas
    // --- Funciones de Drag and Drop (mantienen la lógica que ya te di) ---
+const handleEndCall = useCallback(() => {
+    console.log("¡Botón de colgar presionado! Iniciando limpieza de la llamada.");
+    cleanupWebRTCAndReverb(); // Llama a la función de limpieza global
+  }, [cleanupWebRTCAndReverb]);
+
+  useEffect(() => {
+    // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.
+    return () => {
+      // Esta es la limpieza al desmontar, pero queremos que `handleEndCall` sea la principal.
+      // Podemos poner una bandera o confiar en que `handleEndCall` se llamará antes del desmontaje.
+      // Para mayor seguridad, si no se ha llamado a `handleEndCall` (ej. el usuario cierra la pestaña),
+      // esta limpieza del useEffect se encargará.
+      // Podrías pasar una bandera `isExplicitlyLeaving` a `cleanupWebRTCAndReverb` si quieres
+      // diferenciar, pero la función ya es bastante robusta.
+      console.log("[VideoRoom Effect Cleanup] Componente VideoRoom se desmonta. Asegurando limpieza...");
+      // Reverb por defecto enviará 'leaving'/'left' al cerrar la pestaña.
+      // La limpieza de PeerConnections y streams locales ya está en `cleanupWebRTCAndReverb`.
+      // No llamamos a `onCallEnded` aquí para evitar doble llamada si `handleEndCall` ya lo hizo.
+      
+      // Una forma de evitar doble limpieza es verificar si el canal aún existe,
+      // lo que implicaría que no se hizo una `cleanupWebRTCAndReverb` explícita.
+      if (channelRef.current) {
+        console.log("[VideoRoom Effect Cleanup] detectado canal activo, realizando limpieza suave.");
+        Object.keys(peerConnectionsRef.current).forEach(peerId => {
+          const pc = peerConnectionsRef.current[peerId];
+          if (pc && pc.connectionState !== 'closed') {
+            pc.close();
+            console.log(`[CLEANUP ON UNMOUNT] Cerrada RTCPeerConnection con ${peerId}.`);
+          }
+        });
+        peerConnectionsRef.current = {};
+        if (channelRef.current && typeof channelRef.current.leave === 'function') {
+            channelRef.current.leave();
+        }
+        channelRef.current = null;
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+        }
+        if (screenShareStreamRef.current) {
+            screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+        }
+        setParticipants({});
+        // No llamamos onCallEnded aquí para no interferir con la lógica de UI
+        // que debería estar manejada por la acción explícita de colgar o por el contexto.
+      }
+    };
+  }, [localStream, screenShareStreamRef]); // Incluye refs para que el closure funcione correctamente.
 
   const stopDragging = useCallback(() => {
     setIsDragging(false);
@@ -336,270 +434,415 @@ const startDragging = useCallback((clientX: number, clientY: number) => {
       console.error(`[SIGNAL OUT ERROR] Error al enviar señal ${signalData.type} de ${currentUser?.id} a ${toPeerId}:`, error);
     }
   }, [currentUser, channelRef]); // Asegúrate de que currentUser esté en las dependencias si lo usas
+const handlePeerDisconnected = useCallback((peerId: string) => {
+    console.log(`[PC] Peer ${peerId} se ha desconectado. Limpiando recursos.`);
 
+    // Limpiar la PeerConnection específica
+    if (peerConnectionsRef.current[peerId]) {
+        if (peerConnectionsRef.current[peerId].connectionState !== 'closed') {
+            peerConnectionsRef.current[peerId].close();
+            console.log(`[PC] PeerConnection con ${peerId} cerrada.`);
+        }
+        delete peerConnectionsRef.current[peerId];
+    }
+
+    // Limpiar la cola de ICE candidates para este peer
+    if (iceCandidatesQueueRef.current[peerId]) {
+        delete iceCandidatesQueueRef.current[peerId];
+        console.log(`[ICE] Cola de candidatos limpia para ${peerId}.`);
+    }
+
+    // Eliminar el participante de la UI
+    setParticipants(prev => {
+        const newParticipants = { ...prev };
+        delete newParticipants[peerId];
+        return newParticipants;
+    });
+
+    // --- Limpieza específica si el peer que se desconectó soy YO MISMO ---
+    if (String(peerId) === String(currentUser?.id)) {
+        console.log(`[REVERB CLEANUP] Yo (${peerId}) me he desconectado. Realizando limpieza completa para reconexión.`);
+        // Asegurarse de que el canal de Reverb se abandona y se limpia la referencia
+        if (channelRef.current) {
+            // channelRef.current.leave(); // Esto ya lo hace el return del useEffect si el componente se desmonta.
+            // Si el user hace "salir" sin desmontar el componente, DEBERÍAS LLAMAR channelRef.current.leave() AQUI
+            // o en una función de "salir de sala" que invoca handlePeerDisconnected.
+            channelRef.current = null; // Esto es crucial para que useEffect intente conectar de nuevo
+        }
+        setHasJoinedChannel(false); // Reinicia este estado para que el useEffect reconsidere unirse
+
+        // Detener y limpiar los streams locales del propio usuario
+        stopLocalStream(); // Asegúrate de que esta función realmente detiene y limpia localStream
+        stopScreenShare(); // Asegúrate de que esta función realmente detiene y limpia screenShareStreamRef
+
+        // También limpia todas las demás PeerConnections si me estoy saliendo yo mismo.
+        // Esto es importante para un estado limpio si el usuario se reconecta completamente.
+        Object.values(peerConnectionsRef.current).forEach(pc => {
+            if (pc.connectionState !== 'closed') {
+                pc.close();
+            }
+        });
+        peerConnectionsRef.current = {}; // Vuelve a inicializar el objeto de refs de PeerConnections
+
+         // Esto puede ser útil si tu UI tiene un botón de "Unirse a la sala" de nuevo
+         // para reiniciar el proceso de obtención de medios.
+        // setLocalStream(null); 
+    }
+
+}, [currentUser, stopLocalStream, stopScreenShare, setParticipants]); // Añade setParticipants a las dependencias
+  useEffect(() => {
+    // Itera sobre todas las PeerConnections activas
+    Object.values(peerConnectionsRef.current).forEach(pc => {
+      const currentSenders = pc.getSenders();
+
+      // Manejar stream de CÁMARA
+      const cameraVideoTrack = localStream?.getVideoTracks()[0] || null;
+      const cameraAudioTrack = localStream?.getAudioTracks()[0] || null;
+
+      const existingCameraVideoSender = currentSenders.find(s => s.track?.kind === 'video' && s.track?.id === cameraVideoTrack?.id);
+      const existingCameraAudioSender = currentSenders.find(s => s.track?.kind === 'audio' && s.track?.id === cameraAudioTrack?.id);
+
+      // Si NO estamos compartiendo pantalla, gestiona la cámara
+      if (!isSharingScreen) {
+        if (cameraVideoTrack) {
+          if (!existingCameraVideoSender) {
+            // Remover cualquier otro video sender (ej. de pantalla si no se limpió) antes de añadir la cámara
+            currentSenders.filter(s => s.track?.kind === 'video').forEach(s => pc.removeTrack(s));
+            pc.addTrack(cameraVideoTrack, localStream!); // Asegúrate de que localStream no sea null aquí
+            console.log("[SYNC TRACKS] Añadido track de video de cámara.");
+          } else if (existingCameraVideoSender.track !== cameraVideoTrack) {
+            existingCameraVideoSender.replaceTrack(cameraVideoTrack)
+              .then(() => console.log("[SYNC TRACKS] Reemplazado track de video de cámara."))
+              .catch(e => console.error("Error al reemplazar video track de cámara:", e));
+          }
+        } else { // No hay track de video de cámara, remueve cualquier sender de video
+          currentSenders.filter(s => s.track?.kind === 'video').forEach(s => pc.removeTrack(s));
+          console.log("[SYNC TRACKS] Removido track de video de cámara.");
+        }
+
+        if (cameraAudioTrack) {
+          if (!existingCameraAudioSender) {
+            // Remover cualquier otro audio sender antes de añadir el de cámara
+            currentSenders.filter(s => s.track?.kind === 'audio').forEach(s => pc.removeTrack(s));
+            pc.addTrack(cameraAudioTrack, localStream!);
+            console.log("[SYNC TRACKS] Añadido track de audio de cámara.");
+          } else if (existingCameraAudioSender.track !== cameraAudioTrack) {
+            existingCameraAudioSender.replaceTrack(cameraAudioTrack)
+              .then(() => console.log("[SYNC TRACKS] Reemplazado track de audio de cámara."))
+              .catch(e => console.error("Error al reemplazar audio track de cámara:", e));
+          }
+        } else { // No hay track de audio de cámara, remueve cualquier sender de audio
+          currentSenders.filter(s => s.track?.kind === 'audio').forEach(s => pc.removeTrack(s));
+          console.log("[SYNC TRACKS] Removido track de audio de cámara.");
+        }
+      }
+
+      // Manejar stream de PANTALLA
+      const screenVideoTrack = screenShareStreamRef.current?.getVideoTracks()[0] || null;
+      const screenAudioTrack = screenShareStreamRef.current?.getAudioTracks()[0] || null;
+
+      const existingScreenVideoSender = currentSenders.find(s => s.track?.kind === 'video' && s.track?.id === screenVideoTrack?.id);
+      const existingScreenAudioSender = currentSenders.find(s => s.track?.kind === 'audio' && s.track?.id === screenAudioTrack?.id);
+
+      // Si estamos compartiendo pantalla, gestiona la pantalla
+      if (isSharingScreen && screenShareStreamRef.current) {
+        // Asegurarse de que solo haya un sender de video (el de la pantalla)
+        currentSenders.filter(s => s.track?.kind === 'video' && s.track?.id !== screenVideoTrack?.id).forEach(s => {
+          pc.removeTrack(s);
+          console.log("[SYNC TRACKS] Removido sender de video no relacionado (cámara vieja) al compartir pantalla.");
+        });
+
+        if (screenVideoTrack) {
+          if (!existingScreenVideoSender) {
+            pc.addTrack(screenVideoTrack, screenShareStreamRef.current);
+            console.log("[SYNC TRACKS] Añadido track de video de pantalla.");
+          } else if (existingScreenVideoSender.track !== screenVideoTrack) {
+            existingScreenVideoSender.replaceTrack(screenVideoTrack)
+              .then(() => console.log("[SYNC TRACKS] Reemplazado track de video de pantalla."))
+              .catch(e => console.error("Error al reemplazar video track de pantalla:", e));
+          }
+        } else if (existingScreenVideoSender) {
+          pc.removeTrack(existingScreenVideoSender);
+          console.log("[SYNC TRACKS] Removido track de video de pantalla (screenVideoTrack es null).");
+        }
+
+        // Asegurarse de que solo haya un sender de audio (el de la pantalla si existe, sino el de la cámara)
+        currentSenders.filter(s => s.track?.kind === 'audio' && s.track?.id !== screenAudioTrack?.id).forEach(s => {
+          pc.removeTrack(s);
+          console.log("[SYNC TRACKS] Removido sender de audio no relacionado (cámara vieja) al compartir pantalla.");
+        });
+
+        if (screenAudioTrack) {
+          if (!existingScreenAudioSender) {
+            pc.addTrack(screenAudioTrack, screenShareStreamRef.current);
+            console.log("[SYNC TRACKS] Añadido track de audio de pantalla.");
+          } else if (existingScreenAudioSender.track !== screenAudioTrack) {
+            existingScreenAudioSender.replaceTrack(screenAudioTrack)
+              .then(() => console.log("[SYNC TRACKS] Reemplazado track de audio de pantalla."))
+              .catch(e => console.error("Error al reemplazar audio track de pantalla:", e));
+          }
+        } else if (existingScreenAudioSender) {
+          pc.removeTrack(existingScreenAudioSender);
+          console.log("[SYNC TRACKS] Removido track de audio de pantalla (screenAudioTrack es null).");
+        }
+
+      } else { // Si NO estamos compartiendo pantalla, asegurar que los senders de pantalla estén limpios
+        if (existingScreenVideoSender) {
+          pc.removeTrack(existingScreenVideoSender);
+          console.log("[SYNC TRACKS] Removido sender de video de pantalla (ya no se comparte).");
+        }
+        if (existingScreenAudioSender) {
+          pc.removeTrack(existingScreenAudioSender);
+          console.log("[SYNC TRACKS] Removido sender de audio de pantalla (ya no se comparte).");
+        }
+      }
+
+      // Si hubo algún cambio, forzar renegociación
+      if (pc.signalingState === 'stable' && (
+        (isSharingScreen && (screenVideoTrack || screenAudioTrack)) ||
+        (!isSharingScreen && (cameraVideoTrack || cameraAudioTrack))
+      )) {
+        //pc.dispatchEvent(new Event('negotiationneeded')); // `onnegotiationneeded` debería dispararse automáticamente
+      }
+    });
+
+  }, [localStream, isSharingScreen, screenShareStreamRef]); // Dependencias: cambios en los streams y si se comparte pantalla
+
+
+  // La función `processSignal` ya maneja la lógica de limpiar `screenStream` si `isSharing` es false.
   // --- Función auxiliar para obtener/crear RTCPeerConnection ---
-    const getOrCreatePeerConnection = useCallback((peerId: string) => {
-    if (!peerConnectionsRef.current[peerId]) {
-      //console.log(`[PC] Creando nueva RTCPeerConnection para peer: ${peerId}`);
-      // En la configuración de RTCPeerConnection (donde creas `pc`)
-     // En tu VideoRoom.tsx o donde configures RTCPeerConnection
-      // En tu VideoRoom.tsx o donde sea que configures RTCPeerConnection
-      const pc = new RTCPeerConnection({
+const getOrCreatePeerConnection = useCallback((peerId: string) => {
+    // Si ya existe una PeerConnection para este peer, la devolvemos.
+    if (peerConnectionsRef.current[peerId]) {
+        console.log(`[PC] Usando RTCPeerConnection existente para peer: ${peerId}`);
+        return peerConnectionsRef.current[peerId];
+    }
+
+    console.log(`[PC] Creando NUEVA RTCPeerConnection para peer: ${peerId}`);
+
+    const pc = new RTCPeerConnection({
         iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' },
-          // Tu servidor TURN local
-          {
-            urls: 'turn:127.0.0.1:3478?transport=udp', // Asegúrate de que el puerto 3478 sea el que usa CoTURN
-            username: 'miusuario', // El usuario que configuraste en turnserver.conf
-            credential: 'micontrasena', // La contraseña que configuraste
-            realm: 'mi_servidor_turn_local'
-          },
-          {
-            urls: 'turn:127.0.0.1:3478?transport=tcp', // TURN sobre TCP, muy importante para compatibilidad
-            username: 'miusuario',
-            credential: 'micontrasena',
-            realm: 'mi_servidor_turn_local'
-          },
-          // Si hubieras configurado TURNs (TLS) en un puerto como 5349 con certificados (no recomendado para inicio)
-          // {
-          //   urls: 'turns:127.0.0.1:5349?transport=tcp',
-          //   username: 'miusuario',
-          //   credential: 'micontrasena',
-          // },
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+            // Tu servidor TURN local
+            {
+                urls: 'turn:127.0.0.1:3478?transport=udp', // Asegúrate de que el puerto 3478 sea el que usa CoTURN
+                username: 'miusuario', // El usuario que configuraste en turnserver.conf
+                credential: 'micontrasena', // La contraseña que configuraste
+                realm: 'mi_servidor_turn_local'
+            },
+            {
+                urls: 'turn:127.0.0.1:3478?transport=tcp', // TURN sobre TCP, muy importante para compatibilidad
+                username: 'miusuario',
+                credential: 'micontrasena',
+                realm: 'mi_servidor_turn_local'
+            },
+            // Si hubieras configurado TURNs (TLS) en un puerto como 5349 con certificados (no recomendado para inicio)
+            // {
+            //   urls: 'turns:127.0.0.1:5349?transport=tcp',
+            //   username: 'miusuario',
+            //   credential: 'micontrasena',
+            // },
         ],
         iceTransportPolicy: 'all', // Permite todos los tipos de candidatos ICE (host, srflx, relay)
         bundlePolicy: 'balanced', // Optimiza el bundling de medios
         rtcpMuxPolicy: 'require', // Requiere multiplexación de RTCP
         iceCandidatePoolSize: 0, // Un pool de 0 está bien para la mayoría de los casos
-      });
-            // --- CAMBIO: Añadir los tracks locales INMEDIATAMENTE al crear la PC ---
-      // Esto asegura que pc.onnegotiationneeded se dispare si es necesario
-      // o que la oferta inicial contenga los tracks.
-      if (localStream) {
-          localStream.getTracks().forEach(track => {
-              //console.log(`[PC Creation DEBUG] Track ${track.kind} readyState: ${track.readyState}`); // <-- NUEVO LOG
-              if (!pc.getSenders().some(sender => sender.track === track)) {
-                  pc.addTrack(track, localStream);
-                  //console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
-              } else {
-                  //console.log(`[PC Creation] Track ${track.kind} ya EXISTE para ${peerId}. No se añade de nuevo.`);
-              }
-          });
-      }
-      peerConnectionsRef.current[peerId] = pc;
-
-     // En tu pc.ontrack dentro de VideoRoom.tsx
-// Dentro de getOrCreatePeerConnection, después de crear `const pc = new RTCPeerConnection({...});`
-pc.ontrack = (event) => {
-    const incomingStream = event.streams[0];
-    const track = event.track;
-
-    const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc) || 'unknown';
-
-    if (!peerId || peerId === 'unknown') {
-        console.error("[ontrack ERROR] Peer ID no definido para el track entrante o PC no encontrada en ref.");
-        return;
-    }
-
-    setParticipants(prev => {
-        const existingParticipant = prev[peerId] || {
-            id: peerId,
-            name: `Usuario ${peerId}`,
-            videoEnabled: false,
-            micEnabled: false,
-            cameraStream: null,
-            screenStream: null,
-            isSharingRemoteScreen: false, // Asegúrate de que esto se inicializa
-        };
-
-        const updatedParticipant = { ...existingParticipant };
-
-        // **Paso 1: Identificar el tipo de track**
-        // La mejor manera de saber si un track es de pantalla es por la señalización `screenShareStatus`.
-        // Si esa señal nos dice que este peer está compartiendo pantalla, y vemos un stream de video,
-        // asumimos que es el stream de la pantalla.
-        // También podemos usar heurísticas del navegador (label, contentHint) como respaldo.
-        const isPotentiallyScreenShareTrack = track.kind === 'video' &&
-            (updatedParticipant.isSharingRemoteScreen || // Si sabemos por la señal que comparte
-             track.label.includes('screen') ||            // Heurística común en Chrome/Firefox
-             track.label.includes('display') ||           // Heurística en algunos navegadores
-             track.contentHint === 'detail');             // Otra heurística de WebRTC
-
-        if (track.kind === 'video') {
-            if (isPotentiallyScreenShareTrack) {
-                // Es un track de pantalla compartida
-                // Asignar el stream a screenStream del participante
-                if (!updatedParticipant.screenStream || updatedParticipant.screenStream.id !== incomingStream.id) {
-                    updatedParticipant.screenStream = incomingStream;
-                    console.log(`[ontrack] Recibiendo NUEVO stream de PANTALLA de ${peerId}`);
-                }
-                // Asegúrate de que el cameraStream no esté mostrando la pantalla por error
-                if (updatedParticipant.cameraStream === incomingStream) {
-                    updatedParticipant.cameraStream = null;
-                }
-            } else {
-                // Es un track de cámara
-                // Asignar el stream a cameraStream del participante
-                if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
-                    updatedParticipant.cameraStream = incomingStream;
-                    console.log(`[ontrack] Recibiendo NUEVO stream de CÁMARA de ${peerId}`);
-                }
-                updatedParticipant.videoEnabled = true; // Si llega un track de cámara, la cámara está habilitada
-                // Asegúrate de que el screenStream no esté mostrando la cámara por error
-                if (updatedParticipant.screenStream === incomingStream) {
-                    updatedParticipant.screenStream = null;
-                }
-            }
-        } else if (track.kind === 'audio') {
-            // Para el audio, es más difícil diferenciar si es de cámara o pantalla solo por el track.
-            // La mejor práctica es que el audio de la pantalla venga con el stream de la pantalla,
-            // y el audio de la cámara con el stream de la cámara.
-            // Si el peer está compartiendo pantalla, asumimos que este audio es de la pantalla si el stream
-            // entrante también tiene un video de pantalla, o si el `screenStream` ya existe para ese peer.
-
-            // Si el peer está compartiendo pantalla Y este stream es el mismo que el screenStream del participante
-            if (updatedParticipant.isSharingRemoteScreen && updatedParticipant.screenStream === incomingStream) {
-                 if (!updatedParticipant.screenStream.getAudioTracks().some(t => t.id === track.id)) {
-                     updatedParticipant.screenStream.addTrack(track);
-                     console.log(`[ontrack] Añadido track de audio a screenStream de ${peerId}`);
-                 }
-            } else {
-                // De lo contrario, o si no está compartiendo pantalla, o si el stream es diferente,
-                // asumimos que es audio de la cámara.
-                if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
-                    updatedParticipant.cameraStream = incomingStream;
-                }
-                if (!updatedParticipant.cameraStream.getAudioTracks().some(t => t.id === track.id)) {
-                    updatedParticipant.cameraStream.addTrack(track);
-                    console.log(`[ontrack] Añadido track de audio a cameraStream de ${peerId}`);
-                }
-                updatedParticipant.micEnabled = true;
-            }
-        }
-
-        return {
-            ...prev,
-            [peerId]: updatedParticipant
-        };
     });
 
-    // IMPORTANTE: Asegúrate de que tu función `getOrCreatePeerConnection` tenga configurado `pc.onnegotiationneeded`
-    // y que envíe una oferta/respuesta. Al añadir nuevos tracks (`pc.addTrack`), `onnegotiationneeded` se dispara,
-    // y si no se maneja, el otro peer no recibirá la información del nuevo stream.
+    // --- **CRÍTICO:** Añadir los tracks locales INMEDIATAMENTE al crear la PC ---
+    // Esto asegura que pc.onnegotiationneeded se dispare si es necesario
+    // o que la oferta inicial contenga los tracks.
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            // Solo añade el track si no hay un sender para él ya (previene duplicados si se llama varias veces)
+            if (!pc.getSenders().some(sender => sender.track === track)) {
+                pc.addTrack(track, localStream);
+                console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+            } else {
+                console.log(`[PC Creation] Track ${track.kind} ya EXISTE para ${peerId}. No se añade de nuevo.`);
+            }
+        });
+    } else {
+        console.warn(`[PC Creation] localStream es NULO al crear PC para ${peerId}. No se pueden añadir tracks locales iniciales.`);
+    }
 
+    // Guardar la referencia a la PeerConnection
+    peerConnectionsRef.current = { ...peerConnectionsRef.current, [peerId]: pc };
+
+    // --- pc.ontrack: Manejar streams entrantes ---
+    pc.ontrack = (event) => {
+        const incomingStream = event.streams[0]; // El MediaStream al que pertenece el track
+        const track = event.track;
+
+        // Buscar el peerId asociado a esta PC para actualizar el estado correctamente
+        const currentPeerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc) || 'unknown';
+
+        if (!currentPeerId || currentPeerId === 'unknown') {
+            console.error("[ontrack ERROR] Peer ID no definido para el track entrante o PC no encontrada en ref.");
+            return;
+        }
+
+        setParticipants(prev => {
+            const existingParticipant = prev[currentPeerId] || {
+                id: currentPeerId,
+                name: `Usuario ${currentPeerId}`,
+                videoEnabled: false,
+                micEnabled: false,
+                cameraStream: null,
+                screenStream: null,
+                isSharingRemoteScreen: false, // Este estado debe venir de la señalización
+            };
+
+            const updatedParticipant = { ...existingParticipant };
+
+            // La determinación de si es pantalla compartida debe venir principalmente de la señalización (`isSharingRemoteScreen`).
+            // Las heurísticas de track.label/contentHint son un respaldo.
+            const isPotentiallyScreenShareTrack = track.kind === 'video' &&
+                (updatedParticipant.isSharingRemoteScreen ||
+                 track.label.includes('screen') ||
+                 track.label.includes('display') ||
+                 track.contentHint === 'detail');
+
+            if (track.kind === 'video') {
+                if (isPotentiallyScreenShareTrack) {
+                    // Es un track de pantalla compartida
+                    if (!updatedParticipant.screenStream || updatedParticipant.screenStream.id !== incomingStream.id) {
+                        updatedParticipant.screenStream = incomingStream;
+                        console.log(`[ontrack] Recibiendo NUEVO stream de PANTALLA de ${currentPeerId}`);
+                    }
+                    // Asegúrate de que el cameraStream no esté mostrando la pantalla por error
+                    if (updatedParticipant.cameraStream === incomingStream) {
+                        updatedParticipant.cameraStream = null;
+                    }
+                } else {
+                    // Es un track de cámara
+                    if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
+                        updatedParticipant.cameraStream = incomingStream;
+                        console.log(`[ontrack] Recibiendo NUEVO stream de CÁMARA de ${currentPeerId}`);
+                    }
+                    updatedParticipant.videoEnabled = true; // Si llega un track de cámara, la cámara está habilitada
+                    // Asegúrate de que el screenStream no esté mostrando la cámara por error
+                    if (updatedParticipant.screenStream === incomingStream) {
+                        updatedParticipant.screenStream = null;
+                    }
+                }
+            } else if (track.kind === 'audio') {
+                // Si el peer está compartiendo pantalla Y este stream es el mismo que el screenStream del participante
+                if (updatedParticipant.isSharingRemoteScreen && updatedParticipant.screenStream && updatedParticipant.screenStream.id === incomingStream.id) {
+                    if (!updatedParticipant.screenStream.getAudioTracks().some(t => t.id === track.id)) {
+                        updatedParticipant.screenStream.addTrack(track);
+                        console.log(`[ontrack] Añadido track de audio a screenStream de ${currentPeerId}`);
+                    }
+                } else {
+                    // Si no está compartiendo pantalla, o si el audio no viene con el stream de pantalla,
+                    // lo asumimos como audio de la cámara.
+                    if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
+                         // Si no hay cameraStream aún, o es diferente, lo asignamos/creamos
+                        updatedParticipant.cameraStream = incomingStream;
+                    }
+                    if (!updatedParticipant.cameraStream.getAudioTracks().some(t => t.id === track.id)) {
+                        updatedParticipant.cameraStream.addTrack(track);
+                        console.log(`[ontrack] Añadido track de audio a cameraStream de ${currentPeerId}`);
+                    }
+                    updatedParticipant.micEnabled = true;
+                }
+            }
+
+            return {
+                ...prev,
+                [currentPeerId]: updatedParticipant
+            };
+        });
+    };
+
+    // --- pc.onnegotiationneeded: Disparar oferta cuando se necesitan cambios ---
+    // **Importante:** Esta es la ÚNICA definición de onnegotiationneeded.
     pc.onnegotiationneeded = async () => {
+        // console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
+
+        // No es necesario añadir tracks aquí de nuevo, ya se añadieron al crear la PC.
+        // Pero es crucial que localStream tenga tracks antes de intentar una oferta.
+        if (!localStream || localStream.getTracks().length === 0) {
+            console.warn(`[onnegotiationneeded] localStream no está listo o no tiene tracks para peer ${peerId}. No se puede crear oferta.`);
+            return;
+        }
+
+        // Evitar negociaciones si la señalización no está en un estado estable
+        if (pc.signalingState !== 'stable') {
+            console.warn(`[PC Event] onnegotiationneeded disparado pero signalingState no es 'stable' (${pc.signalingState}). Ignorando por ahora.`);
+            return;
+        }
+
         try {
-            // Este evento se dispara cuando necesitas crear una nueva oferta o respuesta
-            // debido a cambios locales (como añadir o remover tracks).
-            // ¡Es crucial para que los cambios en los tracks se propaguen!
-            if (pc.signalingState !== 'stable') {
-                console.warn(`[PC Event] onnegotiationneeded disparado pero signalingState no es 'stable' (${pc.signalingState}). Ignorando por ahora.`);
-                return;
-            }
-            console.log(`[PC Event] onnegotiationneeded disparado para ${peerId}. Creando oferta...`);
-            await pc.setLocalDescription(await pc.createOffer());
-            if (pc.localDescription) {
-                sendSignal(peerId, {
-                    type: 'offer',
-                    sdp: pc.localDescription.sdp,
-                    sdpType: pc.localDescription.type,
-                    from: currentUser?.id,
-                });
+            // **Para depuración, elimina o comenta temporalmente la lógica del iniciador**
+            // para asegurar que ambos lados intenten enviar ofertas y ver si se conectan.
+            // Una vez que funcione, puedes reintroducir tu lógica de iniciador si lo deseas.
+            const localUserId = parseInt(currentUser?.id.toString() || '0');
+            const remoteMemberId = parseInt(peerId);
+            const isInitiator = localUserId < remoteMemberId; // Lógica de iniciador basada en ID
+
+            // **Opción 1: Usa la lógica de iniciador (más robusta en producción)**
+            // if (isInitiator) {
+                console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type, from: currentUser?.id });
                 console.log(`[PC Event] Oferta enviada a ${peerId}.`);
-            }
+            // } else {
+            //     console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId} (no soy el iniciador).`);
+            // }
+
+            // **Opción 2: Sin lógica de iniciador (útil para depurar)**
+            // console.log(`[ON_NEGOTIATION] Creando OFERTA para ${peerId}.`);
+            // const offer = await pc.createOffer();
+            // await pc.setLocalDescription(offer);
+            // sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type, from: currentUser?.id });
+            // console.log(`[PC Event] Oferta enviada a ${peerId}.`);
+
+
         } catch (e) {
             console.error(`[PC Event] Error en onnegotiationneeded para ${peerId}:`, e);
         }
     };
-};
-            // --- CAMBIO CLAVE: Manejo de onicecandidate ---
-      // Dentro de pc.onicecandidate:
-      pc.onicecandidate = (event) => {
+
+    // --- pc.onicecandidate: Generar y enviar candidatos ICE ---
+    pc.onicecandidate = (event) => {
         if (event.candidate && currentUser) {
-          //console.log(`[ICE Candidate] Generado candidato para ${peerId}.`);
-          // Envía event.candidate como un objeto plano para que sea reconstruido.
-          sendSignal(peerId, { type: 'candidate', candidate: event.candidate.toJSON() });
+            console.log(`[ICE Candidate] Generado candidato para ${peerId}.`);
+            // Envía event.candidate como un objeto plano para que sea reconstruido.
+            sendSignal(peerId, { type: 'candidate', candidate: event.candidate.toJSON(), from: currentUser?.id });
         }
-      };
-      // --- CAMBIO CLAVE: Manejo de onnegotiationneeded ---
-      pc.onnegotiationneeded = async () => {
-          //console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
-          if (!localStream) {
-            console.warn(`[onnegotiationneeded] localStream no está listo para peer ${peerId}. No se puede crear oferta.`);
-            return;
-          }
+    };
 
-          // Asegurarse de que los tracks locales estén añadidos antes de crear la oferta
-          localStream.getTracks().forEach(track => {
-            if (!pc.getSenders().some(sender => sender.track === track)) {
-              pc.addTrack(track, localStream);
-              //console.log(`[ON_NEGOTIATION] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
-            }
-          });
-
-          try {
-            // Solo creamos oferta si somos el "iniciador" basado en IDs
-            // (esto evita ofertas duplicadas si ambos inician al mismo tiempo)
-            const localUserId = parseInt(currentUser?.id.toString() || '0');
-            const remoteMemberId = parseInt(peerId);
-            const isInitiator = localUserId < remoteMemberId; // O tu lógica para determinar quién inicia
-
-            if (isInitiator) {
-                //console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                //console.log(`[SIGNAL OUT] Enviando OFFER de ${currentUser?.id} a ${peerId}:`, { type: 'offer', sdpType: offer.type }); // NUEVO LOG
-                sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
-            } else {
-                //console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId}.`);
-            }
-
-          } catch (e) {
-            console.error("Error en onnegotiationneeded al crear/enviar oferta:", e);
-          }
-      };
-
-      pc.onconnectionstatechange = () => {
-        //console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
+    // --- pc.onconnectionstatechange: Monitorear el estado de la conexión ---
+    pc.onconnectionstatechange = () => {
+        console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
         if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          //console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Cleaning up.`);
-          pc.close();
-          const newPeerConnections = { ...peerConnectionsRef.current };
-          delete newPeerConnections[peerId];
-          peerConnectionsRef.current = newPeerConnections;
-
-          setParticipants(prev => {
-            const copy = { ...prev };
-            delete copy[peerId];
-            return copy;
-          });
+            console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Calling handlePeerDisconnected.`);
+            // Solo llama a handlePeerDisconnected si la PC no ha sido cerrada explícitamente ya
+            // handlePeerDisconnected tiene lógica interna para verificar si ya está cerrada.
+            handlePeerDisconnected(peerId);
         }
-      };
+    };
 
+    // --- Otros logs de estado (descomentar para depuración detallada) ---
+    pc.oniceconnectionstatechange = () => {
+        // console.log(`[PC State - ICE] PeerConnection con ${peerId} ICE: ${pc.iceConnectionState}`);
+    };
+    pc.onsignalingstatechange = () => {
+        // console.log(`[PC State - Signaling] PeerConnection con ${peerId} signaling: ${pc.signalingState}`);
+    };
+    pc.onicegatheringstatechange = () => {
+        // console.log(`[PC State - Ice Gathering] PeerConnection con ${peerId} ICE gathering: ${pc.iceGatheringState}`);
+    };
 
-      pc.oniceconnectionstatechange = () => {
-          //console.log(`[PC State - ICE] PeerConnection con ${peerId} ICE: ${pc.iceConnectionState}`);
-      };
-      pc.onconnectionstatechange = () => {
-          //console.log(`[PC State - Connection] PeerConnection con ${peerId} conexión: ${pc.connectionState}`);
-      };
-      pc.onsignalingstatechange = () => {
-          //console.log(`[PC State - Signaling] PeerConnection con ${peerId} signaling: ${pc.signalingState}`);
-      };
-      pc.onicegatheringstatechange = () => {
-          //console.log(`[PC State - Ice Gathering] PeerConnection con ${peerId} ICE gathering: ${pc.iceGatheringState}`);
-      };
-
-      peerConnectionsRef.current = { ...peerConnectionsRef.current, [peerId]: pc };
-    }
     return peerConnectionsRef.current[peerId];
-  }, [currentUser, localStream, sendSignal]); // Añadido localStream a las dependencias
-
-  // --- useEffect para obtener el stream local ---
+}, [currentUser, localStream, sendSignal, handlePeerDisconnected]); // Dependencias para useCallback: `localStream` es CRÍTICO aquí.
+ // --- useEffect para obtener el stream local ---
  useEffect(() => {
       const getMedia = async () => {
       try {
@@ -647,10 +890,10 @@ useEffect(() => {
         //console.log("Faltan roomId, currentUser o localStream para unirse al canal. Reintentando...");
         return;
     }
-    if (channelRef.current) {
-        //console.log("Ya existe un canal (en el ref), no se unirá de nuevo.");
-        return;
-    }
+    // if (channelRef.current) {
+    //     //console.log("Ya existe un canal (en el ref), no se unirá de nuevo.");
+    //     return;
+    // }
 
     const reverbService = reverbServiceRef.current;
     let currentChannelInstance: EchoChannel | null = null;
@@ -728,22 +971,9 @@ useEffect(() => {
           setHasJoinedChannel(false);
         });
         joinedChannel.leaving((member: any) => {
-          console.log(`Usuario ${member.info.name || member.id} (${member.id}) ha abandonado la sala.`);
-          const memberId = String(member.id);
-
-          // Cierra la PeerConnection asociada con el miembro que se fue
-          if (peerConnectionsRef.current[memberId]) {
-              console.log(`Cerrando PeerConnection con ${memberId}.`);
-              peerConnectionsRef.current[memberId].close();
-              delete peerConnectionsRef.current[memberId];
-          }
-
-          // Elimina al participante del estado para que su widget desaparezca
-          setParticipants(prev => {
-              const newParticipants = { ...prev };
-              delete newParticipants[memberId];
-              return newParticipants;
-          });
+            console.log(`[REVERB] LEAVING event: User ${member.id} is leaving the room.`);
+            // No ignores aquí; deja que handlePeerDisconnected maneje la diferencia
+            handlePeerDisconnected(member.id.toString());
         });
 
         // --- Listener para señales WebRTC (Ofertas, Respuestas, Candidatos ICE) ---
@@ -1145,37 +1375,13 @@ useEffect(() => {
 }, [roomId, currentUser?.id]);
 if (!roomParticipantId) return;
 
-  const endCall = () => {
-    // Detener todos los tracks de los streams locales
-    localStream?.getTracks().forEach(track => track.stop());
 
-    // Cerrar todas las PeerConnections activas
-    Object.values(peerConnectionsRef.current).forEach(pc => {
-      if (pc.connectionState !== 'closed') pc.close();
-    });
-    peerConnectionsRef.current = {}; // Limpiar el ref
+  // Modifica handleEndCall para usar la nueva función de limpieza
+  
 
-    // Resetear estados relevantes
-    setLocalStream(null);
-    setParticipants({});
-    // setMessages([]);
-    // setIsRecording(false);
-    setRemoteStreams({}); // Asegúrate de limpiar también los streams remotos
-
-    // Dejar el canal de Reverb
-    if (channelRef.current) {
-      channelRef.current.leave();
-      channelRef.current = null;
-    }
-
-    navigate('/rooms'); // Redirigir al usuario
-  };
-
-  const toggleRecording = () => {
-    //console.log("Función de grabación no implementada aún.");
-    // setIsRecording(prev => !prev);
-  };
-
+  // Asegúrate de que este useEffect de limpieza SOLO se ejecute al desmontar el componente,
+  // y que no interfiera con `handleEndCall`.
+  
 
   if (loading) {
     return (
@@ -1413,7 +1619,7 @@ return (
                         </button>
 
                         <button
-                            onClick={handleCallCleanup}
+                            onClick={handleEndCall}
                             className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
                             title="Colgar"
                         >
@@ -1507,7 +1713,7 @@ return (
                         </button>
 
                         <button
-                            onClick={handleCallCleanup}
+                            onClick={handleEndCall}
                             className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
                             title="Colgar"
                         >
@@ -1674,7 +1880,7 @@ return (
                             <Maximize2 size={18} />
                         </button>
                         <button
-                            onClick={handleCallCleanup}
+                            onClick={handleEndCall}
                             className="w-10 h-10 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
                             title="Colgar"
                         >
@@ -1736,7 +1942,7 @@ return (
                             <Maximize2 size={16} />
                         </button>
                         <button
-                            onClick={handleCallCleanup}
+                            onClick={handleEndCall}
                             className="w-8 h-8 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
                             title="Colgar"
                         >
