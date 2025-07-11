@@ -82,7 +82,105 @@ const [participants, setParticipants] = useState<Record<string, {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
 
+
+  const cleanupWebRTCAndReverb = useCallback(() => {
+    console.log("[CLEANUP GLOBAL] Iniciando limpieza completa de WebRTC y Reverb.");
+
+    // 1. Cerrar todas las RTCPeerConnections
+    Object.keys(peerConnectionsRef.current).forEach(peerId => {
+      const pc = peerConnectionsRef.current[peerId];
+      if (pc && pc.connectionState !== 'closed') {
+        pc.close();
+        console.log(`[CLEANUP GLOBAL] Cerrada RTCPeerConnection con ${peerId}.`);
+      }
+      delete peerConnectionsRef.current[peerId]; // Asegurarse de eliminar la referencia
+    });
+    peerConnectionsRef.current = {}; // Reiniciar el objeto de refs
+
+    // 2. Detener los tracks de los streams locales
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      setLocalStream(null); // Elimina la referencia del estado
+      console.log("[CLEANUP GLOBAL] Detenidos y limpiados tracks de localStream.");
+    }
+    if (screenShareStreamRef.current) {
+      screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+      screenShareStreamRef.current = null; // Elimina la referencia de la ref
+      setIsSharingScreen(false);
+      console.log("[CLEANUP GLOBAL] Detenidos y limpiados tracks de screenShareStream.");
+    }
+
+    // 3. Limpiar colas de ICE candidates
+    iceCandidatesQueueRef.current = {};
+    console.log("[CLEANUP GLOBAL] Cola de ICE candidates limpiada.");
+
+    // 4. Abandonar el canal de Reverb
+    if (channelRef.current) {
+      if (typeof channelRef.current.leave === 'function') {
+        channelRef.current.leave();
+        console.log(`[CLEANUP GLOBAL] Abandonado canal de Reverb: ${channelRef.current.name}.`);
+      } else {
+        console.warn("[CLEANUP GLOBAL] El canal de Reverb no tiene un método 'leave'.");
+      }
+      channelRef.current = null; // Elimina la referencia al canal
+    }
+
+    // 5. Limpiar el estado de participantes (todos se han ido)
+    setParticipants({});
+    console.log("[CLEANUP GLOBAL] Estado de participantes limpiado.");
+
+    // 6. Finalmente, notificar al componente padre
+    onCallEnded();
+    console.log("[CLEANUP GLOBAL] onCallEnded invocado. Limpieza completa.");
+  }, [localStream, onCallEnded]); // Asegúrate de incluir las dependencias correctas
    // --- Funciones de Drag and Drop (mantienen la lógica que ya te di) ---
+const handleEndCall = useCallback(() => {
+    console.log("¡Botón de colgar presionado! Iniciando limpieza de la llamada.");
+    cleanupWebRTCAndReverb(); // Llama a la función de limpieza global
+  }, [cleanupWebRTCAndReverb]);
+
+  useEffect(() => {
+    // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.
+    return () => {
+      // Esta es la limpieza al desmontar, pero queremos que `handleEndCall` sea la principal.
+      // Podemos poner una bandera o confiar en que `handleEndCall` se llamará antes del desmontaje.
+      // Para mayor seguridad, si no se ha llamado a `handleEndCall` (ej. el usuario cierra la pestaña),
+      // esta limpieza del useEffect se encargará.
+      // Podrías pasar una bandera `isExplicitlyLeaving` a `cleanupWebRTCAndReverb` si quieres
+      // diferenciar, pero la función ya es bastante robusta.
+      console.log("[VideoRoom Effect Cleanup] Componente VideoRoom se desmonta. Asegurando limpieza...");
+      // Reverb por defecto enviará 'leaving'/'left' al cerrar la pestaña.
+      // La limpieza de PeerConnections y streams locales ya está en `cleanupWebRTCAndReverb`.
+      // No llamamos a `onCallEnded` aquí para evitar doble llamada si `handleEndCall` ya lo hizo.
+      
+      // Una forma de evitar doble limpieza es verificar si el canal aún existe,
+      // lo que implicaría que no se hizo una `cleanupWebRTCAndReverb` explícita.
+      if (channelRef.current) {
+        console.log("[VideoRoom Effect Cleanup] detectado canal activo, realizando limpieza suave.");
+        Object.keys(peerConnectionsRef.current).forEach(peerId => {
+          const pc = peerConnectionsRef.current[peerId];
+          if (pc && pc.connectionState !== 'closed') {
+            pc.close();
+            console.log(`[CLEANUP ON UNMOUNT] Cerrada RTCPeerConnection con ${peerId}.`);
+          }
+        });
+        peerConnectionsRef.current = {};
+        if (channelRef.current && typeof channelRef.current.leave === 'function') {
+            channelRef.current.leave();
+        }
+        channelRef.current = null;
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+        }
+        if (screenShareStreamRef.current) {
+            screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+        }
+        setParticipants({});
+        // No llamamos onCallEnded aquí para no interferir con la lógica de UI
+        // que debería estar manejada por la acción explícita de colgar o por el contexto.
+      }
+    };
+  }, [localStream, screenShareStreamRef]); // Incluye refs para que el closure funcione correctamente.
 
   const stopDragging = useCallback(() => {
     setIsDragging(false);
@@ -336,7 +434,167 @@ const startDragging = useCallback((clientX: number, clientY: number) => {
       console.error(`[SIGNAL OUT ERROR] Error al enviar señal ${signalData.type} de ${currentUser?.id} a ${toPeerId}:`, error);
     }
   }, [currentUser, channelRef]); // Asegúrate de que currentUser esté en las dependencias si lo usas
+const handlePeerDisconnected = useCallback((peerId: string) => {
+    console.log(`[HANDLE PEER DISCONNECTED] Procesando desconexión de peer: ${peerId}`);
+    const pc = peerConnectionsRef.current[peerId];
+    if (pc && pc.connectionState !== 'closed') {
+      pc.close();
+      console.log(`[HANDLE PEER DISCONNECTED] Cerrada RTCPeerConnection para el miembro ${peerId}.`);
+    }
 
+    // Limpia la referencia a la PeerConnection
+    const newPeerConnections = { ...peerConnectionsRef.current };
+    delete newPeerConnections[peerId];
+    peerConnectionsRef.current = newPeerConnections;
+
+    setParticipants(prev => {
+      const copy = { ...prev };
+      const disconnectedParticipant = copy[peerId];
+
+      if (disconnectedParticipant) {
+        // Detener explícitamente los tracks de los streams remotos
+        if (disconnectedParticipant.cameraStream) {
+          disconnectedParticipant.cameraStream.getTracks().forEach(track => {
+            track.stop();
+            console.log(`[HANDLE PEER DISCONNECTED] Detenido track de cámara remoto: ${track.kind} (${track.id}) de ${peerId}`);
+          });
+        }
+        if (disconnectedParticipant.screenStream) {
+          disconnectedParticipant.screenStream.getTracks().forEach(track => {
+            track.stop();
+            console.log(`[HANDLE PEER DISCONNECTED] Detenido track de pantalla remoto: ${track.kind} (${track.id}) de ${peerId}`);
+          });
+        }
+      }
+      delete copy[peerId]; // Eliminar al participante del estado
+      console.log(`[HANDLE PEER DISCONNECTED] Limpiado estado de participante ${peerId}.`);
+      return copy;
+    });
+
+    console.log(`[HANDLE PEER DISCONNECTED] Limpieza de ${peerId} completada.`);
+  }, []); 
+
+  useEffect(() => {
+    // Itera sobre todas las PeerConnections activas
+    Object.values(peerConnectionsRef.current).forEach(pc => {
+      const currentSenders = pc.getSenders();
+
+      // Manejar stream de CÁMARA
+      const cameraVideoTrack = localStream?.getVideoTracks()[0] || null;
+      const cameraAudioTrack = localStream?.getAudioTracks()[0] || null;
+
+      const existingCameraVideoSender = currentSenders.find(s => s.track?.kind === 'video' && s.track?.id === cameraVideoTrack?.id);
+      const existingCameraAudioSender = currentSenders.find(s => s.track?.kind === 'audio' && s.track?.id === cameraAudioTrack?.id);
+
+      // Si NO estamos compartiendo pantalla, gestiona la cámara
+      if (!isSharingScreen) {
+        if (cameraVideoTrack) {
+          if (!existingCameraVideoSender) {
+            // Remover cualquier otro video sender (ej. de pantalla si no se limpió) antes de añadir la cámara
+            currentSenders.filter(s => s.track?.kind === 'video').forEach(s => pc.removeTrack(s));
+            pc.addTrack(cameraVideoTrack, localStream!); // Asegúrate de que localStream no sea null aquí
+            console.log("[SYNC TRACKS] Añadido track de video de cámara.");
+          } else if (existingCameraVideoSender.track !== cameraVideoTrack) {
+            existingCameraVideoSender.replaceTrack(cameraVideoTrack)
+              .then(() => console.log("[SYNC TRACKS] Reemplazado track de video de cámara."))
+              .catch(e => console.error("Error al reemplazar video track de cámara:", e));
+          }
+        } else { // No hay track de video de cámara, remueve cualquier sender de video
+          currentSenders.filter(s => s.track?.kind === 'video').forEach(s => pc.removeTrack(s));
+          console.log("[SYNC TRACKS] Removido track de video de cámara.");
+        }
+
+        if (cameraAudioTrack) {
+          if (!existingCameraAudioSender) {
+            // Remover cualquier otro audio sender antes de añadir el de cámara
+            currentSenders.filter(s => s.track?.kind === 'audio').forEach(s => pc.removeTrack(s));
+            pc.addTrack(cameraAudioTrack, localStream!);
+            console.log("[SYNC TRACKS] Añadido track de audio de cámara.");
+          } else if (existingCameraAudioSender.track !== cameraAudioTrack) {
+            existingCameraAudioSender.replaceTrack(cameraAudioTrack)
+              .then(() => console.log("[SYNC TRACKS] Reemplazado track de audio de cámara."))
+              .catch(e => console.error("Error al reemplazar audio track de cámara:", e));
+          }
+        } else { // No hay track de audio de cámara, remueve cualquier sender de audio
+          currentSenders.filter(s => s.track?.kind === 'audio').forEach(s => pc.removeTrack(s));
+          console.log("[SYNC TRACKS] Removido track de audio de cámara.");
+        }
+      }
+
+      // Manejar stream de PANTALLA
+      const screenVideoTrack = screenShareStreamRef.current?.getVideoTracks()[0] || null;
+      const screenAudioTrack = screenShareStreamRef.current?.getAudioTracks()[0] || null;
+
+      const existingScreenVideoSender = currentSenders.find(s => s.track?.kind === 'video' && s.track?.id === screenVideoTrack?.id);
+      const existingScreenAudioSender = currentSenders.find(s => s.track?.kind === 'audio' && s.track?.id === screenAudioTrack?.id);
+
+      // Si estamos compartiendo pantalla, gestiona la pantalla
+      if (isSharingScreen && screenShareStreamRef.current) {
+        // Asegurarse de que solo haya un sender de video (el de la pantalla)
+        currentSenders.filter(s => s.track?.kind === 'video' && s.track?.id !== screenVideoTrack?.id).forEach(s => {
+          pc.removeTrack(s);
+          console.log("[SYNC TRACKS] Removido sender de video no relacionado (cámara vieja) al compartir pantalla.");
+        });
+
+        if (screenVideoTrack) {
+          if (!existingScreenVideoSender) {
+            pc.addTrack(screenVideoTrack, screenShareStreamRef.current);
+            console.log("[SYNC TRACKS] Añadido track de video de pantalla.");
+          } else if (existingScreenVideoSender.track !== screenVideoTrack) {
+            existingScreenVideoSender.replaceTrack(screenVideoTrack)
+              .then(() => console.log("[SYNC TRACKS] Reemplazado track de video de pantalla."))
+              .catch(e => console.error("Error al reemplazar video track de pantalla:", e));
+          }
+        } else if (existingScreenVideoSender) {
+          pc.removeTrack(existingScreenVideoSender);
+          console.log("[SYNC TRACKS] Removido track de video de pantalla (screenVideoTrack es null).");
+        }
+
+        // Asegurarse de que solo haya un sender de audio (el de la pantalla si existe, sino el de la cámara)
+        currentSenders.filter(s => s.track?.kind === 'audio' && s.track?.id !== screenAudioTrack?.id).forEach(s => {
+          pc.removeTrack(s);
+          console.log("[SYNC TRACKS] Removido sender de audio no relacionado (cámara vieja) al compartir pantalla.");
+        });
+
+        if (screenAudioTrack) {
+          if (!existingScreenAudioSender) {
+            pc.addTrack(screenAudioTrack, screenShareStreamRef.current);
+            console.log("[SYNC TRACKS] Añadido track de audio de pantalla.");
+          } else if (existingScreenAudioSender.track !== screenAudioTrack) {
+            existingScreenAudioSender.replaceTrack(screenAudioTrack)
+              .then(() => console.log("[SYNC TRACKS] Reemplazado track de audio de pantalla."))
+              .catch(e => console.error("Error al reemplazar audio track de pantalla:", e));
+          }
+        } else if (existingScreenAudioSender) {
+          pc.removeTrack(existingScreenAudioSender);
+          console.log("[SYNC TRACKS] Removido track de audio de pantalla (screenAudioTrack es null).");
+        }
+
+      } else { // Si NO estamos compartiendo pantalla, asegurar que los senders de pantalla estén limpios
+        if (existingScreenVideoSender) {
+          pc.removeTrack(existingScreenVideoSender);
+          console.log("[SYNC TRACKS] Removido sender de video de pantalla (ya no se comparte).");
+        }
+        if (existingScreenAudioSender) {
+          pc.removeTrack(existingScreenAudioSender);
+          console.log("[SYNC TRACKS] Removido sender de audio de pantalla (ya no se comparte).");
+        }
+      }
+
+      // Si hubo algún cambio, forzar renegociación
+      if (pc.signalingState === 'stable' && (
+        (isSharingScreen && (screenVideoTrack || screenAudioTrack)) ||
+        (!isSharingScreen && (cameraVideoTrack || cameraAudioTrack))
+      )) {
+        //pc.dispatchEvent(new Event('negotiationneeded')); // `onnegotiationneeded` debería dispararse automáticamente
+      }
+    });
+
+  }, [localStream, isSharingScreen, screenShareStreamRef]); // Dependencias: cambios en los streams y si se comparte pantalla
+
+
+  // La función `processSignal` ya maneja la lógica de limpiar `screenStream` si `isSharing` es false.
+  
   // --- Función auxiliar para obtener/crear RTCPeerConnection ---
     const getOrCreatePeerConnection = useCallback((peerId: string) => {
     if (!peerConnectionsRef.current[peerId]) {
@@ -379,17 +637,17 @@ const startDragging = useCallback((clientX: number, clientY: number) => {
             // --- CAMBIO: Añadir los tracks locales INMEDIATAMENTE al crear la PC ---
       // Esto asegura que pc.onnegotiationneeded se dispare si es necesario
       // o que la oferta inicial contenga los tracks.
-      if (localStream) {
-          localStream.getTracks().forEach(track => {
-              //console.log(`[PC Creation DEBUG] Track ${track.kind} readyState: ${track.readyState}`); // <-- NUEVO LOG
-              if (!pc.getSenders().some(sender => sender.track === track)) {
-                  pc.addTrack(track, localStream);
-                  //console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
-              } else {
-                  //console.log(`[PC Creation] Track ${track.kind} ya EXISTE para ${peerId}. No se añade de nuevo.`);
-              }
-          });
-      }
+      // if (localStream) {
+      //     localStream.getTracks().forEach(track => {
+      //         //console.log(`[PC Creation DEBUG] Track ${track.kind} readyState: ${track.readyState}`); // <-- NUEVO LOG
+      //         if (!pc.getSenders().some(sender => sender.track === track)) {
+      //             pc.addTrack(track, localStream);
+      //             //console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+      //         } else {
+      //             //console.log(`[PC Creation] Track ${track.kind} ya EXISTE para ${peerId}. No se añade de nuevo.`);
+      //         }
+      //     });
+      // }
       peerConnectionsRef.current[peerId] = pc;
 
      // En tu pc.ontrack dentro de VideoRoom.tsx
@@ -564,19 +822,12 @@ pc.ontrack = (event) => {
       };
 
       pc.onconnectionstatechange = () => {
-        //console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
+        console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
         if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          //console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Cleaning up.`);
-          pc.close();
-          const newPeerConnections = { ...peerConnectionsRef.current };
-          delete newPeerConnections[peerId];
-          peerConnectionsRef.current = newPeerConnections;
-
-          setParticipants(prev => {
-            const copy = { ...prev };
-            delete copy[peerId];
-            return copy;
-          });
+          console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Calling handlePeerDisconnected.`);
+          // IMPORTANT: Solo llama a handlePeerDisconnected si la PC no ha sido cerrada explícitamente ya (ej. por Reverb leaving/left)
+          // `handlePeerDisconnected` tiene lógica para verificar `connectionState !== 'closed'`
+          handlePeerDisconnected(peerId);
         }
       };
 
@@ -597,7 +848,88 @@ pc.ontrack = (event) => {
       peerConnectionsRef.current = { ...peerConnectionsRef.current, [peerId]: pc };
     }
     return peerConnectionsRef.current[peerId];
-  }, [currentUser, localStream, sendSignal]); // Añadido localStream a las dependencias
+ }, [currentUser, sendSignal, handlePeerDisconnected]); // Dependencias para useCallback
+
+ const processSignal = useCallback(async (peerId: string, type: string, data: any) => {
+    const pc = getOrCreatePeerConnection(peerId);
+
+    try {
+      if (type === 'offer') {
+        console.log(`[SIGNAL IN] Recibida OFERTA de ${peerId}.`);
+        await pc.setRemoteDescription(new RTCSessionDescription(data));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sendSignal(peerId, { type: 'answer', sdp: answer.sdp, sdpType: answer.type });
+        console.log(`[SIGNAL OUT] Enviando RESPUESTA a ${peerId}.`);
+
+        if (iceCandidatesQueueRef.current[peerId]) {
+          for (const candidate of iceCandidatesQueueRef.current[peerId]) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(candidate));
+              console.log(`[ICE Candidate] Añadido candidato en cola para ${peerId}.`);
+            } catch (e) {
+              console.error(`[ICE Candidate ERROR] Error al añadir candidato en cola para ${peerId}:`, e);
+            }
+          }
+          delete iceCandidatesQueueRef.current[peerId];
+        }
+
+      } else if (type === 'answer') {
+        console.log(`[SIGNAL IN] Recibida RESPUESTA de ${peerId}.`);
+        await pc.setRemoteDescription(new RTCSessionDescription(data));
+        if (iceCandidatesQueueRef.current[peerId]) {
+          for (const candidate of iceCandidatesQueueRef.current[peerId]) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(candidate));
+              console.log(`[ICE Candidate] Añadido candidato en cola para ${peerId}.`);
+            } catch (e) {
+              console.error(`[ICE Candidate ERROR] Error al añadir candidato en cola para ${peerId}:`, e);
+            }
+          }
+          delete iceCandidatesQueueRef.current[peerId];
+        }
+
+      } else if (type === 'candidate') {
+        console.log(`[SIGNAL IN] Recibido CANDIDATO de ${peerId}.`);
+        if (!pc.remoteDescription) {
+          console.warn(`[ICE Candidate] Remote description not set for ${peerId}. Queuing candidate.`);
+          if (!iceCandidatesQueueRef.current[peerId]) {
+            iceCandidatesQueueRef.current[peerId] = [];
+          }
+          iceCandidatesQueueRef.current[peerId].push(data.candidate);
+        } else {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            console.log(`[ICE Candidate] Añadido candidato para ${peerId}.`);
+          } catch (e) {
+            if (!e.toString().includes('already added') && !e.toString().includes('closed')) {
+              console.error(`[ICE Candidate ERROR] Error al añadir candidato para ${peerId}:`, e);
+            }
+          }
+        }
+      } else if (type === 'screenShareStatus') {
+        console.log(`[SIGNAL IN] Recibido screenShareStatus de ${peerId}: ${data.isSharing}`);
+        setParticipants(prev => {
+          const participant = prev[peerId] || { id: peerId, name: `Usuario ${peerId}`, videoEnabled: false, micEnabled: false, cameraStream: null, screenStream: null, isSharingRemoteScreen: false };
+          if (!data.isSharing && participant.screenStream) {
+            // Si deja de compartir, detén los tracks del stream de pantalla antes de limpiarlo
+            participant.screenStream.getTracks().forEach(track => track.stop());
+            console.log(`[SIGNAL IN] Detenidos tracks de pantalla para ${peerId}.`);
+          }
+          return {
+            ...prev,
+            [peerId]: {
+              ...participant,
+              isSharingRemoteScreen: data.isSharing,
+              screenStream: data.isSharing ? participant.screenStream : null // Limpiar si deja de compartir
+            }
+          };
+        });
+      }
+    } catch (e) {
+      console.error(`[SIGNAL IN ERROR] Error al procesar señal tipo ${type} de ${peerId}:`, e);
+    }
+  }, [getOrCreatePeerConnection, sendSignal]); // getOrCreatePeerConnection y sendSignal son las dependencias clave.
 
   // --- useEffect para obtener el stream local ---
  useEffect(() => {
@@ -727,23 +1059,14 @@ useEffect(() => {
           setLoading(false);
           setHasJoinedChannel(false);
         });
-        joinedChannel.leaving((member: any) => {
-          console.log(`Usuario ${member.info.name || member.id} (${member.id}) ha abandonado la sala.`);
-          const memberId = String(member.id);
-
-          // Cierra la PeerConnection asociada con el miembro que se fue
-          if (peerConnectionsRef.current[memberId]) {
-              console.log(`Cerrando PeerConnection con ${memberId}.`);
-              peerConnectionsRef.current[memberId].close();
-              delete peerConnectionsRef.current[memberId];
+         joinedChannel.leaving((member: any) => {
+          console.log(`[REVERB] LEAVING event: User ${member.id} is leaving the room.`);
+          if (String(member.id) === String(currentUser?.id)) {
+            console.log(`[REVERB] Ignorando LEAVING event para mi mismo: ${member.id}`);
+            return;
           }
-
-          // Elimina al participante del estado para que su widget desaparezca
-          setParticipants(prev => {
-              const newParticipants = { ...prev };
-              delete newParticipants[memberId];
-              return newParticipants;
-          });
+          // Llamar a handlePeerDisconnected para limpiar los recursos del peer que se va
+          handlePeerDisconnected(member.id.toString());
         });
 
         // --- Listener para señales WebRTC (Ofertas, Respuestas, Candidatos ICE) ---
@@ -1145,37 +1468,13 @@ useEffect(() => {
 }, [roomId, currentUser?.id]);
 if (!roomParticipantId) return;
 
-  const endCall = () => {
-    // Detener todos los tracks de los streams locales
-    localStream?.getTracks().forEach(track => track.stop());
 
-    // Cerrar todas las PeerConnections activas
-    Object.values(peerConnectionsRef.current).forEach(pc => {
-      if (pc.connectionState !== 'closed') pc.close();
-    });
-    peerConnectionsRef.current = {}; // Limpiar el ref
+  // Modifica handleEndCall para usar la nueva función de limpieza
+  
 
-    // Resetear estados relevantes
-    setLocalStream(null);
-    setParticipants({});
-    // setMessages([]);
-    // setIsRecording(false);
-    setRemoteStreams({}); // Asegúrate de limpiar también los streams remotos
-
-    // Dejar el canal de Reverb
-    if (channelRef.current) {
-      channelRef.current.leave();
-      channelRef.current = null;
-    }
-
-    navigate('/rooms'); // Redirigir al usuario
-  };
-
-  const toggleRecording = () => {
-    //console.log("Función de grabación no implementada aún.");
-    // setIsRecording(prev => !prev);
-  };
-
+  // Asegúrate de que este useEffect de limpieza SOLO se ejecute al desmontar el componente,
+  // y que no interfiera con `handleEndCall`.
+  
 
   if (loading) {
     return (
@@ -1413,7 +1712,7 @@ return (
                         </button>
 
                         <button
-                            onClick={handleCallCleanup}
+                            onClick={handleEndCall}
                             className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
                             title="Colgar"
                         >
@@ -1507,7 +1806,7 @@ return (
                         </button>
 
                         <button
-                            onClick={handleCallCleanup}
+                            onClick={handleEndCall}
                             className="w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
                             title="Colgar"
                         >
@@ -1674,7 +1973,7 @@ return (
                             <Maximize2 size={18} />
                         </button>
                         <button
-                            onClick={handleCallCleanup}
+                            onClick={handleEndCall}
                             className="w-10 h-10 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
                             title="Colgar"
                         >
@@ -1736,7 +2035,7 @@ return (
                             <Maximize2 size={16} />
                         </button>
                         <button
-                            onClick={handleCallCleanup}
+                            onClick={handleEndCall}
                             className="w-8 h-8 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700"
                             title="Colgar"
                         >
