@@ -829,8 +829,7 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
         }
     };
 
-    // --- pc.onconnectionstatechange: Monitorear el estado de la conexión ---
-   pc.onconnectionstatechange = () => {
+  pc.onconnectionstatechange = () => {
     const currentState = pc.connectionState;
     console.log(`[PC State] PeerConnection con ${peerId} estado: ${currentState}`);
 
@@ -840,7 +839,6 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
 
         if (!participant) {
             console.warn(`[PC State] Participante ${peerId} no encontrado en el estado al cambiar de conexión. Ignorando.`);
-            // Si el participante ya fue eliminado (ej. por `handleEndCall`), no hacemos nada más.
             return prev;
         }
 
@@ -850,15 +848,14 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
             participant.reconnectionTimeoutId = null;
         }
 
-        if (currentState === 'connected' || currentState === 'stable') { // 'stable' es un estado ICE, también indica buena conexión
-            // ¡El peer está conectado o se ha reconectado!
+        if (currentState === 'connected' || currentState === 'stable') {
             if (participant.isDisconnectedByNetwork) {
                 console.log(`[PC] Peer ${peerId} se ha reconectado (estado: ${currentState}). Limpiando flag de desconexión.`);
                 participant.isDisconnectedByNetwork = false;
             }
-        } else if (currentState === 'disconnected') {
-            // CONEXIÓN TEMPORALMENTE PERDIDA (microcorte)
-            console.warn(`[PC] Peer ${peerId} está en estado 'disconnected'. Marcando como desconectado por red y esperando ${45} segundos.`);
+        } else if (currentState === 'disconnected' || currentState === 'failed') { // <-- ¡AQUÍ ESTÁ EL CAMBIO CLAVE!
+            // CONEXIÓN TEMPORALMENTE PERDIDA (microcorte) O FALLIDA
+            console.warn(`[PC] Peer ${peerId} está en estado '${currentState}'. Marcando como desconectado por red y esperando ${45} segundos.`);
             participant.isDisconnectedByNetwork = true; // Marcar para que la UI lo refleje.
 
             // Establecer un temporizador para LIMPIAR Y ELIMINAR el participante
@@ -867,11 +864,9 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
                 console.error(`[PC RECONNECT TIMEOUT] Peer ${peerId} no se ha reconectado después de ${45} segundos. Eliminando definitivamente.`);
                 // Llama a handlePeerDisconnected con `true` para forzar la eliminación final.
                 handlePeerDisconnected(peerId, true); 
-            }, 45000); // <-- ¡Aquí es donde se define el tiempo de espera!
-        } else if (currentState === 'failed' || currentState === 'closed') {
-            // CONEXIÓN FALLIDA O CERRADA PERMANENTEMENTE
-            console.error(`[PC] Peer ${peerId} ha FALLADO o ha sido CERRADO. Eliminando permanentemente.`);
-            // No esperar reconexión automática. Llama a handlePeerDisconnected con `true` inmediatamente.
+            }, 45000); // <-- Los 45 segundos se respetarán aquí
+        } else if (currentState === 'closed') { // El estado 'closed' siempre es final e inmediato
+            console.error(`[PC] Peer ${peerId} ha sido CERRADO. Eliminando permanentemente.`);
             handlePeerDisconnected(peerId, true); 
         }
         return updatedParticipants;
