@@ -434,9 +434,9 @@ const startDragging = useCallback((clientX: number, clientY: number) => {
   }, [currentUser, channelRef]); // Asegúrate de que currentUser esté en las dependencias si lo usas
 const handlePeerDisconnected = useCallback((
     peerId: string,
-    isIntentionalDisconnect: boolean // true si es una desconexión que debe eliminar al peer
+    isIntentionalDisconnect: boolean // true si es una desconexión que DEBE ELIMINAR al peer
 ) => {
-    console.log(`[PC] Peer ${peerId} se ha desconectado. Intencional/Final: ${isIntentionalDisconnect}. Limpiando recursos.`);
+    console.log(`[PC] Peer ${peerId} se ha desconectado. Intencional/Final: ${isIntentionalDisconnect}. Iniciando proceso de limpieza final.`);
 
     setParticipants(prev => {
         const newParticipants = { ...prev };
@@ -448,58 +448,59 @@ const handlePeerDisconnected = useCallback((
             participant.reconnectionTimeoutId = null;
         }
 
-        // Siempre que se llame a esta función, significa que el participante debe ser ELIMINADO de la UI.
-        // La distinción 'isIntentionalDisconnect' puede ser para logs o para acciones adicionales si PEERID SOY YO.
-        delete newParticipants[peerId]; // Eliminar el participante de la UI
-        console.log(`[PC] Participante ${peerId} ELIMINADO DE LA UI.`);
-
-        // Cerrar la PeerConnection asociada si existe y no está ya cerrada
-        if (peerConnectionsRef.current[peerId]) {
-            if (peerConnectionsRef.current[peerId].connectionState !== 'closed') {
-                peerConnectionsRef.current[peerId].close();
-                console.log(`[PC] PeerConnection con ${peerId} cerrada.`);
+        // --- LÓGICA DE ELIMINACIÓN DE UI Y CIERRE DE PC (AHORA CONDICIONAL) ---
+        // SOLO ELIMINAR SI LA LLAMADA INDICA QUE ES UNA DESCONEXIÓN FINAL
+        if (isIntentionalDisconnect) { // <-- ¡Importante: solo eliminar si es intencional/final!
+            if (peerConnectionsRef.current[peerId]) {
+                if (peerConnectionsRef.current[peerId].connectionState !== 'closed') {
+                    peerConnectionsRef.current[peerId].close();
+                    console.log(`[PC] PeerConnection con ${peerId} cerrada por desconexión final.`);
+                }
+                delete peerConnectionsRef.current[peerId];
             }
-            delete peerConnectionsRef.current[peerId];
-        }
-        if (iceCandidatesQueueRef.current[peerId]) {
-            delete iceCandidatesQueueRef.current[peerId];
-        }
-
-        // Lógica específica si el PEER QUE SE DESCONECTÓ SOY YO MISMO (y es definitivo, ej. botón colgar)
-        if (isIntentionalDisconnect && String(peerId) === String(currentUser?.id)) {
-            console.log(`[REVERB CLEANUP] Yo (${peerId}) he iniciado desconexión intencional. Realizando limpieza completa.`);
-            if (channelRef.current) {
-                channelRef.current.leave(); // Asegurarse de que Reverb se desuscriba
-                channelRef.current = null;
+            if (iceCandidatesQueueRef.current[peerId]) {
+                delete iceCandidatesQueueRef.current[peerId];
             }
-            setHasJoinedChannel(false);
-            stopLocalStream();
-            stopScreenShare();
-            // Todas las PCs ya se cerraron en el bucle de arriba, si había varias.
-            peerConnectionsRef.current = {}; // Reiniciar el objeto de refs
-            // El setParticipants({}) para vaciar todo ya lo hace el `handleEndCall`
-            // o el `return newParticipants` que eliminó solo mi ID si yo era el último.
-        }
+            delete newParticipants[peerId]; // <-- Solo eliminar aquí
+            console.log(`[PC] Participante ${peerId} ELIMINADO DE LA UI por desconexión final.`);
 
-        return newParticipants; // Retorna el estado actualizado con el participante eliminado
+            // Lógica específica si el PEER QUE SE DESCONECTÓ SOY YO MISMO (intencional)
+            if (String(peerId) === String(currentUser?.id)) {
+                console.log(`[REVERB CLEANUP] Yo (${peerId}) he iniciado desconexión intencional. Realizando limpieza completa.`);
+                if (channelRef.current) {
+                    channelRef.current.leave();
+                    channelRef.current = null;
+                }
+                setHasJoinedChannel(false);
+                stopLocalStream();
+                stopScreenShare();
+                peerConnectionsRef.current = {};
+                // `setParticipants({})` lo maneja `handleEndCall` para mí mismo
+            }
+        } else {
+             // Si no es una desconexión intencional/final, NO se debe eliminar aquí.
+             // La lógica de `disconnected` temporal y temporizador está en `onconnectionstatechange`.
+             console.log(`[PC] Peer ${peerId} se desconectó temporalmente (isIntentionalDisconnect=false). Esperando reconexión.`);
+        }
+        // ---------------------------------------------------------------------
+        
+        return newParticipants;
     });
-}, [currentUser, stopLocalStream, stopScreenShare]); // Dependencias // Añade setParticipants a las dependencias
-
+}, [currentUser, stopLocalStream, stopScreenShare]); // Mantener estas dependencias si se usan dentro del useCallback
 const handleEndCall = useCallback(() => {
     console.log("¡Botón de colgar presionado! Iniciando limpieza de la llamada.");
     if (currentUser?.id) {
         // Llama a handlePeerDisconnected para el propio usuario, indicando una desconexión intencional/final.
         handlePeerDisconnected(currentUser.id.toString(), true);
         // Y limpia el estado de participantes completamente para reflejar que YO YA NO ESTOY.
-        setParticipants({}); // Vacea la lista de participantes de mi UI.
-        setHasJoinedChannel(false); // Sale de la vista de llamada.
-        // Asegúrate de que tu componente padre maneje el `onCallEnded` para cambiar la vista.
+        // Esto vacía el array `participants` y saca al usuario de la UI.
+        setParticipants({}); 
+        setHasJoinedChannel(false); 
         onCallEnded(); 
     } else {
         console.warn("No se pudo colgar la llamada: currentUser no definido.");
     }
 }, [currentUser, handlePeerDisconnected, onCallEnded]);
-
 useEffect(() => {
     // Itera sobre todas las PeerConnections activas
     Object.values(peerConnectionsRef.current).forEach(pc => {
@@ -830,61 +831,52 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
 
     // --- pc.onconnectionstatechange: Monitorear el estado de la conexión ---
    pc.onconnectionstatechange = () => {
-        const currentState = pc.connectionState;
-        console.log(`[PC State] PeerConnection con ${peerId} estado: ${currentState}`);
+    const currentState = pc.connectionState;
+    console.log(`[PC State] PeerConnection con ${peerId} estado: ${currentState}`);
 
-        setParticipants(prev => {
-            const updatedParticipants = { ...prev };
-            const participant = updatedParticipants[peerId];
+    setParticipants(prev => {
+        const updatedParticipants = { ...prev };
+        const participant = updatedParticipants[peerId];
 
-            if (!participant) {
-                // Si el participante ya no existe en el estado (fue eliminado por otra razón), no hacemos nada.
-                console.warn(`[PC State] Participante ${peerId} no encontrado en el estado al cambiar de conexión.`);
-                return prev;
+        if (!participant) {
+            console.warn(`[PC State] Participante ${peerId} no encontrado en el estado al cambiar de conexión. Ignorando.`);
+            // Si el participante ya fue eliminado (ej. por `handleEndCall`), no hacemos nada más.
+            return prev;
+        }
+
+        // Siempre limpiar el temporizador existente al cambiar de estado para evitar múltiples timers
+        if (participant.reconnectionTimeoutId) {
+            clearTimeout(participant.reconnectionTimeoutId);
+            participant.reconnectionTimeoutId = null;
+        }
+
+        if (currentState === 'connected' || currentState === 'stable') { // 'stable' es un estado ICE, también indica buena conexión
+            // ¡El peer está conectado o se ha reconectado!
+            if (participant.isDisconnectedByNetwork) {
+                console.log(`[PC] Peer ${peerId} se ha reconectado (estado: ${currentState}). Limpiando flag de desconexión.`);
+                participant.isDisconnectedByNetwork = false;
             }
+        } else if (currentState === 'disconnected') {
+            // CONEXIÓN TEMPORALMENTE PERDIDA (microcorte)
+            console.warn(`[PC] Peer ${peerId} está en estado 'disconnected'. Marcando como desconectado por red y esperando ${45} segundos.`);
+            participant.isDisconnectedByNetwork = true; // Marcar para que la UI lo refleje.
 
-            // Limpiar cualquier temporizador de reconexión existente para este peer
-            if (participant.reconnectionTimeoutId) {
-                clearTimeout(participant.reconnectionTimeoutId);
-                participant.reconnectionTimeoutId = null;
-            }
-
-            if (currentState === 'connected') {
-                // ¡CONEXIÓN EXITOSA!
-                // Si estaba marcado como desconectado por red, ahora se reconectó.
-                if (participant.isDisconnectedByNetwork) {
-                    console.log(`[PC] Peer ${peerId} se ha reconectado (estado: connected).`);
-                    participant.isDisconnectedByNetwork = false;
-                }
-                // Asegúrate de que el stream esté asignado y el video/audio habilitado si corresponde
-                // Esto ya debería manejarse en el ontrack o en la actualización del estado de props.
-            } else if (currentState === 'disconnected') {
-                // CONEXIÓN TEMPORALMENTE PERDIDA (microcorte)
-                console.warn(`[PC] Peer ${peerId} está en estado 'disconnected'. Marcando como desconectado por red.`);
-                participant.isDisconnectedByNetwork = true; // Marcar para que la UI lo refleje.
-
-                // Opcional: Podrías detener los tracks del stream local si este peerId soy yo,
-                // para ahorrar ancho de banda si la desconexión es larga.
-                // Pero para los demás peers, dejar el stream activo en el RemoteVideo
-                // y que solo se congele por la falta de data es mejor para la UX.
-
-                // Establecer un temporizador para limpiar y eliminar el participante si NO se reconecta
-                // en un tiempo prudencial (ej. 45 segundos).
-                participant.reconnectionTimeoutId = setTimeout(() => {
-                    console.error(`[PC RECONNECT TIMEOUT] Peer ${peerId} no se ha reconectado después de 45s. Limpiando definitivamente.`);
-                    // Llama a handlePeerDisconnected para forzar la eliminación final
-                    // Pasamos `true` porque, después de este tiempo, lo consideramos una desconexión definitiva.
-                    handlePeerDisconnected(peerId, true);
-                }, 45000); // Darle 45 segundos para que la red se recupere.
-            } else if (currentState === 'failed' || currentState === 'closed') {
-                // CONEXIÓN FALLIDA O CERRADA PERMANENTEMENTE
-                console.error(`[PC] Peer ${peerId} ha FALLADO o ha sido CERRADO. Eliminando permanentemente.`);
-                // Limpia inmediatamente, ya no esperamos reconexión automática.
-                handlePeerDisconnected(peerId, true); // Considerar como desconexión intencional/final.
-            }
-            return updatedParticipants;
-        });
-    };
+            // Establecer un temporizador para LIMPIAR Y ELIMINAR el participante
+            // si NO se reconecta en el tiempo prudencial.
+            participant.reconnectionTimeoutId = setTimeout(() => {
+                console.error(`[PC RECONNECT TIMEOUT] Peer ${peerId} no se ha reconectado después de ${45} segundos. Eliminando definitivamente.`);
+                // Llama a handlePeerDisconnected con `true` para forzar la eliminación final.
+                handlePeerDisconnected(peerId, true); 
+            }, 45000); // <-- ¡Aquí es donde se define el tiempo de espera!
+        } else if (currentState === 'failed' || currentState === 'closed') {
+            // CONEXIÓN FALLIDA O CERRADA PERMANENTEMENTE
+            console.error(`[PC] Peer ${peerId} ha FALLADO o ha sido CERRADO. Eliminando permanentemente.`);
+            // No esperar reconexión automática. Llama a handlePeerDisconnected con `true` inmediatamente.
+            handlePeerDisconnected(peerId, true); 
+        }
+        return updatedParticipants;
+    });
+};
 
     // --- Otros logs de estado (descomentar para depuración detallada) ---
     pc.oniceconnectionstatechange = () => {
@@ -1033,10 +1025,10 @@ useEffect(() => {
             // Si el miembro que se va es EL PROPIO USUARIO, es redundante porque `handleEndCall` ya maneja la limpieza.
             if (String(member.id) === String(currentUser?.id)) {
                 console.log(`[REVERB LEAVING] Evento 'leaving' para mí mismo (${member.id}). Ya lo maneja handleEndCall.`);
-                // Asegúrate de que `handleEndCall` o el `useEffect` de limpieza final manejen todo.
                 return; 
             }
             // Para cualquier OTRO peer que abandone el canal de Reverb, lo consideramos una desconexión definitiva.
+            // Llama a handlePeerDisconnected con `true` para que lo elimine de la UI sin esperar.
             handlePeerDisconnected(member.id.toString(), true); 
         });
 
