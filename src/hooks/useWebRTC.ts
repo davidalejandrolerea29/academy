@@ -17,6 +17,7 @@ interface UseWebRTCProps {
   currentUser: { id: string; name: string } | null;
   localStream: MediaStream | null;
   channelRef: React.MutableRefObject<EchoChannel | null>;
+  localScreenStream: MediaStream | null; 
   reverbService: any; // Ajusta este tipo si tienes una interfaz para tu servicio Reverb
   onCallEnded: () => void;
   // Añadir un callback para notificar al componente padre sobre cambios de estado de participantes
@@ -38,6 +39,7 @@ export const useWebRTC = ({
   roomId,
   currentUser,
   localStream,
+  localScreenStream,
   channelRef,
   reverbService,
   onCallEnded,
@@ -144,17 +146,19 @@ export const useWebRTC = ({
       });
 
       // Añadir los tracks locales INMEDIATAMENTE al crear la PC
-      if (localStream) {
+      if (localScreenStream) {
+        addLocalTracksToPeerConnection(pc, localScreenStream);
+      } else if (localStream) {
         addLocalTracksToPeerConnection(pc, localStream);
       }
 
       // --- Configuración de Eventos para la NUEVA PC ---
       pc.ontrack = (event) => {
-        const incomingStream = event.streams[0];
-        const track = event.track;
+    const incomingStream = event.streams[0];
+    const track = event.track;
 
-        updateParticipantsState(prev => {
-          const existingParticipant = prev[peerId] || {
+    updateParticipantsState(prev => {
+        const existingParticipant = prev[peerId] || {
             id: peerId,
             name: `Usuario ${peerId}`,
             videoEnabled: false,
@@ -162,62 +166,75 @@ export const useWebRTC = ({
             cameraStream: null,
             screenStream: null,
             isSharingRemoteScreen: false,
-          };
-          const updatedParticipant = { ...existingParticipant };
+        };
+        const updatedParticipant = { ...existingParticipant };
 
-          const isPotentiallyScreenShareTrack = track.kind === 'video' &&
-            (updatedParticipant.isSharingRemoteScreen ||
-              track.label.includes('screen') ||
-              track.label.includes('display') ||
-              track.contentHint === 'detail' ||
-              (incomingStream.getVideoTracks().length > 1 && track === incomingStream.getVideoTracks()[1])); // Si hay más de un video track, el segundo suele ser pantalla
+        // Determine if this is a screen share track based on multiple hints
+        // We'll also rely heavily on the `isSharingRemoteScreen` signal
+        const isPotentiallyScreenShareTrack = track.kind === 'video' &&
+            (updatedParticipant.isSharingRemoteScreen || // The signal from the sender is paramount
+            track.label.includes('screen') ||
+            track.label.includes('display') ||
+            track.contentHint === 'detail' ||
+            (incomingStream.getVideoTracks().length > 1 && track === incomingStream.getVideoTracks()[1]) ||
+            incomingStream.id.includes('screen')); // Check stream ID too
 
-          if (track.kind === 'video') {
+        if (track.kind === 'video') {
             if (isPotentiallyScreenShareTrack) {
-              if (!updatedParticipant.screenStream || updatedParticipant.screenStream.id !== incomingStream.id) {
-                updatedParticipant.screenStream = incomingStream;
-                console.log(`[ontrack] Recibiendo NUEVO stream de PANTALLA de ${peerId}`);
-                // Si el stream de cámara y pantalla son el mismo ID, o la cámara ya no tiene tracks de video, desasocia la cámara
-                if (updatedParticipant.cameraStream && updatedParticipant.cameraStream.id === incomingStream.id) {
-                  updatedParticipant.cameraStream = null;
+                // If a new screen stream or the existing one is different
+                if (!updatedParticipant.screenStream || updatedParticipant.screenStream.id !== incomingStream.id) {
+                    // Stop tracks of any old screen stream to avoid memory leaks
+                    updatedParticipant.screenStream?.getTracks().forEach(t => t.stop());
+                    updatedParticipant.screenStream = incomingStream;
+                    console.log(`[ontrack] Recibiendo NUEVO stream de PANTALLA de ${peerId}`);
+                    // If camera stream was the same, clear it to avoid duplication
+                    if (updatedParticipant.cameraStream && updatedParticipant.cameraStream.id === incomingStream.id) {
+                        updatedParticipant.cameraStream = null;
+                    }
                 }
-              }
-            } else {
-              if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
-                updatedParticipant.cameraStream = incomingStream;
-                console.log(`[ontrack] Recibiendo NUEVO stream de CÁMARA de ${peerId}`);
-                // Si el stream de pantalla y cámara son el mismo ID, o la pantalla ya no tiene tracks de video, desasocia la pantalla
-                if (updatedParticipant.screenStream && updatedParticipant.screenStream.id === incomingStream.id) {
-                  updatedParticipant.screenStream = null;
+                updatedParticipant.isSharingRemoteScreen = true; // Confirm this participant is sharing screen
+            } else { // This is likely a camera video track
+                // If a new camera stream or the existing one is different
+                if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
+                    // Stop tracks of any old camera stream
+                    updatedParticipant.cameraStream?.getTracks().forEach(t => t.stop());
+                    updatedParticipant.cameraStream = incomingStream;
+                    console.log(`[ontrack] Recibiendo NUEVO stream de CÁMARA de ${peerId}`);
+                    // If screen stream was the same, clear it
+                    if (updatedParticipant.screenStream && updatedParticipant.screenStream.id === incomingStream.id) {
+                        updatedParticipant.screenStream = null;
+                        updatedParticipant.isSharingRemoteScreen = false; // They stopped sharing screen
+                    }
                 }
-              }
-              updatedParticipant.videoEnabled = true;
+                updatedParticipant.videoEnabled = true;
             }
-          } else if (track.kind === 'audio') {
-            // Lógica para asociar audio al stream correcto (cámara o pantalla)
-            // Esto es complejo y puede requerir más contexto de cómo se envían los streams.
-            // Por ahora, asumimos que el audio principal va con la cámara,
-            // a menos que esté claramente marcado como audio de pantalla compartida.
-            // Para simplificar, adjuntaremos el audio al cameraStream si no hay screenShare y viceversa.
-            if (updatedParticipant.isSharingRemoteScreen && updatedParticipant.screenStream && !updatedParticipant.screenStream.getAudioTracks().some(t => t.id === track.id)) {
-                updatedParticipant.screenStream.addTrack(track);
-                console.log(`[ontrack] Añadido track de audio a screenStream de ${peerId}`);
-            } else if (!updatedParticipant.cameraStream) {
-                updatedParticipant.cameraStream = new MediaStream([track]); // Crea un nuevo stream con solo el audio
+        } else if (track.kind === 'audio') {
+            // Audio logic: try to attach audio to the currently active video stream
+            // Or create a new stream if only audio
+            if (updatedParticipant.isSharingRemoteScreen && updatedParticipant.screenStream) {
+                if (!updatedParticipant.screenStream.getAudioTracks().some(t => t.id === track.id)) {
+                    updatedParticipant.screenStream.addTrack(track);
+                    console.log(`[ontrack] Añadido track de audio a screenStream de ${peerId}`);
+                }
+            } else if (updatedParticipant.cameraStream) {
+                if (!updatedParticipant.cameraStream.getAudioTracks().some(t => t.id === track.id)) {
+                    updatedParticipant.cameraStream.addTrack(track);
+                    console.log(`[ontrack] Añadido track de audio a cameraStream de ${peerId}`);
+                }
+            } else {
+                // Fallback: create a new camera stream with just audio if no video stream yet
+                updatedParticipant.cameraStream = new MediaStream([track]);
                 console.log(`[ontrack] Creado nuevo cameraStream solo con audio para ${peerId}`);
-            } else if (!updatedParticipant.cameraStream.getAudioTracks().some(t => t.id === track.id)) {
-                updatedParticipant.cameraStream.addTrack(track);
-                console.log(`[ontrack] Añadido track de audio a cameraStream de ${peerId}`);
             }
             updatedParticipant.micEnabled = true;
-          }
+        }
 
-          return {
+        return {
             ...prev,
             [peerId]: updatedParticipant
-          };
-        });
-      };
+        };
+    });
+};
 
 
       pc.onicecandidate = (event) => {
@@ -274,7 +291,170 @@ export const useWebRTC = ({
     return pc;
   }, [currentUser, localStream, sendSignal, addLocalTracksToPeerConnection, updateParticipantsState]);
 
+const localScreenShareSendersRef = useRef<Record<string, { video?: RTCRtpSender, audio?: RTCRtpSender }>>({});
 
+useEffect(() => {
+    // Si no hay localStream ni localScreenStream, no hay nada que enviar
+    if (!localStream && !localScreenStream) {
+      // Opcional: Remover todos los tracks si ambos streams se vuelven nulos
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+        pc.getSenders().forEach(sender => {
+          try {
+            pc.removeTrack(sender);
+            console.log(`[PC Update] Removed track ${sender.track?.kind} (ID: ${sender.track?.id}) from PC.`);
+          } catch (e) {
+            console.warn(`[PC Update Warning] Could not remove track during cleanup:`, e);
+          }
+        });
+      });
+      return;
+    }
+
+    Object.values(peerConnectionsRef.current).forEach(pc => {
+      const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc);
+      if (!peerId) return; // Asegurarse de tener un peerId válido
+
+      // ¡NUEVO! Asegurarse de que el objeto para este peerId exista en la ref
+      if (!localScreenShareSendersRef.current[peerId]) {
+        localScreenShareSendersRef.current[peerId] = {};
+      }
+
+      // 1. Manejar el stream de PANTALLA
+      const currentVideoScreenSender = localScreenShareSendersRef.current[Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc) || '']?.video;
+      const currentAudioScreenSender = localScreenShareSendersRef.current[Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc) || '']?.audio;
+
+      if (localScreenStream) { // Si hay un stream de pantalla disponible
+        const screenVideoTrack = localScreenStream.getVideoTracks()[0];
+        const screenAudioTrack = localScreenStream.getAudioTracks()[0];
+
+        // Añadir/Reemplazar track de video de pantalla
+        if (screenVideoTrack) {
+          if (currentVideoScreenSender && currentVideoScreenSender.track === screenVideoTrack) {
+            // Ya está enviando este track de pantalla, no hacer nada
+          } else if (currentVideoScreenSender) {
+            // Reemplazar el track de pantalla existente
+            currentVideoScreenSender.replaceTrack(screenVideoTrack)
+              .then(() => console.log(`[Screen Share] Replaced existing screen video track on PC.`))
+              .catch(e => console.error(`[Screen Share Error] Failed to replace screen video track:`, e));
+          } else {
+            // No hay sender de pantalla, añadirlo. Primero, remover cualquier sender de cámara si existe.
+            pc.getSenders().filter(s => s.track?.kind === 'video' && s.track?.id !== screenVideoTrack.id).forEach(s => {
+                pc.removeTrack(s);
+                console.log(`[Screen Share] Removed old camera video track before adding screen track.`);
+            });
+            const sender = pc.addTrack(screenVideoTrack, localScreenStream);
+            localScreenShareSendersRef.current[peerId].video = sender;
+
+            console.log(`[Screen Share] Added new screen video track on PC.`);
+          }
+        } else if (currentVideoScreenSender) { // Si no hay track de pantalla pero había un sender activo
+            pc.removeTrack(currentVideoScreenSender);
+           delete localScreenShareSendersRef.current[peerId].video;
+            console.log(`[Screen Share] Removed screen video track from PC.`);
+        }
+
+        // Añadir/Reemplazar track de audio de pantalla (si existe)
+        if (screenAudioTrack) {
+          if (currentAudioScreenSender && currentAudioScreenSender.track === screenAudioTrack) {
+            // Ya está enviando este track de audio de pantalla, no hacer nada
+          } else if (currentAudioScreenSender) {
+            currentAudioScreenSender.replaceTrack(screenAudioTrack)
+              .then(() => console.log(`[Screen Share] Replaced existing screen audio track on PC.`))
+              .catch(e => console.error(`[Screen Share Error] Failed to replace screen audio track:`, e));
+          } else {
+            // No hay sender de audio de pantalla, añadirlo. Remover cualquier sender de audio de cámara si existe.
+            pc.getSenders().filter(s => s.track?.kind === 'audio' && s.track?.id !== screenAudioTrack.id).forEach(s => {
+                pc.removeTrack(s);
+                console.log(`[Screen Share] Removed old camera audio track before adding screen audio track.`);
+            });
+            const sender = pc.addTrack(screenAudioTrack, localScreenStream);
+            localScreenShareSendersRef.current[peerId].audio = sender;
+            console.log(`[Screen Share] Added new screen audio track on PC.`);
+          }
+        } else if (currentAudioScreenSender) { // Si no hay track de audio de pantalla pero había un sender activo
+            pc.removeTrack(currentAudioScreenSender);
+             delete localScreenShareSendersRef.current[peerId].audio;
+            console.log(`[Screen Share] Removed screen audio track from PC.`);
+        }
+
+        // Si se añadió o reemplazó un track de pantalla, forzar negociación
+        pc.dispatchEvent(new Event('negotiationneeded'));
+
+      } else { // Si NO hay stream de pantalla (la compartición terminó o no ha comenzado)
+        // Remover cualquier track de pantalla que pudiera estar activo
+        if (currentVideoScreenSender) {
+          pc.removeTrack(currentVideoScreenSender);
+          delete localScreenShareSendersRef.current[Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc) || ''].video;
+          console.log(`[Screen Share] Cleaned up old screen video sender.`);
+          pc.dispatchEvent(new Event('negotiationneeded')); // Negociar si se quitó un track
+        }
+        if (currentAudioScreenSender) {
+          pc.removeTrack(currentAudioScreenSender);
+          delete localScreenShareSendersRef.current[Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc) || ''].audio;
+          console.log(`[Screen Share] Cleaned up old screen audio sender.`);
+          pc.dispatchEvent(new Event('negotiationneeded')); // Negociar si se quitó un track
+        }
+
+        // 2. Manejar el stream de CÁMARA (solo si NO hay stream de pantalla)
+        if (localStream) {
+          const cameraVideoTrack = localStream.getVideoTracks()[0];
+          const cameraAudioTrack = localStream.getAudioTracks()[0];
+          
+          const currentCameraVideoSender = pc.getSenders().find(s => s.track?.kind === 'video' && s.track?.id === cameraVideoTrack?.id);
+          const currentCameraAudioSender = pc.getSenders().find(s => s.track?.kind === 'audio' && s.track?.id === cameraAudioTrack?.id);
+
+          // Añadir/Reemplazar track de video de cámara
+          if (cameraVideoTrack) {
+            if (!currentCameraVideoSender) { // Si no hay sender de video de cámara
+              // Primero, asegurar que no haya otros tracks de video que no sean de cámara o pantalla
+              pc.getSenders().filter(s => s.track?.kind === 'video').forEach(s => {
+                  pc.removeTrack(s); // Remover cualquier track de video anterior (ej. pantalla que no se limpió)
+                  console.log(`[Camera Stream] Removed old video track before adding camera track.`);
+              });
+              pc.addTrack(cameraVideoTrack, localStream);
+              console.log(`[Camera Stream] Added new camera video track on PC.`);
+              pc.dispatchEvent(new Event('negotiationneeded'));
+            } else if (currentCameraVideoSender.track !== cameraVideoTrack) {
+                // Si el track existente es diferente, reemplazarlo
+                currentCameraVideoSender.replaceTrack(cameraVideoTrack)
+                    .then(() => console.log(`[Camera Stream] Replaced existing camera video track on PC.`))
+                    .catch(e => console.error(`[Camera Stream Error] Failed to replace camera video track:`, e));
+            }
+          } else { // Si no hay track de video de cámara en localStream
+              pc.getSenders().filter(s => s.track?.kind === 'video').forEach(s => {
+                  pc.removeTrack(s);
+                  console.log(`[Camera Stream] Removed camera video track.`);
+                  pc.dispatchEvent(new Event('negotiationneeded'));
+              });
+          }
+
+          // Añadir/Reemplazar track de audio de cámara
+          if (cameraAudioTrack) {
+            if (!currentCameraAudioSender) { // Si no hay sender de audio de cámara
+              pc.getSenders().filter(s => s.track?.kind === 'audio').forEach(s => {
+                  pc.removeTrack(s); // Remover cualquier track de audio anterior
+                  console.log(`[Camera Stream] Removed old audio track before adding camera audio track.`);
+              });
+              pc.addTrack(cameraAudioTrack, localStream);
+              console.log(`[Camera Stream] Added new camera audio track on PC.`);
+              pc.dispatchEvent(new Event('negotiationneeded'));
+            } else if (currentCameraAudioSender.track !== cameraAudioTrack) {
+                currentCameraAudioSender.replaceTrack(cameraAudioTrack)
+                    .then(() => console.log(`[Camera Stream] Replaced existing camera audio track on PC.`))
+                    .catch(e => console.error(`[Camera Stream Error] Failed to replace camera audio track:`, e));
+            }
+          } else { // Si no hay track de audio de cámara en localStream
+              pc.getSenders().filter(s => s.track?.kind === 'audio').forEach(s => {
+                  pc.removeTrack(s);
+                  console.log(`[Camera Stream] Removed camera audio track.`);
+                  pc.dispatchEvent(new Event('negotiationneeded'));
+              });
+          }
+        }
+      }
+    });
+
+}, [localStream, localScreenStream, peerConnectionsRef, replaceLocalTrackInPeerConnection, removeLocalTrackFromPeerConnection]); // Dependencias: ambos streams locales y las refs/callbacks.
   // Función para procesar señales (ofertas, respuestas, candidatos)
   const processSignal = useCallback(async (peerId: string, type: string, data: any) => {
     const pc = getOrCreatePeerConnection(peerId);
@@ -389,15 +569,21 @@ export const useWebRTC = ({
     }
 
     let cleanupPerformed = false; // Flag para asegurar la limpieza una sola vez
-    
+
     // Usamos una variable local para el canal y la asignamos a channelRef.current
     // para que la función de limpieza pueda acceder a ella directamente.
-    let activeChannel: EchoChannel | null = null; 
+    let activeChannel: EchoChannel | null = null;
 
     reverbService.presence(`presence-video-room.${roomId}`)
       .then((joinedChannel: EchoChannel) => {
         if (cleanupPerformed) { // Evitar procesar si el componente ya se desmontó
-            joinedChannel.unsubscribe();
+            // Usar .leave() aquí también si es la forma correcta de desuscribirse
+            // aunque el componente se esté desmontando, para no dejar conexiones abiertas.
+            if (typeof joinedChannel.leave === 'function') {
+                joinedChannel.leave();
+            } else {
+                console.warn("[REVERB] joinedChannel no tiene un método leave().");
+            }
             return;
         }
         activeChannel = joinedChannel; // Asigna a la variable local
@@ -483,14 +669,16 @@ export const useWebRTC = ({
       // Usar 'activeChannel' que es la instancia correcta del canal suscrito
       if (activeChannel) {
         console.log(`[REVERB] Abandonando el canal presence-video-room.${roomId}`);
-        // Asegúrate de que el método unsubscribe exista antes de llamarlo
-        if (typeof activeChannel.unsubscribe === 'function') {
-            activeChannel.unsubscribe();
+        // *** CAMBIO CLAVE AQUÍ: Usar .leave() en lugar de .unsubscribe() ***
+        if (typeof activeChannel.leave === 'function') { // Asegúrate de que el método leave exista
+            activeChannel.leave();
         } else {
-            console.warn("[REVERB] activeChannel no tiene un método unsubscribe.");
+            console.warn("[REVERB] activeChannel no tiene un método leave(). Verifique la API de Reverb/Echo.");
         }
         channelRef.current = null; // Limpiar la referencia
       }
+      localScreenShareSendersRef.current = {};
+
       // Cerrar todas las PeerConnections al salir de la sala
       Object.values(peerConnectionsRef.current).forEach(pc => {
         if (pc.connectionState !== 'closed') {
@@ -513,6 +701,63 @@ export const useWebRTC = ({
       clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    // Asegúrate de que localStream exista
+    if (!localStream) {
+      // Si localStream se vuelve nulo, podríamos querer detener todos los tracks salientes
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+        pc.getSenders().forEach(sender => {
+          if (sender.track && sender.track.kind === 'video') { // Solo tracks de video para pantalla/cámara
+            removeLocalTrackFromPeerConnection(pc, sender.track);
+          }
+        });
+      });
+      return;
+    }
+
+    const videoTrack = localStream.getVideoTracks()[0]; // Asume que hay un solo track de video principal
+    const audioTrack = localStream.getAudioTracks()[0]; // Asume un solo track de audio
+
+    Object.values(peerConnectionsRef.current).forEach(pc => {
+      const currentVideoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+      const currentAudioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
+
+      // Lógica para el video (cámara o pantalla)
+      if (videoTrack) {
+        if (currentVideoSender) {
+          if (currentVideoSender.track !== videoTrack) { // Si el track actual es diferente
+            replaceLocalTrackInPeerConnection(pc, currentVideoSender.track, videoTrack, localStream);
+          }
+        } else {
+          // No hay sender de video, añadir el nuevo
+          pc.addTrack(videoTrack, localStream);
+          pc.dispatchEvent(new Event('negotiationneeded')); // Forzar renegociación
+        }
+      } else {
+        // No hay video track en localStream, remover el existente si lo hay
+        if (currentVideoSender) {
+          removeLocalTrackFromPeerConnection(pc, currentVideoSender.track);
+        }
+      }
+
+      // Lógica para el audio (similar al video)
+      if (audioTrack) {
+        if (currentAudioSender) {
+          if (currentAudioSender.track !== audioTrack) {
+            replaceLocalTrackInPeerConnection(pc, currentAudioSender.track, audioTrack, localStream);
+          }
+        } else {
+          pc.addTrack(audioTrack, localStream);
+          pc.dispatchEvent(new Event('negotiationneeded'));
+        }
+      } else {
+        if (currentAudioSender) {
+          removeLocalTrackFromPeerConnection(pc, currentAudioSender.track);
+        }
+      }
+    });
+  }, [localStream, peerConnectionsRef, addLocalTracksToPeerConnection, replaceLocalTrackInPeerConnection, removeLocalTrackFromPeerConnection]);
 
   return {
     participants,

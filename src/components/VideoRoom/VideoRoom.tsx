@@ -61,6 +61,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
   const [error, setError] = useState<string | null>(null);
   // const [isTeacher, setIsTeacher] = useState(false); // Determinar si el usuario actual es profesor
   const streamLogCountsRef = useRef<Record<string, number>>({});
+const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
 
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const widgetRef = useRef<HTMLDivElement>(null);
@@ -109,6 +110,7 @@ const [isChatOpenDesktop, setIsChatOpenDesktop] = useState(true);
     currentUser,
     localStream, // Pasa el stream local al hook WebRTC
     channelRef,
+    localScreenStream: localScreenStream,
     reverbService: reverbServiceRef.current,
     onCallEnded,
     onParticipantsChange: handleParticipantsChange, // Pasa el callback
@@ -166,135 +168,75 @@ const toggleScreenShare = useCallback(async () => {
     let negotiationNeeded = false;
 
     if (isSharingScreen) {
-        // --- Lógica para DETENER la compartición de pantalla ---
-        if (screenShareStreamRef.current) {
-            screenShareStreamRef.current.getTracks().forEach(track => track.stop());
-            screenShareStreamRef.current = null;
+        if (localScreenStream) {
+            localScreenStream.getTracks().forEach(track => track.stop()); // Detiene los tracks del stream de pantalla
+            setLocalScreenStream(null); // Limpia el estado del stream de pantalla
         }
-
-        Object.values(peerConnectionsRef.current).forEach(pc => {
-            const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc);
-            if (!peerId) return;
-
-            const sendersForThisPeer = screenShareSendersRef.current[peerId];
-
-            // Remueve los senders si existen
-            if (sendersForThisPeer?.video) {
-                try {
-                    pc.removeTrack(sendersForThisPeer.video);
-                    console.log(`[ScreenShare Stop] Removed screen video track from PC for ${peerId}.`);
-                    negotiationNeeded = true; // Se necesita renegociación
-                } catch (e) {
-                    console.error(`[ScreenShare Stop Error] Error removing video track for ${peerId}:`, e);
-                }
-            }
-            if (sendersForThisPeer?.audio) {
-                try {
-                    pc.removeTrack(sendersForThisPeer.audio);
-                    console.log(`[ScreenShare Stop] Removed screen audio track from PC for ${peerId}.`);
-                    negotiationNeeded = true; // Se necesita renegociación
-                } catch (e) {
-                    console.error(`[ScreenShare Stop Error] Error removing audio track for ${peerId}:`, e);
-                }
-            }
-            delete screenShareSendersRef.current[peerId];
-        });
-
-        if (localVideoRef.current && localStream) {
-            localVideoRef.current.srcObject = localStream;
-        }
-
+        setIsSharingScreen(false); // Actualiza el estado de compartición
+        
+        // Notificar a todos los demás participantes que hemos dejado de compartir
         Object.keys(peerConnectionsRef.current).forEach(peerId => {
             sendSignal(peerId, { type: 'screenShareStatus', isSharing: false, from: currentUser?.id });
         });
 
-        setIsSharingScreen(false);
+        // Restaurar la visualización del video local a la cámara si está activa
+        if (localVideoRef.current && localStream) {
+            localVideoRef.current.srcObject = localStream;
+        }
 
     } else {
         // --- Lógica para INICIAR la compartición de pantalla ---
         try {
             const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-            screenShareStreamRef.current = screenStream;
+            setLocalScreenStream(screenStream); // Guarda el stream de pantalla en el estado
 
-            const screenVideoTrack = screenStream.getVideoTracks()[0];
-            const screenAudioTrack = screenStream.getAudioTracks()[0];
-
+            // Muestra la pantalla compartida localmente en tu propio video preview
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = screenStream;
             }
 
-            Object.values(peerConnectionsRef.current).forEach(pc => {
-                const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc);
-                if (!peerId) return;
-
-                // Añade los tracks y guarda los senders
-                const videoSender = pc.addTrack(screenVideoTrack, screenStream);
-                console.log(`[ScreenShare Start] Added NEW screen video track to PC for ${peerId}.`);
-                negotiationNeeded = true; // Se necesita renegociación
-
-                let audioSender: RTCRtpSender | undefined;
-                if (screenAudioTrack) {
-                    audioSender = pc.addTrack(screenAudioTrack, screenStream);
-                    console.log(`[ScreenShare Start] Added NEW screen audio track to PC for ${peerId}.`);
-                    // Aquí negotiationNeeded ya será true si se añadió el video, pero lo mantenemos por claridad
-                    negotiationNeeded = true; 
-                }
-
-                screenShareSendersRef.current[peerId] = {
-                    video: videoSender,
-                    audio: audioSender
-                };
-            });
-
-            screenVideoTrack.onended = () => {
+            // Cuando el usuario detiene la compartición a través del control del navegador
+            screenStream.getVideoTracks()[0].onended = () => {
                 console.log("[ScreenShare] Screen share ended by user (browser control).");
-                toggleScreenShare(); // Llama a la misma función para detener
+                // Resetear el estado y notificar a los demás que se detuvo la compartición
+                if (localScreenStream) { // Asegurarse de que el stream no sea nulo al detener
+                    localScreenStream.getTracks().forEach(track => track.stop());
+                }
+                setLocalScreenStream(null);
+                setIsSharingScreen(false);
+                Object.keys(peerConnectionsRef.current).forEach(peerId => {
+                    sendSignal(peerId, { type: 'screenShareStatus', isSharing: false, from: currentUser?.id });
+                });
+                if (localVideoRef.current && localStream) {
+                    localVideoRef.current.srcObject = localStream;
+                }
             };
+            
+            setIsSharingScreen(true); // Actualiza el estado de compartición
 
+            // Notificar a todos los demás participantes que hemos empezado a compartir
             Object.keys(peerConnectionsRef.current).forEach(peerId => {
                 sendSignal(peerId, { type: 'screenShareStatus', isSharing: true, from: currentUser?.id });
             });
 
-            setIsSharingScreen(true);
-
         } catch (error) {
             console.error("Error sharing screen:", error);
+            // Si el usuario deniega el permiso (NotAllowedError), asegúrate de que el UI se actualice correctamente
+            if (error instanceof DOMException && error.name === "NotAllowedError") {
+                console.warn("Compartición de pantalla denegada por el usuario.");
+                // Puedes mostrar un mensaje al usuario aquí, por ejemplo:
+                // alert("Permiso para compartir pantalla denegado. Por favor, otórgalo en la configuración del navegador.");
+            } else {
+                // Otros errores inesperados
+                console.error("Un error inesperado ocurrió al intentar compartir la pantalla:", error);
+            }
             setIsSharingScreen(false);
+            setLocalScreenStream(null); // Asegúrate de limpiar si falla
+            // Si falla, restaurar la visualización a la cámara
             if (localVideoRef.current && localStream) {
                 localVideoRef.current.srcObject = localStream;
             }
         }
-    }
-
-    // *** FUERZA LA RENEGOCIACIÓN SI SE REALIZARON CAMBIOS EN LOS TRACKS ***
-    // Esto asegura que la nueva oferta/respuesta se envíe si un track fue añadido/removido.
-    if (negotiationNeeded) {
-        Object.keys(peerConnectionsRef.current).forEach(async (peerId) => {
-            const pc = peerConnectionsRef.current[peerId];
-            if (!pc || pc.signalingState === 'closed') return;
-
-            try {
-                // Forzar una nueva oferta solo si somos el "iniciador" lógico para este peer,
-                // o si el signalingState lo permite sin causar un ICE restart innecesario.
-                // Sin embargo, si hemos añadido/removido tracks, `onnegotiationneeded` debería dispararse.
-                // A veces, forzarlo explícitamente puede ayudar si el evento no se propaga por alguna razón.
-                // Una forma más segura es esperar a que onnegotiationneeded se dispare naturalmente.
-                // Si esto no funciona, podemos considerar una señal personalizada de "renegotiation-request".
-
-                // Por ahora, confiamos en que addTrack/removeTrack dispara onnegotiationneeded.
-                // La clave es que la lógica de onnegotiationneeded sea robusta.
-                console.log(`[ScreenShare Negotiation] Changes made, expecting onnegotiationneeded for ${peerId}.`);
-                // Si onnegotiationneeded no se dispara, o no hace su trabajo, puedes intentar esto:
-                // if (pc.signalingState === 'stable') {
-                //     const offer = await pc.createOffer();
-                //     await pc.setLocalDescription(offer);
-                //     sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
-                //     console.log(`[ScreenShare Negotiation] Forced offer sent to ${peerId}.`);
-                // }
-            } catch (e) {
-                console.error(`[ScreenShare Negotiation Error] Error forcing negotiation for ${peerId}:`, e);
-            }
-        });
     }
 
 }, [isSharingScreen, localStream, sendSignal, currentUser, peerConnectionsRef]); // Añadir peerConnectionsRef
