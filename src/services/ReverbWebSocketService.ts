@@ -595,7 +595,7 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
   public disconnect() {
     //console.log("ReverbWebSocketService: Disconnecting all channels and global WebSocket.");
     if (this.globalWs) {
-      this.globalWs.close(1000, "Client initiated disconnect");
+      this.globalWs.close(5000, "Client initiated disconnect");
       this.globalWs = null;
       this.globalSocketId = null;
     }
