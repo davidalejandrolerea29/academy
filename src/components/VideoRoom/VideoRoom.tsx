@@ -75,6 +75,8 @@ const [participants, setParticipants] = useState<Record<string, {
     cameraStream: MediaStream | null, // Para la cámara principal
     screenStream: MediaStream | null,  // Para la pantalla compartida
     isSharingRemoteScreen: boolean;
+    isDisconnectedByNetwork?: boolean; // True si está desconectado por red
+    reconnectionTimeoutId?: NodeJS.Timeout | null; 
     // Opcional: una lista de todos los streams si no sabes qué esperar
     // streams: MediaStream[]
 }>>({});
@@ -134,10 +136,6 @@ const [participants, setParticipants] = useState<Record<string, {
     console.log("[CLEANUP GLOBAL] onCallEnded invocado. Limpieza completa.");
   }, [localStream, onCallEnded]); // Asegúrate de incluir las dependencias correctas
    // --- Funciones de Drag and Drop (mantienen la lógica que ya te di) ---
-const handleEndCall = useCallback(() => {
-    console.log("¡Botón de colgar presionado! Iniciando limpieza de la llamada.");
-    cleanupWebRTCAndReverb(); // Llama a la función de limpieza global
-  }, [cleanupWebRTCAndReverb]);
 
   useEffect(() => {
     // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.
@@ -434,63 +432,75 @@ const startDragging = useCallback((clientX: number, clientY: number) => {
       console.error(`[SIGNAL OUT ERROR] Error al enviar señal ${signalData.type} de ${currentUser?.id} a ${toPeerId}:`, error);
     }
   }, [currentUser, channelRef]); // Asegúrate de que currentUser esté en las dependencias si lo usas
-const handlePeerDisconnected = useCallback((peerId: string) => {
-    console.log(`[PC] Peer ${peerId} se ha desconectado. Limpiando recursos.`);
+const handlePeerDisconnected = useCallback((
+    peerId: string,
+    isIntentionalDisconnect: boolean // true si es una desconexión que debe eliminar al peer
+) => {
+    console.log(`[PC] Peer ${peerId} se ha desconectado. Intencional/Final: ${isIntentionalDisconnect}. Limpiando recursos.`);
 
-    // Limpiar la PeerConnection específica
-    if (peerConnectionsRef.current[peerId]) {
-        if (peerConnectionsRef.current[peerId].connectionState !== 'closed') {
-            peerConnectionsRef.current[peerId].close();
-            console.log(`[PC] PeerConnection con ${peerId} cerrada.`);
-        }
-        delete peerConnectionsRef.current[peerId];
-    }
-
-    // Limpiar la cola de ICE candidates para este peer
-    if (iceCandidatesQueueRef.current[peerId]) {
-        delete iceCandidatesQueueRef.current[peerId];
-        console.log(`[ICE] Cola de candidatos limpia para ${peerId}.`);
-    }
-
-    // Eliminar el participante de la UI
     setParticipants(prev => {
         const newParticipants = { ...prev };
-        delete newParticipants[peerId];
-        return newParticipants;
-    });
+        const participant = newParticipants[peerId];
 
-    // --- Limpieza específica si el peer que se desconectó soy YO MISMO ---
-    if (String(peerId) === String(currentUser?.id)) {
-        console.log(`[REVERB CLEANUP] Yo (${peerId}) me he desconectado. Realizando limpieza completa para reconexión.`);
-        // Asegurarse de que el canal de Reverb se abandona y se limpia la referencia
-        if (channelRef.current) {
-            // channelRef.current.leave(); // Esto ya lo hace el return del useEffect si el componente se desmonta.
-            // Si el user hace "salir" sin desmontar el componente, DEBERÍAS LLAMAR channelRef.current.leave() AQUI
-            // o en una función de "salir de sala" que invoca handlePeerDisconnected.
-            channelRef.current = null; // Esto es crucial para que useEffect intente conectar de nuevo
+        // Limpiar cualquier temporizador de reconexión existente para este peer
+        if (participant?.reconnectionTimeoutId) {
+            clearTimeout(participant.reconnectionTimeoutId);
+            participant.reconnectionTimeoutId = null;
         }
-        setHasJoinedChannel(false); // Reinicia este estado para que el useEffect reconsidere unirse
 
-        // Detener y limpiar los streams locales del propio usuario
-        stopLocalStream(); // Asegúrate de que esta función realmente detiene y limpia localStream
-        stopScreenShare(); // Asegúrate de que esta función realmente detiene y limpia screenShareStreamRef
+        // Siempre que se llame a esta función, significa que el participante debe ser ELIMINADO de la UI.
+        // La distinción 'isIntentionalDisconnect' puede ser para logs o para acciones adicionales si PEERID SOY YO.
+        delete newParticipants[peerId]; // Eliminar el participante de la UI
+        console.log(`[PC] Participante ${peerId} ELIMINADO DE LA UI.`);
 
-        // También limpia todas las demás PeerConnections si me estoy saliendo yo mismo.
-        // Esto es importante para un estado limpio si el usuario se reconecta completamente.
-        Object.values(peerConnectionsRef.current).forEach(pc => {
-            if (pc.connectionState !== 'closed') {
-                pc.close();
+        // Cerrar la PeerConnection asociada si existe y no está ya cerrada
+        if (peerConnectionsRef.current[peerId]) {
+            if (peerConnectionsRef.current[peerId].connectionState !== 'closed') {
+                peerConnectionsRef.current[peerId].close();
+                console.log(`[PC] PeerConnection con ${peerId} cerrada.`);
             }
-        });
-        peerConnectionsRef.current = {}; // Vuelve a inicializar el objeto de refs de PeerConnections
+            delete peerConnectionsRef.current[peerId];
+        }
+        if (iceCandidatesQueueRef.current[peerId]) {
+            delete iceCandidatesQueueRef.current[peerId];
+        }
 
-         // Esto puede ser útil si tu UI tiene un botón de "Unirse a la sala" de nuevo
-         // para reiniciar el proceso de obtención de medios.
-        // setLocalStream(null); 
+        // Lógica específica si el PEER QUE SE DESCONECTÓ SOY YO MISMO (y es definitivo, ej. botón colgar)
+        if (isIntentionalDisconnect && String(peerId) === String(currentUser?.id)) {
+            console.log(`[REVERB CLEANUP] Yo (${peerId}) he iniciado desconexión intencional. Realizando limpieza completa.`);
+            if (channelRef.current) {
+                channelRef.current.leave(); // Asegurarse de que Reverb se desuscriba
+                channelRef.current = null;
+            }
+            setHasJoinedChannel(false);
+            stopLocalStream();
+            stopScreenShare();
+            // Todas las PCs ya se cerraron en el bucle de arriba, si había varias.
+            peerConnectionsRef.current = {}; // Reiniciar el objeto de refs
+            // El setParticipants({}) para vaciar todo ya lo hace el `handleEndCall`
+            // o el `return newParticipants` que eliminó solo mi ID si yo era el último.
+        }
+
+        return newParticipants; // Retorna el estado actualizado con el participante eliminado
+    });
+}, [currentUser, stopLocalStream, stopScreenShare]); // Dependencias // Añade setParticipants a las dependencias
+
+const handleEndCall = useCallback(() => {
+    console.log("¡Botón de colgar presionado! Iniciando limpieza de la llamada.");
+    if (currentUser?.id) {
+        // Llama a handlePeerDisconnected para el propio usuario, indicando una desconexión intencional/final.
+        handlePeerDisconnected(currentUser.id.toString(), true);
+        // Y limpia el estado de participantes completamente para reflejar que YO YA NO ESTOY.
+        setParticipants({}); // Vacea la lista de participantes de mi UI.
+        setHasJoinedChannel(false); // Sale de la vista de llamada.
+        // Asegúrate de que tu componente padre maneje el `onCallEnded` para cambiar la vista.
+        onCallEnded(); 
+    } else {
+        console.warn("No se pudo colgar la llamada: currentUser no definido.");
     }
+}, [currentUser, handlePeerDisconnected, onCallEnded]);
 
-}, [currentUser, stopLocalStream, stopScreenShare, setParticipants]); // Añade setParticipants a las dependencias
-  useEffect(() => {
+useEffect(() => {
     // Itera sobre todas las PeerConnections activas
     Object.values(peerConnectionsRef.current).forEach(pc => {
       const currentSenders = pc.getSenders();
@@ -819,14 +829,61 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
     };
 
     // --- pc.onconnectionstatechange: Monitorear el estado de la conexión ---
-    pc.onconnectionstatechange = () => {
-        console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-            console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Calling handlePeerDisconnected.`);
-            // Solo llama a handlePeerDisconnected si la PC no ha sido cerrada explícitamente ya
-            // handlePeerDisconnected tiene lógica interna para verificar si ya está cerrada.
-            handlePeerDisconnected(peerId);
-        }
+   pc.onconnectionstatechange = () => {
+        const currentState = pc.connectionState;
+        console.log(`[PC State] PeerConnection con ${peerId} estado: ${currentState}`);
+
+        setParticipants(prev => {
+            const updatedParticipants = { ...prev };
+            const participant = updatedParticipants[peerId];
+
+            if (!participant) {
+                // Si el participante ya no existe en el estado (fue eliminado por otra razón), no hacemos nada.
+                console.warn(`[PC State] Participante ${peerId} no encontrado en el estado al cambiar de conexión.`);
+                return prev;
+            }
+
+            // Limpiar cualquier temporizador de reconexión existente para este peer
+            if (participant.reconnectionTimeoutId) {
+                clearTimeout(participant.reconnectionTimeoutId);
+                participant.reconnectionTimeoutId = null;
+            }
+
+            if (currentState === 'connected') {
+                // ¡CONEXIÓN EXITOSA!
+                // Si estaba marcado como desconectado por red, ahora se reconectó.
+                if (participant.isDisconnectedByNetwork) {
+                    console.log(`[PC] Peer ${peerId} se ha reconectado (estado: connected).`);
+                    participant.isDisconnectedByNetwork = false;
+                }
+                // Asegúrate de que el stream esté asignado y el video/audio habilitado si corresponde
+                // Esto ya debería manejarse en el ontrack o en la actualización del estado de props.
+            } else if (currentState === 'disconnected') {
+                // CONEXIÓN TEMPORALMENTE PERDIDA (microcorte)
+                console.warn(`[PC] Peer ${peerId} está en estado 'disconnected'. Marcando como desconectado por red.`);
+                participant.isDisconnectedByNetwork = true; // Marcar para que la UI lo refleje.
+
+                // Opcional: Podrías detener los tracks del stream local si este peerId soy yo,
+                // para ahorrar ancho de banda si la desconexión es larga.
+                // Pero para los demás peers, dejar el stream activo en el RemoteVideo
+                // y que solo se congele por la falta de data es mejor para la UX.
+
+                // Establecer un temporizador para limpiar y eliminar el participante si NO se reconecta
+                // en un tiempo prudencial (ej. 45 segundos).
+                participant.reconnectionTimeoutId = setTimeout(() => {
+                    console.error(`[PC RECONNECT TIMEOUT] Peer ${peerId} no se ha reconectado después de 45s. Limpiando definitivamente.`);
+                    // Llama a handlePeerDisconnected para forzar la eliminación final
+                    // Pasamos `true` porque, después de este tiempo, lo consideramos una desconexión definitiva.
+                    handlePeerDisconnected(peerId, true);
+                }, 45000); // Darle 45 segundos para que la red se recupere.
+            } else if (currentState === 'failed' || currentState === 'closed') {
+                // CONEXIÓN FALLIDA O CERRADA PERMANENTEMENTE
+                console.error(`[PC] Peer ${peerId} ha FALLADO o ha sido CERRADO. Eliminando permanentemente.`);
+                // Limpia inmediatamente, ya no esperamos reconexión automática.
+                handlePeerDisconnected(peerId, true); // Considerar como desconexión intencional/final.
+            }
+            return updatedParticipants;
+        });
     };
 
     // --- Otros logs de estado (descomentar para depuración detallada) ---
@@ -970,10 +1027,17 @@ useEffect(() => {
           setLoading(false);
           setHasJoinedChannel(false);
         });
+        // En tu useEffect principal, dentro de la suscripción al canal Reverb
         joinedChannel.leaving((member: any) => {
             console.log(`[REVERB] LEAVING event: User ${member.id} is leaving the room.`);
-            // No ignores aquí; deja que handlePeerDisconnected maneje la diferencia
-            handlePeerDisconnected(member.id.toString());
+            // Si el miembro que se va es EL PROPIO USUARIO, es redundante porque `handleEndCall` ya maneja la limpieza.
+            if (String(member.id) === String(currentUser?.id)) {
+                console.log(`[REVERB LEAVING] Evento 'leaving' para mí mismo (${member.id}). Ya lo maneja handleEndCall.`);
+                // Asegúrate de que `handleEndCall` o el `useEffect` de limpieza final manejen todo.
+                return; 
+            }
+            // Para cualquier OTRO peer que abandone el canal de Reverb, lo consideramos una desconexión definitiva.
+            handlePeerDisconnected(member.id.toString(), true); 
         });
 
         // --- Listener para señales WebRTC (Ofertas, Respuestas, Candidatos ICE) ---
