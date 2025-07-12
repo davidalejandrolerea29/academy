@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { createReverbWebSocketService, EchoChannel, ReverbWebSocketService } from '../../services/ReverbWebSocketService';
+import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 // import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase'; // Asumo que esto es relevante para otras partes de tu app
@@ -19,7 +19,6 @@ interface VideoRoomProps {
    isCallMinimized: boolean; // Pass this from context
    toggleMinimizeCall: () => void; // Pass this from context
    handleCallCleanup: () => void; // Pass this from context
-   reverbService: ReverbWebSocketService | null; 
 }
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
@@ -32,8 +31,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
    isTeacher, // Destructure new prop
    isCallMinimized, // Destructure
    toggleMinimizeCall, // Destructure
-   handleCallCleanup, // Destructure
-   reverbService
+   handleCallCleanup // Destructure
  }) => {
   const API_URL = import.meta.env.VITE_API_URL;
   // const navigate = useNavigate();
@@ -86,12 +84,7 @@ const [participants, setParticipants] = useState<Record<string, {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
 
-useEffect(() => {
-    if (currentUser?.token && !reverbServiceRef.current) {
-        reverbServiceRef.current = createReverbWebSocketService(currentUser.token);
-        console.log("VideoRoom: ReverbWebSocketService inicializado con token de usuario.");
-    }
-}, [currentUser?.token]);
+
   const cleanupWebRTCAndReverb = useCallback(() => {
     console.log("[CLEANUP GLOBAL] Iniciando limpieza completa de WebRTC y Reverb.");
 
@@ -934,43 +927,11 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
         }
     };
 }, [localStream]); // ¡IMPORTANTE! Añade localStream a las dependencias.
-const setupPeerConnectionAndMaybeOffer = async (peerId: string) => {
-    const localUserId = parseInt(currentUser.id.toString());
-    const remotePeerIdNum = parseInt(peerId);
 
-    const pc = getOrCreatePeerConnection(peerId);
-
-    // Añadir tracks locales si no están ya añadidos
-    if (localStream) {
-        localStream.getTracks().forEach(track => {
-            const hasSender = pc.getSenders().some(sender => sender.track === track);
-            if (!hasSender) {
-                pc.addTrack(track, localStream);
-                console.log(`[PC] Añadido track ${track.kind} de localStream a PC para ${peerId}`);
-            }
-        });
-    } else {
-        console.warn(`[PC] localStream es NULO al configurar PC para ${peerId}. Los tracks no se añadirán.`);
-    }
-
-    // *** Lógica para determinar quién inicia la oferta ***
-    if (localUserId < remotePeerIdNum) {
-        console.log(`[ON_NEGOTIATION - OFERTA INICIADA] ${currentUser.id} (menor ID) creando OFERTA para ${peerId}.`);
-        try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
-            console.log(`[PC Event] Oferta enviada a ${peerId}.`);
-        } catch (error) {
-            console.error(`Error al crear/enviar oferta a ${peerId}:`, error);
-        }
-    } else {
-        console.log(`[ON_NEGOTIATION] ${currentUser.id} (mayor ID) ESPERANDO OFERTA de ${peerId}.`);
-    }
-};
   // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB Y WEB RTC ---
 useEffect(() => {
-    if (!roomId || !currentUser || !localStream || !reverbServiceRef.current) {
+    if (!roomId || !currentUser || !localStream) {
+        //console.log("Faltan roomId, currentUser o localStream para unirse al canal. Reintentando...");
         return;
     }
     // if (channelRef.current) {
@@ -989,29 +950,57 @@ useEffect(() => {
         setHasJoinedChannel(true);
         // --- joinedChannel.here: Para miembros que ya están en la sala cuando te unes ---
         joinedChannel.here(async (members: { id: string; name: string; user_info?: any }[]) => {
-    const initialParticipants: Record<string, { id: string, name: string, videoEnabled: boolean, micEnabled: boolean, stream: MediaStream | null }> = {};
-    for (const member of members) {
-        if (String(member.id) !== String(currentUser.id)) {
-            initialParticipants[String(member.id)] = { /* ... */ };
-            await setupPeerConnectionAndMaybeOffer(member.id); // Llama a la función aquí
-        }
-    }
-    setParticipants(initialParticipants);
-});
+          //console.log("Aquí estamos: Sincronizando participantes iniciales:", members);
+          const initialParticipants: Record<string, { id: string, name: string, videoEnabled: boolean, micEnabled: boolean, stream: MediaStream | null }> = {};
+          const localUserId = parseInt(currentUser.id.toString());
 
-// Dentro de joinedChannel.joining:
-joinedChannel.joining(async (member: { id: string; name: string; user_info?: any }) => {
-    if (!member || typeof member.id === 'undefined') { /* ... */ return; }
-    const memberId = String(member.id);
-    if (memberId === String(currentUser.id)) return;
+          for (const member of members) {
+            if (String(member.id) !== String(currentUser.id)) {
+              initialParticipants[String(member.id)] = {
+                id: String(member.id),
+                name: member.name || member.user_info?.name || `Usuario ${member.id}`,
+                videoEnabled: true,
+                micEnabled: true,
+                stream: null
+              };
 
-    setParticipants(prev => ({
-        ...prev,
-        [memberId]: { /* ... */ }
-    }));
+              // const remoteMemberId = parseInt(String(member.id));
+              // Determina si este cliente debe iniciar la oferta
+              // const shouldInitiate = localUserId < remoteMemberId;
 
-    await setupPeerConnectionAndMaybeOffer(member.id); // Llama a la función aquí
-});
+              // Llama a la nueva función para iniciar la llamada con este peer
+              // await initiateCallForPeer(String(member.id), shouldInitiate);
+              getOrCreatePeerConnection(member.id);
+            }
+          }
+          setParticipants(initialParticipants);
+        });
+
+        // --- joinedChannel.joining: Para miembros que se unen DESPUÉS de ti ---
+        joinedChannel.joining(async (member: { id: string; name: string; user_info?: any }) => {
+          console.log("Un nuevo participante se ha unido:", member); 
+            //console.log("Un nuevo participante se ha unido:", member);
+            const memberId = String(member.id);
+            if (memberId === String(currentUser.id)) return;
+
+            setParticipants(prev => {
+                const updatedParticipants = {
+                    ...prev,
+                    [memberId]: {
+                        id: memberId,
+                        name: member.name || member.user_info?.name || `Usuario ${memberId}`,
+                        videoEnabled: true,
+                        micEnabled: true,
+                        stream: null
+                    }
+                };
+                return updatedParticipants;
+            });
+
+            getOrCreatePeerConnection(member.id);
+
+        });
+
 
      
         joinedChannel.subscribed(() => {
@@ -1027,21 +1016,15 @@ joinedChannel.joining(async (member: { id: string; name: string; user_info?: any
         });
         // En tu useEffect principal, dentro de la suscripción al canal Reverb
         joinedChannel.leaving((member: any) => {
-            // *** AÑADE ESTA COMPROBACIÓN AQUÍ ***
-            if (!member || typeof member.id === 'undefined') {
-                console.warn(`[REVERB] LEAVING event: Member object is invalid or missing ID. Skipping.`);
-                return; // Si 'member' es nulo/indefinido o no tiene 'id', salimos
-            }
-
             console.log(`[REVERB] LEAVING event: User ${member.id} is leaving the room.`);
             // Si el miembro que se va es EL PROPIO USUARIO, es redundante porque `handleEndCall` ya maneja la limpieza.
             if (String(member.id) === String(currentUser?.id)) {
                 console.log(`[REVERB LEAVING] Evento 'leaving' para mí mismo (${member.id}). Ya lo maneja handleEndCall.`);
-                return;
+                return; 
             }
             // Para cualquier OTRO peer que abandone el canal de Reverb, lo consideramos una desconexión definitiva.
             // Llama a handlePeerDisconnected con `true` para que lo elimine de la UI sin esperar.
-            handlePeerDisconnected(member.id.toString(), true);
+            handlePeerDisconnected(member.id.toString(), true); 
         });
 
         // --- Listener para señales WebRTC (Ofertas, Respuestas, Candidatos ICE) ---
@@ -1058,89 +1041,75 @@ joinedChannel.joining(async (member: { id: string; name: string; user_info?: any
           try {
               switch (data.type) {
                   // En tu VideoRoom.tsx, dentro de joinedChannel.listenForWhisper('Signal')
+                  case 'offer':
+                      //console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
+                      //console.log(`[SDP Offer Recv DEBUG] localStream disponible para ${from}?:`, !!localStream);
+                      if (localStream) {
+                          //console.log(`[SDP Offer Recv DEBUG] localStream tracks para ${from}:`, localStream.getTracks().map(t => t.kind));
+                          localStream.getTracks().forEach(track => {
+                              const hasSender = pc.getSenders().some(sender => sender.track === track);
+                              //console.log(`[SDP Offer Recv DEBUG] Track ${track.kind} (ID: ${track.id}) ya tiene sender en PC de ${from}?: ${hasSender}`);
+                              if (!hasSender) {
+                                  pc.addTrack(track, localStream);
+                                  //console.log(`[SDP Offer Recv] ✅ Añadido track local ${track.kind} a PC de ${from}`);
+                              } else {
+                                  //console.log(`[SDP Offer Recv] Track ${track.kind} ya EXISTE en PC de ${from}. No se añade de nuevo.`);
+                              }
+                          });
+                      } else {
+                          console.warn(`[SDP Offer Recv] localStream es NULO al recibir oferta de ${from}. No se pueden añadir tracks locales.`);
+                      }
+                      await pc.setRemoteDescription(new RTCSessionDescription({
+                          type: data.sdpType,
+                          sdp: data.sdp
+                      }));
 
-case 'offer':
-    console.log(`[SDP Offer] Recibida oferta de ${from}. Estado actual de PC (${from}): signalingState=${pc.signalingState}`);
+                      // --- Lógica CONSOLIDADA para procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
+                      const peerCandidates = iceCandidatesQueueRef.current[from]; // Usa 'from' consistentemente
+                      if (peerCandidates && peerCandidates.length > 0) {
+                          //console.log(`[ICE Candidate Queue] Procesando ${peerCandidates.length} candidatos en cola para ${from}.`);
+                          for (const candidate of peerCandidates) {
+                              try {
+                                  await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                                  //console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
+                              } catch (e) {
+                                  console.error(`[ICE Candidate Queue] Error al añadir candidato en cola para ${from}:`, e, candidate);
+                              }
+                          }
+                          delete iceCandidatesQueueRef.current[from]; // Limpia la cola para este peer
+                      }
 
-    // Si ya tenemos una descripción remota con el mismo SDP, es una oferta duplicada, la ignoramos.
-    if (pc.remoteDescription && pc.remoteDescription.type === 'offer' && pc.remoteDescription.sdp === data.sdp) {
-        console.warn(`[SDP Offer] Oferta duplicada de ${from}. Ignorando.`);
-        break;
-    }
 
-    // Añadir tracks locales antes de setRemoteDescription para que el answer los incluya
-    if (localStream) {
-        localStream.getTracks().forEach(track => {
-            const hasSender = pc.getSenders().some(sender => sender.track === track);
-            if (!hasSender) {
-                pc.addTrack(track, localStream);
-                console.log(`[SDP Offer Recv] ✅ Añadido track local ${track.kind} a PC de ${from}`);
-            }
-        });
-    } else {
-        console.warn(`[SDP Offer Recv] localStream es NULO al recibir oferta de ${from}. No se pueden añadir tracks locales.`);
-    }
+                      //console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
+                      const answer = await pc.createAnswer();
+                      await pc.setLocalDescription(answer);
+                      sendSignal(from, { type: 'answer', sdp: answer.sdp, sdpType: answer.type });
+                      break;
 
-    // Antes de setRemoteDescription, asegúrate de que la PC pueda aceptar una oferta.
-    // Si el signalingState es 'have-local-offer', significa que tú ya enviaste una oferta (colisión).
-    // En este caso, el "callee" (el que recibió la oferta) debe hacer un "rollback" y aplicar la oferta recibida.
-    if (pc.signalingState === 'have-local-offer') {
-        console.log(`[SDP Offer] Colisión de ofertas con ${from}. Realizando rollback.`);
-        // Rollback: El peer que recibe la oferta de un peer con ID menor, debe hacer un rollback.
-        // O simplemente el que tiene el ID más alto siempre hace el rollback si recibe una oferta.
-        // Simplificando: si ya hiciste una oferta y recibes una, cancela la tuya.
-        await pc.setLocalDescription(new RTCSessionDescription({ type: 'rollback' })); // Esto es conceptual, no existe en WebRTC directamente.
-        // La forma correcta de "rollback" es simplemente setRemoteDescription(offer) y luego createAnswer()
-        // porque WebRTC maneja la re-negociación. Sin embargo, para evitar el error de 'stable'
-        // en setLocalDescription(answer) se debe asegurar que el estado sea 'have-remote-offer'.
-        // La estrategia de IDs más bajos/altos resuelve esto de raíz al evitar la colisión.
-    }
+                  case 'answer':
+                      //console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
+                      await pc.setRemoteDescription(new RTCSessionDescription({
+                          type: data.sdpType,
+                          sdp: data.sdp
+                      }));
+                      //console.log(`[PC State - Signaling] PeerConnection con ${from} signaling: ${pc.signalingState}`); // <-- NUEVO LOG
 
-    // Si la colisión se ha evitado con la lógica de IDs, solo necesitas esto:
-    await pc.setRemoteDescription(new RTCSessionDescription({
-        type: data.sdpType, // 'offer'
-        sdp: data.sdp
-    }));
-    console.log(`[SDP Offer] Establecida RemoteDescription (offer) para ${from}. Nuevo signalingState: ${pc.signalingState}`);
+                      // --- Lógica CONSOLIDADA para procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
+                      const answerPeerCandidates = iceCandidatesQueueRef.current[from]; // Usa 'from' consistentemente
+                      if (answerPeerCandidates && answerPeerCandidates.length > 0) {
+                          //console.log(`[ICE Candidate Queue] Procesando ${answerPeerCandidates.length} candidatos en cola para ${from}.`);
+                          for (const candidate of answerPeerCandidates) {
+                              try {
+                                  await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                                  //console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
+                              } catch (e) {
+                                  console.error(`[ICE Candidate Queue] Error al añadir candidato en cola para ${from}:`, e, candidate);
+                              }
+                          }
+                          delete iceCandidatesQueueRef.current[from]; // Limpia la cola para este peer
+                      }
+                      break;
 
-    // Procesa candidatos ICE (mismo código)
-    const peerCandidates = iceCandidatesQueueRef.current[from];
-    if (peerCandidates && peerCandidates.length > 0) { /* ... */ }
-
-    // Crear y enviar ANSWER
-    console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    sendSignal(from, { type: 'answer', sdp: answer.sdp, sdpType: answer.type });
-    console.log(`[SDP Answer Sent] Enviada Answer a ${from}. Nuevo signalingState: ${pc.signalingState}`);
-    break;
-
-case 'answer':
-    console.log(`[SDP Answer] Recibida respuesta de ${from}. Estado actual de PC (${from}): signalingState=${pc.signalingState}`);
-
-    // Si ya estamos `stable` o ya tenemos esta respuesta, es un duplicado/error.
-    if (pc.signalingState === 'stable' || (pc.remoteDescription && pc.remoteDescription.type === 'answer' && pc.remoteDescription.sdp === data.sdp)) {
-        console.warn(`[SDP Answer] Respuesta duplicada o en estado 'stable' de ${from}. Ignorando.`);
-        break;
-    }
-
-    // Solo aplicamos la respuesta si estamos en el estado donde esperamos una respuesta
-    // (es decir, después de haber enviado una oferta local y aplicado nuestra propia localDescription).
-    if (pc.signalingState !== 'have-local-offer') {
-        console.warn(`[SDP Answer] Recibida respuesta de ${from} en estado inesperado (${pc.signalingState}). Ignorando.`);
-        break;
-    }
-
-    await pc.setRemoteDescription(new RTCSessionDescription({
-        type: data.sdpType, // 'answer'
-        sdp: data.sdp
-    }));
-    console.log(`[SDP Answer] Establecida RemoteDescription (answer) para ${from}. Nuevo signalingState: ${pc.signalingState}`);
-
-    // Procesa candidatos ICE (mismo código)
-    const answerPeerCandidates = iceCandidatesQueueRef.current[from];
-    if (answerPeerCandidates && answerPeerCandidates.length > 0) { /* ... */ }
-    break;
                     // Dentro de joinedChannel.listenForWhisper('Signal')
                     // Dentro de joinedChannel.listenForWhisper('Signal')
                   case 'screenShareStatus':
@@ -1260,7 +1229,6 @@ case 'answer':
     currentUser,
     localStream,
     sendSignal,
-    reverbService,
     getOrCreatePeerConnection,
     stopLocalStream, // Añadir como dependencia para que el linter no se queje
     stopScreenShare  // Añadir como dependencia para que el linter no se queje
