@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
+import { createReverbWebSocketService, EchoChannel, ReverbWebSocketService } from '../../services/ReverbWebSocketService';
 // import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase'; // Asumo que esto es relevante para otras partes de tu app
@@ -19,6 +19,7 @@ interface VideoRoomProps {
    isCallMinimized: boolean; // Pass this from context
    toggleMinimizeCall: () => void; // Pass this from context
    handleCallCleanup: () => void; // Pass this from context
+   reverbService: ReverbWebSocketService | null; 
 }
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
@@ -31,7 +32,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
    isTeacher, // Destructure new prop
    isCallMinimized, // Destructure
    toggleMinimizeCall, // Destructure
-   handleCallCleanup // Destructure
+   handleCallCleanup, // Destructure
+   reverbService
  }) => {
   const API_URL = import.meta.env.VITE_API_URL;
   // const navigate = useNavigate();
@@ -84,7 +86,12 @@ const [participants, setParticipants] = useState<Record<string, {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
 
-
+useEffect(() => {
+    if (currentUser?.token && !reverbServiceRef.current) {
+        reverbServiceRef.current = createReverbWebSocketService(currentUser.token);
+        console.log("VideoRoom: ReverbWebSocketService inicializado con token de usuario.");
+    }
+}, [currentUser?.token]);
   const cleanupWebRTCAndReverb = useCallback(() => {
     console.log("[CLEANUP GLOBAL] Iniciando limpieza completa de WebRTC y Reverb.");
 
@@ -930,8 +937,7 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
 
   // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB Y WEB RTC ---
 useEffect(() => {
-    if (!roomId || !currentUser || !localStream) {
-        //console.log("Faltan roomId, currentUser o localStream para unirse al canal. Reintentando...");
+    if (!roomId || !currentUser || !localStream || !reverbServiceRef.current) {
         return;
     }
     // if (channelRef.current) {
@@ -1016,15 +1022,21 @@ useEffect(() => {
         });
         // En tu useEffect principal, dentro de la suscripción al canal Reverb
         joinedChannel.leaving((member: any) => {
+            // *** AÑADE ESTA COMPROBACIÓN AQUÍ ***
+            if (!member || typeof member.id === 'undefined') {
+                console.warn(`[REVERB] LEAVING event: Member object is invalid or missing ID. Skipping.`);
+                return; // Si 'member' es nulo/indefinido o no tiene 'id', salimos
+            }
+
             console.log(`[REVERB] LEAVING event: User ${member.id} is leaving the room.`);
             // Si el miembro que se va es EL PROPIO USUARIO, es redundante porque `handleEndCall` ya maneja la limpieza.
             if (String(member.id) === String(currentUser?.id)) {
                 console.log(`[REVERB LEAVING] Evento 'leaving' para mí mismo (${member.id}). Ya lo maneja handleEndCall.`);
-                return; 
+                return;
             }
             // Para cualquier OTRO peer que abandone el canal de Reverb, lo consideramos una desconexión definitiva.
             // Llama a handlePeerDisconnected con `true` para que lo elimine de la UI sin esperar.
-            handlePeerDisconnected(member.id.toString(), true); 
+            handlePeerDisconnected(member.id.toString(), true);
         });
 
         // --- Listener para señales WebRTC (Ofertas, Respuestas, Candidatos ICE) ---
@@ -1042,71 +1054,134 @@ useEffect(() => {
               switch (data.type) {
                   // En tu VideoRoom.tsx, dentro de joinedChannel.listenForWhisper('Signal')
                   case 'offer':
-                      //console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
-                      //console.log(`[SDP Offer Recv DEBUG] localStream disponible para ${from}?:`, !!localStream);
+                      console.log(`[SDP Offer] Recibida oferta de ${from}. Estado actual de PC (${from}): signalingState=${pc.signalingState}`);
+
+                      // *** MODIFICACIÓN CLAVE AQUÍ: LÓGICA DE RE-NEGOCIACIÓN / EVITAR ESTADO "stable" ***
+                      // Si ya tenemos una descripción remota, y el estado no es 'stable', o si es una nueva oferta,
+                      // debemos manejarlo. La más simple es verificar el signalingState.
+                      // Si la PC está en `stable` y recibimos una oferta, significa que es una NUEVA oferta (renegociación o duplicada).
+                      // Si la PC no está en `stable` (ej. 'have-local-offer'), significa que estamos en medio de un intercambio.
+                      // Para simplificar, si estamos 'stable' y nos mandan una oferta, es una nueva negociación.
+                      // Si no estamos 'stable', debemos asumir que es parte del intercambio actual.
+
+                      // Comprueba si la PC ya tiene una descripción remota del mismo tipo y el mismo SDP.
+                      // Esto previene que se re-aplique la misma oferta si llega duplicada.
+                      if (pc.remoteDescription && pc.remoteDescription.type === data.sdpType && pc.remoteDescription.sdp === data.sdp) {
+                          console.warn(`[SDP Offer] Oferta duplicada de ${from}. Ignorando.`);
+                          // Si ya procesamos esta oferta, pero aún estamos esperando la respuesta o el estado de señalización,
+                          // esto podría prevenir el error.
+                          // Podríamos también verificar pc.signalingState aquí para tomar una decisión más informada.
+                          if (pc.signalingState === 'stable') {
+                              // Si estamos 'stable' y recibimos una oferta duplicada, podríamos necesitar iniciar un 'rollback'
+                              // o simplemente ignorarla si ya está todo configurado. Por ahora, ignorar es seguro.
+                          }
+                          break; // Sale del switch
+                      }
+
+                      // Aquí es donde el estado 'stable' es problemático. Si la PC ya está `stable`, y recibimos una oferta,
+                      // significa que el otro lado está iniciando una renegociación (por ejemplo, añadió un track).
+                      // En este caso, simplemente aplicamos la nueva oferta.
+                      // Si la PC no está en `stable` (ej. 'have-local-offer'), debemos asegurarnos de que la oferta
+                      // que estamos a punto de aplicar coincida con lo que esperamos.
+
+                      // Si el estado es 'stable', y no es una oferta duplicada, significa una nueva oferta.
+                      // Si el estado es 'have-local-pranswer' o 'have-remote-pranswer', o 'have-local-offer'
+                      // es posible que tengamos que considerar un "rollback" o simplemente proceder si es el siguiente paso lógico.
+
+                      // Para evitar 'Called in wrong state: stable' en setRemoteDescription (cuando es una offer)
+                      // El error 'stable' en setRemoteDescription (offer) significa que ya tienes una oferta remota
+                      // o que la conexión ya se negoció.
+                      // Una estrategia común es ignorar ofertas si ya tienes una remota, a menos que el estado te lo permita.
+                      // Pero el error que estás viendo es en setLocalDescription (answer) y setRemoteDescription (answer).
+                      // Esto significa que ya se hizo la oferta/respuesta y la PC está `stable`.
+
+                      // Considera este patrón para setRemoteDescription (offer):
+                      if (pc.signalingState !== 'stable' && pc.remoteDescription && pc.remoteDescription.type === 'offer') {
+                          // Estamos en un estado transitorio y ya tenemos una oferta remota.
+                          // Podría ser una re-oferta o un error. Podríamos necesitar un rollback.
+                          // Pero para el caso más simple, asumamos que si llega una nueva oferta y no estamos `stable`,
+                          // la aplicamos.
+                          console.warn(`[SDP Offer] Recibida oferta de ${from} en estado no-stable (${pc.signalingState}). Aplicando...`);
+                      }
+
+                      // Tu lógica de añadir tracks locales. Asegúrate de que localStream NO sea nulo aquí.
                       if (localStream) {
-                          //console.log(`[SDP Offer Recv DEBUG] localStream tracks para ${from}:`, localStream.getTracks().map(t => t.kind));
                           localStream.getTracks().forEach(track => {
                               const hasSender = pc.getSenders().some(sender => sender.track === track);
-                              //console.log(`[SDP Offer Recv DEBUG] Track ${track.kind} (ID: ${track.id}) ya tiene sender en PC de ${from}?: ${hasSender}`);
                               if (!hasSender) {
                                   pc.addTrack(track, localStream);
-                                  //console.log(`[SDP Offer Recv] ✅ Añadido track local ${track.kind} a PC de ${from}`);
-                              } else {
-                                  //console.log(`[SDP Offer Recv] Track ${track.kind} ya EXISTE en PC de ${from}. No se añade de nuevo.`);
+                                  console.log(`[SDP Offer Recv] ✅ Añadido track local ${track.kind} a PC de ${from}`);
                               }
                           });
                       } else {
                           console.warn(`[SDP Offer Recv] localStream es NULO al recibir oferta de ${from}. No se pueden añadir tracks locales.`);
+                          // Considera si debes rechazar la oferta si no tienes el stream local
+                          // o al menos loguear esto como un error crítico.
                       }
+
                       await pc.setRemoteDescription(new RTCSessionDescription({
-                          type: data.sdpType,
+                          type: data.sdpType, // 'offer'
                           sdp: data.sdp
                       }));
+                      console.log(`[SDP Offer] Establecida RemoteDescription (offer) para ${from}. Nuevo signalingState: ${pc.signalingState}`);
 
-                      // --- Lógica CONSOLIDADA para procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
-                      const peerCandidates = iceCandidatesQueueRef.current[from]; // Usa 'from' consistentemente
+
+                      // Procesa candidatos ICE
+                      const peerCandidates = iceCandidatesQueueRef.current[from];
                       if (peerCandidates && peerCandidates.length > 0) {
-                          //console.log(`[ICE Candidate Queue] Procesando ${peerCandidates.length} candidatos en cola para ${from}.`);
+                          console.log(`[ICE Candidate Queue] Procesando ${peerCandidates.length} candidatos en cola para ${from}.`);
                           for (const candidate of peerCandidates) {
                               try {
                                   await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                                  //console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
                               } catch (e) {
                                   console.error(`[ICE Candidate Queue] Error al añadir candidato en cola para ${from}:`, e, candidate);
                               }
                           }
-                          delete iceCandidatesQueueRef.current[from]; // Limpia la cola para este peer
+                          delete iceCandidatesQueueRef.current[from];
                       }
 
-
-                      //console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
+                      // Crear y enviar ANSWER
+                      console.log(`[SDP Offer] Creando y enviando ANSWER a ${from}.`);
                       const answer = await pc.createAnswer();
-                      await pc.setLocalDescription(answer);
+                      await pc.setLocalDescription(answer); // <-- Este es el que da el error 'stable'
                       sendSignal(from, { type: 'answer', sdp: answer.sdp, sdpType: answer.type });
+                      console.log(`[SDP Answer Sent] Enviada Answer a ${from}. Nuevo signalingState: ${pc.signalingState}`);
                       break;
 
                   case 'answer':
-                      //console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
+                      console.log(`[SDP Answer] Recibida respuesta de ${from}. Estado actual de PC (${from}): signalingState=${pc.signalingState}`);
+
+                      // *** MODIFICACIÓN CLAVE AQUÍ: EVITAR ESTADO "stable" al recibir respuesta ***
+                      // Si ya estamos `stable` y recibimos una respuesta, es un error o duplicado.
+                      if (pc.signalingState === 'stable' || (pc.remoteDescription && pc.remoteDescription.type === 'answer' && pc.remoteDescription.sdp === data.sdp)) {
+                          console.warn(`[SDP Answer] Respuesta duplicada o en estado 'stable' de ${from}. Ignorando.`);
+                          break; // Sale del switch
+                      }
+                      // Si el signalingState es 'have-local-offer', entonces podemos aplicar la respuesta
+                      if (pc.signalingState !== 'have-local-offer') {
+                          console.warn(`[SDP Answer] Recibida respuesta de ${from} en estado inesperado (${pc.signalingState}). Ignorando.`);
+                          // Puedes considerar un rollback o re-iniciar si esto ocurre con frecuencia
+                          break;
+                      }
+
                       await pc.setRemoteDescription(new RTCSessionDescription({
-                          type: data.sdpType,
+                          type: data.sdpType, // 'answer'
                           sdp: data.sdp
                       }));
-                      //console.log(`[PC State - Signaling] PeerConnection con ${from} signaling: ${pc.signalingState}`); // <-- NUEVO LOG
+                      console.log(`[SDP Answer] Establecida RemoteDescription (answer) para ${from}. Nuevo signalingState: ${pc.signalingState}`);
 
-                      // --- Lógica CONSOLIDADA para procesar candidatos ICE en cola DESPUÉS de setRemoteDescription ---
-                      const answerPeerCandidates = iceCandidatesQueueRef.current[from]; // Usa 'from' consistentemente
+                      // Procesa candidatos ICE
+                      const answerPeerCandidates = iceCandidatesQueueRef.current[from];
                       if (answerPeerCandidates && answerPeerCandidates.length > 0) {
-                          //console.log(`[ICE Candidate Queue] Procesando ${answerPeerCandidates.length} candidatos en cola para ${from}.`);
+                          console.log(`[ICE Candidate Queue] Procesando ${answerPeerCandidates.length} candidatos en cola para ${from}.`);
                           for (const candidate of answerPeerCandidates) {
                               try {
                                   await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                                  //console.log(`[ICE Candidate Queue] Añadido candidato en cola para ${from}:`, candidate);
                               } catch (e) {
                                   console.error(`[ICE Candidate Queue] Error al añadir candidato en cola para ${from}:`, e, candidate);
                               }
                           }
-                          delete iceCandidatesQueueRef.current[from]; // Limpia la cola para este peer
+                          delete iceCandidatesQueueRef.current[from];
                       }
                       break;
 
@@ -1229,6 +1304,7 @@ useEffect(() => {
     currentUser,
     localStream,
     sendSignal,
+    reverbService,
     getOrCreatePeerConnection,
     stopLocalStream, // Añadir como dependencia para que el linter no se queje
     stopScreenShare  // Añadir como dependencia para que el linter no se queje
