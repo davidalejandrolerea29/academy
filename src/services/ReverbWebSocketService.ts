@@ -62,7 +62,11 @@ export class ReverbWebSocketService {
   private baseReconnectInterval = 1000; // 1 segundo
   private connectionPromise: Promise<string> | null = null; // Para evitar múltiples intentos de conexión
   private activeChannelNames: Map<string, { isPresence: boolean, lastProcessedMessageId?: number }> = new Map();
-
+ // --- NUEVAS PROPIEDADES PARA EL PING/PONG ---
+  private pingIntervalId: NodeJS.Timeout | null = null;
+  // Intervalo de ping: Reverb (basado en Laravel Echo) típicamente usa un timeout de 60 segundos por defecto.
+  // Es buena práctica enviar pings un poco más seguido, digamos cada 30-45 segundos.
+  private pingIntervalTime = 40000; // 40 segundos
 constructor(options: WebSocketServiceOptions) {
     this.options = options;
 
@@ -76,21 +80,18 @@ constructor(options: WebSocketServiceOptions) {
 
   // --- Métodos de Gestión de la Conexión Global ---
 
-  public async connect(): Promise<string> {
-    // Si ya hay una promesa de conexión en curso, la retornamos para evitar duplicados
+ public async connect(): Promise<string> {
     if (this.connectionPromise) {
       return this.connectionPromise;
     }
 
-    // Si ya estamos conectados y tenemos un socketId, lo resolvemos inmediatamente
     if (this.globalWs && this.globalWs.readyState === WebSocket.OPEN && this.globalSocketId) {
-      //console.log("ReverbWebSocketService: Global WebSocket already connected. Socket ID:", this.globalSocketId);
-      this.clearReconnectTimeout(); // Asegurarse de limpiar cualquier timeout pendiente
+      this.clearReconnectTimeout();
       this.reconnectAttempts = 0;
+      this.startPingPong(); // Asegurarse de que el ping esté activo
       return Promise.resolve(this.globalSocketId);
     }
 
-    // Crear una nueva promesa de conexión
    this.connectionPromise = new Promise((resolve, reject) => {
       try {
         const ws = new WebSocket(this.wsUrl);
@@ -98,24 +99,24 @@ constructor(options: WebSocketServiceOptions) {
         this.globalSocketId = null;
 
         ws.onopen = () => {
-          //console.log('ReverbWebSocketService: Global WebSocket opened!');
+          console.log('ReverbWebSocketService: Global WebSocket opened!');
           this.reconnectAttempts = 0;
           this.clearReconnectTimeout();
           this.emitGlobalEvent('connected');
-          ws.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+          this.startPingPong(); // Iniciar el ping/pong al abrir la conexión
+          ws.send(JSON.stringify({ event: 'pusher:ping', data: {} })); // Envía el primer ping inmediatamente
         };
 
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
-            // console.log('ReverbWebSocketService: Global WebSocket message:', message);
 
             if (message.event === 'pusher:connection_established') {
                 const data = JSON.parse(message.data);
                 this.globalSocketId = data.socket_id;
                 console.log('ReverbWebSocketService: Global connection established, Socket ID:', this.globalSocketId);
-                resolve(this.globalSocketId); // Resuelve la promesa de conexión
+                resolve(this.globalSocketId);
 
-                // --- LÓGICA DE RE-SUSCRIPCIÓN TRAS ESTABLECER CONEXIÓN ---
+                // Re-suscribir a canales activos
                 this.activeChannelNames.forEach(async (channelInfo, channelName) => {
                     try {
                         console.log(`ReverbWebSocketService: Re-subscribing to channel: ${channelName}`);
@@ -124,62 +125,71 @@ constructor(options: WebSocketServiceOptions) {
                         console.error(`ReverbWebSocketService: Failed to re-subscribe to channel ${channelName}:`, error);
                     }
                 });
-                // ---------------------------------------------------------
             } else if (message.event === 'pusher:pong') {
               // console.log('ReverbWebSocketService: Received global pong.');
+              // No es necesario reiniciar el ping aquí a menos que el servidor envíe pings
+              // y esperemos pongs para mantener nuestro lado del intervalo.
             }
 
-            // Despachar el mensaje a los listeners de canales específicos
             this.dispatchToChannelListeners(message);
         };
-        // --- ¡AQUÍ ESTÁ EL CAMBIO CLAVE! onclose y onerror DEBEN ESTAR FUERA de onmessage ---
+
         ws.onclose = (event) => {
-          console.warn('ReverbWebSocketService: Global WebSocket closed:', event.code, event.reason);
+          console.warn('ReverbWebSocketService: Global WebSocket closed:', event.code, event.reason); // LINEA 137
+          this.stopPingPong(); // Detener el ping al cerrar
           this.globalSocketId = null;
-          this.globalWs = null; // Limpiar la referencia para permitir nueva conexión
-          this.connectionPromise = null; // Permitir un nuevo intento de conexión
+          this.globalWs = null;
+          this.connectionPromise = null;
 
           this.emitGlobalEvent('disconnected', event);
           this.channels.forEach(channel => {
             channel.listeners.get('disconnected')?.forEach(cb => cb());
           });
-
-          this.attemptReconnect(); // Intentar reconectar
-          // No rechazar aquí si la reconexión se maneja internamente,
-          // a menos que quieras que la promesa original de 'connect' se rechace.
-          // Para un manejo de reconexión robusto, la promesa 'connect'
-          // solo debe resolverse si la conexión se establece.
-          // Si se cierra, el 'attemptReconnect' se encarga de la recurrencia.
-          // Por lo tanto, el 'reject' de la promesa global SOLO debe ser para errores al *crear* el WS.
-          // Si `connect()` ya resolvió, un 'onclose' posterior no debería volver a llamar a 'reject' de la promesa original.
+          this.attemptReconnect();
         };
 
         ws.onerror = (error) => {
           console.error('ReverbWebSocketService: Global WebSocket error:', error);
+          this.stopPingPong(); // Detener el ping en caso de error
           this.globalSocketId = null;
-          this.globalWs = null; // Limpiar la referencia
-          this.connectionPromise = null; // Permitir un nuevo intento
+          this.globalWs = null;
+          this.connectionPromise = null;
 
           this.emitGlobalEvent('error', error);
           this.channels.forEach(channel => {
             channel.listeners.get('error')?.forEach(cb => cb(error));
           });
-
           this.attemptReconnect();
-          // Similar al onclose, el reject aquí es para la promesa inicial de 'connect'
-          // si el error ocurre antes de que la conexión se establezca.
-          // Si ya se estableció, los errores subsecuentes deberían ser manejados por los eventos.
         };
 
-      } catch (e: any) { // Este catch atrapa errores SÍNCRONOS al crear `new WebSocket()`
+      } catch (e: any) {
         console.error('ReverbWebSocketService: Error creating global WebSocket:', e);
         this.connectionPromise = null;
-        reject(e); // Rechaza la promesa de conexión si falla la creación inicial
+        reject(e);
       }
     });
 
     return this.connectionPromise;
   }
+
+  // --- LÓGICA DE PING/PONG ---
+  private startPingPong() {
+    this.stopPingPong(); // Limpiar cualquier intervalo existente para evitar duplicados
+    this.pingIntervalId = setInterval(() => {
+      if (this.globalWs && this.globalWs.readyState === WebSocket.OPEN) {
+        //console.log('ReverbWebSocketService: Sending global ping.');
+        this.globalWs.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+      }
+    }, this.pingIntervalTime);
+  }
+
+  private stopPingPong() {
+    if (this.pingIntervalId) {
+      clearInterval(this.pingIntervalId);
+      this.pingIntervalId = null;
+    }
+  }
+  // --- FIN LÓGICA PING/PONG ---
 
   // Lógica de reconexión exponencial
   private attemptReconnect() {

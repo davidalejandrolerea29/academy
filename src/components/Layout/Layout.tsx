@@ -319,6 +319,7 @@ const Layout: React.FC = () => {
             isCallMinimized={isCallMinimized}
             toggleMinimizeCall={toggleMinimizeCall}
             handleCallCleanup={endCall}
+            reverbService={webSocketService}
           />
         </div>
       )}

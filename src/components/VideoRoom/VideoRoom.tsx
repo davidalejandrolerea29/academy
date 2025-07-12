@@ -75,6 +75,8 @@ const [participants, setParticipants] = useState<Record<string, {
     cameraStream: MediaStream | null, // Para la cámara principal
     screenStream: MediaStream | null,  // Para la pantalla compartida
     isSharingRemoteScreen: boolean;
+    isDisconnectedByNetwork?: boolean; // True si está desconectado por red
+    reconnectionTimeoutId?: NodeJS.Timeout | null; 
     // Opcional: una lista de todos los streams si no sabes qué esperar
     // streams: MediaStream[]
 }>>({});
@@ -134,10 +136,6 @@ const [participants, setParticipants] = useState<Record<string, {
     console.log("[CLEANUP GLOBAL] onCallEnded invocado. Limpieza completa.");
   }, [localStream, onCallEnded]); // Asegúrate de incluir las dependencias correctas
    // --- Funciones de Drag and Drop (mantienen la lógica que ya te di) ---
-const handleEndCall = useCallback(() => {
-    console.log("¡Botón de colgar presionado! Iniciando limpieza de la llamada.");
-    cleanupWebRTCAndReverb(); // Llama a la función de limpieza global
-  }, [cleanupWebRTCAndReverb]);
 
   useEffect(() => {
     // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.
@@ -434,63 +432,76 @@ const startDragging = useCallback((clientX: number, clientY: number) => {
       console.error(`[SIGNAL OUT ERROR] Error al enviar señal ${signalData.type} de ${currentUser?.id} a ${toPeerId}:`, error);
     }
   }, [currentUser, channelRef]); // Asegúrate de que currentUser esté en las dependencias si lo usas
-const handlePeerDisconnected = useCallback((peerId: string) => {
-    console.log(`[PC] Peer ${peerId} se ha desconectado. Limpiando recursos.`);
+const handlePeerDisconnected = useCallback((
+    peerId: string,
+    isIntentionalDisconnect: boolean // true si es una desconexión que DEBE ELIMINAR al peer
+) => {
+    console.log(`[PC] Peer ${peerId} se ha desconectado. Intencional/Final: ${isIntentionalDisconnect}. Iniciando proceso de limpieza final.`);
 
-    // Limpiar la PeerConnection específica
-    if (peerConnectionsRef.current[peerId]) {
-        if (peerConnectionsRef.current[peerId].connectionState !== 'closed') {
-            peerConnectionsRef.current[peerId].close();
-            console.log(`[PC] PeerConnection con ${peerId} cerrada.`);
-        }
-        delete peerConnectionsRef.current[peerId];
-    }
-
-    // Limpiar la cola de ICE candidates para este peer
-    if (iceCandidatesQueueRef.current[peerId]) {
-        delete iceCandidatesQueueRef.current[peerId];
-        console.log(`[ICE] Cola de candidatos limpia para ${peerId}.`);
-    }
-
-    // Eliminar el participante de la UI
     setParticipants(prev => {
         const newParticipants = { ...prev };
-        delete newParticipants[peerId];
+        const participant = newParticipants[peerId];
+
+        // Limpiar cualquier temporizador de reconexión existente para este peer
+        if (participant?.reconnectionTimeoutId) {
+            clearTimeout(participant.reconnectionTimeoutId);
+            participant.reconnectionTimeoutId = null;
+        }
+
+        // --- LÓGICA DE ELIMINACIÓN DE UI Y CIERRE DE PC (AHORA CONDICIONAL) ---
+        // SOLO ELIMINAR SI LA LLAMADA INDICA QUE ES UNA DESCONEXIÓN FINAL
+        if (isIntentionalDisconnect) { // <-- ¡Importante: solo eliminar si es intencional/final!
+            if (peerConnectionsRef.current[peerId]) {
+                if (peerConnectionsRef.current[peerId].connectionState !== 'closed') {
+                    peerConnectionsRef.current[peerId].close();
+                    console.log(`[PC] PeerConnection con ${peerId} cerrada por desconexión final.`);
+                }
+                delete peerConnectionsRef.current[peerId];
+            }
+            if (iceCandidatesQueueRef.current[peerId]) {
+                delete iceCandidatesQueueRef.current[peerId];
+            }
+            delete newParticipants[peerId]; // <-- Solo eliminar aquí
+            console.log(`[PC] Participante ${peerId} ELIMINADO DE LA UI por desconexión final.`);
+
+            // Lógica específica si el PEER QUE SE DESCONECTÓ SOY YO MISMO (intencional)
+            if (String(peerId) === String(currentUser?.id)) {
+                console.log(`[REVERB CLEANUP] Yo (${peerId}) he iniciado desconexión intencional. Realizando limpieza completa.`);
+                if (channelRef.current) {
+                    channelRef.current.leave();
+                    channelRef.current = null;
+                }
+                setHasJoinedChannel(false);
+                stopLocalStream();
+                stopScreenShare();
+                peerConnectionsRef.current = {};
+                // `setParticipants({})` lo maneja `handleEndCall` para mí mismo
+            }
+        } else {
+             // Si no es una desconexión intencional/final, NO se debe eliminar aquí.
+             // La lógica de `disconnected` temporal y temporizador está en `onconnectionstatechange`.
+             console.log(`[PC] Peer ${peerId} se desconectó temporalmente (isIntentionalDisconnect=false). Esperando reconexión.`);
+        }
+        // ---------------------------------------------------------------------
+        
         return newParticipants;
     });
-
-    // --- Limpieza específica si el peer que se desconectó soy YO MISMO ---
-    if (String(peerId) === String(currentUser?.id)) {
-        console.log(`[REVERB CLEANUP] Yo (${peerId}) me he desconectado. Realizando limpieza completa para reconexión.`);
-        // Asegurarse de que el canal de Reverb se abandona y se limpia la referencia
-        if (channelRef.current) {
-            // channelRef.current.leave(); // Esto ya lo hace el return del useEffect si el componente se desmonta.
-            // Si el user hace "salir" sin desmontar el componente, DEBERÍAS LLAMAR channelRef.current.leave() AQUI
-            // o en una función de "salir de sala" que invoca handlePeerDisconnected.
-            channelRef.current = null; // Esto es crucial para que useEffect intente conectar de nuevo
-        }
-        setHasJoinedChannel(false); // Reinicia este estado para que el useEffect reconsidere unirse
-
-        // Detener y limpiar los streams locales del propio usuario
-        stopLocalStream(); // Asegúrate de que esta función realmente detiene y limpia localStream
-        stopScreenShare(); // Asegúrate de que esta función realmente detiene y limpia screenShareStreamRef
-
-        // También limpia todas las demás PeerConnections si me estoy saliendo yo mismo.
-        // Esto es importante para un estado limpio si el usuario se reconecta completamente.
-        Object.values(peerConnectionsRef.current).forEach(pc => {
-            if (pc.connectionState !== 'closed') {
-                pc.close();
-            }
-        });
-        peerConnectionsRef.current = {}; // Vuelve a inicializar el objeto de refs de PeerConnections
-
-         // Esto puede ser útil si tu UI tiene un botón de "Unirse a la sala" de nuevo
-         // para reiniciar el proceso de obtención de medios.
-        // setLocalStream(null); 
+}, [currentUser, stopLocalStream, stopScreenShare]); // Mantener estas dependencias si se usan dentro del useCallback
+const handleEndCall = useCallback(() => {
+    console.log("¡Botón de colgar presionado! Iniciando limpieza de la llamada.");
+    if (currentUser?.id) {
+        // Llama a handlePeerDisconnected para el propio usuario, indicando una desconexión intencional/final.
+        handlePeerDisconnected(currentUser.id.toString(), true);
+        // Y limpia el estado de participantes completamente para reflejar que YO YA NO ESTOY.
+        // Esto vacía el array `participants` y saca al usuario de la UI.
+        setParticipants({}); 
+        setHasJoinedChannel(false); 
+        onCallEnded(); 
+    } else {
+        console.warn("No se pudo colgar la llamada: currentUser no definido.");
     }
-
-}, [currentUser, stopLocalStream, stopScreenShare, setParticipants]); // Añade setParticipants a las dependencias
-  useEffect(() => {
+}, [currentUser, handlePeerDisconnected, onCallEnded]);
+useEffect(() => {
     // Itera sobre todas las PeerConnections activas
     Object.values(peerConnectionsRef.current).forEach(pc => {
       const currentSenders = pc.getSenders();
@@ -762,52 +773,44 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
     // --- pc.onnegotiationneeded: Disparar oferta cuando se necesitan cambios ---
     // **Importante:** Esta es la ÚNICA definición de onnegotiationneeded.
     pc.onnegotiationneeded = async () => {
-        // console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
+    console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
 
-        // No es necesario añadir tracks aquí de nuevo, ya se añadieron al crear la PC.
-        // Pero es crucial que localStream tenga tracks antes de intentar una oferta.
-        if (!localStream || localStream.getTracks().length === 0) {
-            console.warn(`[onnegotiationneeded] localStream no está listo o no tiene tracks para peer ${peerId}. No se puede crear oferta.`);
-            return;
+    if (!localStream || localStream.getTracks().length === 0) {
+        console.warn(`[onnegotiationneeded] localStream no está listo o no tiene tracks para peer ${peerId}. No se puede crear oferta.`);
+        return;
+    }
+
+    // Esta comprobación es buena para evitar negociaciones si ya estamos en un proceso de SDP.
+    // Solo debemos iniciar una oferta si la PC está en estado `stable` o si ya no tiene una oferta local pendiente.
+    // Si estamos en 'have-local-offer', significa que ya enviamos una oferta y estamos esperando respuesta.
+    // Si estamos en 'have-remote-offer', significa que recibimos una oferta y estamos esperando nuestra respuesta.
+    // En ambos casos, no deberíamos iniciar OTRA oferta local aquí.
+    if (pc.signalingState !== 'stable') {
+        console.warn(`[PC Event] onnegotiationneeded disparado pero signalingState no es 'stable' (${pc.signalingState}). Ignorando por ahora.`);
+        return;
+    }
+
+    try {
+        const localUserId = parseInt(currentUser?.id.toString() || '0');
+        const remoteMemberId = parseInt(peerId);
+        const isInitiator = localUserId < remoteMemberId; // Lógica de iniciador basada en ID
+
+        // **DESCOMENTA ESTO Y ÚSALO**
+        if (isInitiator) { // <--- ¡Asegúrate que esto NO esté comentado!
+            console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Soy ${currentUser.id} (menor ID). Creando OFERTA para ${peerId}.`);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer); // <-- Aquí debería funcionar sin 'm-lines' error
+            sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type, from: currentUser?.id });
+            console.log(`[PC Event] Oferta enviada a ${peerId}.`);
+        } else {
+            console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Soy ${currentUser.id} (mayor ID). Esperando oferta de ${peerId}.`);
+            // El peer con ID mayor no hace nada en onnegotiationneeded; espera la oferta del otro.
         }
 
-        // Evitar negociaciones si la señalización no está en un estado estable
-        if (pc.signalingState !== 'stable') {
-            console.warn(`[PC Event] onnegotiationneeded disparado pero signalingState no es 'stable' (${pc.signalingState}). Ignorando por ahora.`);
-            return;
-        }
-
-        try {
-            // **Para depuración, elimina o comenta temporalmente la lógica del iniciador**
-            // para asegurar que ambos lados intenten enviar ofertas y ver si se conectan.
-            // Una vez que funcione, puedes reintroducir tu lógica de iniciador si lo deseas.
-            const localUserId = parseInt(currentUser?.id.toString() || '0');
-            const remoteMemberId = parseInt(peerId);
-            const isInitiator = localUserId < remoteMemberId; // Lógica de iniciador basada en ID
-
-            // **Opción 1: Usa la lógica de iniciador (más robusta en producción)**
-            // if (isInitiator) {
-                console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type, from: currentUser?.id });
-                console.log(`[PC Event] Oferta enviada a ${peerId}.`);
-            // } else {
-            //     console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId} (no soy el iniciador).`);
-            // }
-
-            // **Opción 2: Sin lógica de iniciador (útil para depurar)**
-            // console.log(`[ON_NEGOTIATION] Creando OFERTA para ${peerId}.`);
-            // const offer = await pc.createOffer();
-            // await pc.setLocalDescription(offer);
-            // sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type, from: currentUser?.id });
-            // console.log(`[PC Event] Oferta enviada a ${peerId}.`);
-
-
-        } catch (e) {
-            console.error(`[PC Event] Error en onnegotiationneeded para ${peerId}:`, e);
-        }
-    };
+    } catch (e) {
+        console.error(`[PC Event] Error en onnegotiationneeded para ${peerId}:`, e);
+    }
+};
 
     // --- pc.onicecandidate: Generar y enviar candidatos ICE ---
     pc.onicecandidate = (event) => {
@@ -818,16 +821,49 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
         }
     };
 
-    // --- pc.onconnectionstatechange: Monitorear el estado de la conexión ---
-    pc.onconnectionstatechange = () => {
-        console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-            console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Calling handlePeerDisconnected.`);
-            // Solo llama a handlePeerDisconnected si la PC no ha sido cerrada explícitamente ya
-            // handlePeerDisconnected tiene lógica interna para verificar si ya está cerrada.
-            handlePeerDisconnected(peerId);
+  pc.onconnectionstatechange = () => {
+    const currentState = pc.connectionState;
+    console.log(`[PC State] PeerConnection con ${peerId} estado: ${currentState}`);
+
+    setParticipants(prev => {
+        const updatedParticipants = { ...prev };
+        const participant = updatedParticipants[peerId];
+
+        if (!participant) {
+            console.warn(`[PC State] Participante ${peerId} no encontrado en el estado al cambiar de conexión. Ignorando.`);
+            return prev;
         }
-    };
+
+        // Siempre limpiar el temporizador existente al cambiar de estado para evitar múltiples timers
+        if (participant.reconnectionTimeoutId) {
+            clearTimeout(participant.reconnectionTimeoutId);
+            participant.reconnectionTimeoutId = null;
+        }
+
+        if (currentState === 'connected' || currentState === 'stable') {
+            if (participant.isDisconnectedByNetwork) {
+                console.log(`[PC] Peer ${peerId} se ha reconectado (estado: ${currentState}). Limpiando flag de desconexión.`);
+                participant.isDisconnectedByNetwork = false;
+            }
+        } else if (currentState === 'disconnected' || currentState === 'failed') { // <-- ¡AQUÍ ESTÁ EL CAMBIO CLAVE!
+            // CONEXIÓN TEMPORALMENTE PERDIDA (microcorte) O FALLIDA
+            console.warn(`[PC] Peer ${peerId} está en estado '${currentState}'. Marcando como desconectado por red y esperando ${45} segundos.`);
+            participant.isDisconnectedByNetwork = true; // Marcar para que la UI lo refleje.
+
+            // Establecer un temporizador para LIMPIAR Y ELIMINAR el participante
+            // si NO se reconecta en el tiempo prudencial.
+            participant.reconnectionTimeoutId = setTimeout(() => {
+                console.error(`[PC RECONNECT TIMEOUT] Peer ${peerId} no se ha reconectado después de ${45} segundos. Eliminando definitivamente.`);
+                // Llama a handlePeerDisconnected con `true` para forzar la eliminación final.
+                handlePeerDisconnected(peerId, true); 
+            }, 45000); // <-- Los 45 segundos se respetarán aquí
+        } else if (currentState === 'closed') { // El estado 'closed' siempre es final e inmediato
+            console.error(`[PC] Peer ${peerId} ha sido CERRADO. Eliminando permanentemente.`);
+            handlePeerDisconnected(peerId, true); 
+        }
+        return updatedParticipants;
+    });
+};
 
     // --- Otros logs de estado (descomentar para depuración detallada) ---
     pc.oniceconnectionstatechange = () => {
@@ -883,6 +919,54 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
         }
     };
 }, [localStream]); // ¡IMPORTANTE! Añade localStream a las dependencias.
+const setupPeerConnectionForPeer = useCallback(async (peerId: string) => {
+    const localUserId = parseInt(currentUser.id.toString());
+    const remotePeerIdNum = parseInt(peerId);
+
+    const pc = getOrCreatePeerConnection(peerId);
+
+    // Añadir tracks locales si no están ya añadidos
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            const hasSender = pc.getSenders().some(sender => sender.track === track);
+            if (!hasSender) {
+                pc.addTrack(track, localStream);
+                console.log(`[PC] Añadido track ${track.kind} de localStream a PC para ${peerId}`);
+            }
+        });
+    } else {
+        console.warn(`[PC] localStream es NULO al configurar PC para ${peerId}. Los tracks no se añadirán.`);
+        // Considera si debes forzar una reconexión o un error aquí si el stream es vital.
+    }
+
+    // *** Lógica para determinar quién inicia la oferta (el "caller") ***
+    // El usuario con el ID más bajo siempre inicia la oferta para una pareja de peers.
+    if (localUserId < remotePeerIdNum) {
+        // Soy el "caller" para esta pareja de peers
+        console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Soy ${currentUser.id} (menor ID). Creando OFERTA para ${peerId}.`);
+
+        // Solo crear oferta si no hay una oferta local pendiente o activa
+        // O si el estado es `stable` y es una renegociación
+        if (pc.signalingState === 'stable' || pc.signalingState === 'closed') {
+             try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
+                console.log(`[PC Event] Oferta enviada a ${peerId}.`);
+            } catch (error) {
+                console.error(`Error al crear/enviar oferta a ${peerId}:`, error);
+            }
+        } else {
+            console.log(`[ON_NEGOTIATION] No creando oferta para ${peerId}. Estado de señalización actual: ${pc.signalingState}`);
+            // Esto podría ser un indicio de un problema si se espera una oferta y no se crea.
+            // Para la primera conexión, debería estar 'stable' al inicio para un nuevo peer.
+        }
+    } else {
+        // Soy el "callee" para esta pareja de peers
+        console.log(`[ON_NEGOTIATION] Soy ${currentUser.id} (mayor ID). ESPERANDO OFERTA de ${peerId}.`);
+        // No hago nada más que preparar la PC, el otro lado me enviará la oferta.
+    }
+}, [currentUser, localStream, getOrCreatePeerConnection, sendSignal]); // Dependencias del useCallback
 
   // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB Y WEB RTC ---
 useEffect(() => {
@@ -919,7 +1003,7 @@ useEffect(() => {
                 micEnabled: true,
                 stream: null
               };
-
+              await setupPeerConnectionForPeer(member.id);
               // const remoteMemberId = parseInt(String(member.id));
               // Determina si este cliente debe iniciar la oferta
               // const shouldInitiate = localUserId < remoteMemberId;
@@ -952,7 +1036,7 @@ useEffect(() => {
                 };
                 return updatedParticipants;
             });
-
+            await setupPeerConnectionForPeer(member.id);
             getOrCreatePeerConnection(member.id);
 
         });
@@ -970,10 +1054,17 @@ useEffect(() => {
           setLoading(false);
           setHasJoinedChannel(false);
         });
+        // En tu useEffect principal, dentro de la suscripción al canal Reverb
         joinedChannel.leaving((member: any) => {
             console.log(`[REVERB] LEAVING event: User ${member.id} is leaving the room.`);
-            // No ignores aquí; deja que handlePeerDisconnected maneje la diferencia
-            handlePeerDisconnected(member.id.toString());
+            // Si el miembro que se va es EL PROPIO USUARIO, es redundante porque `handleEndCall` ya maneja la limpieza.
+            if (String(member.id) === String(currentUser?.id)) {
+                console.log(`[REVERB LEAVING] Evento 'leaving' para mí mismo (${member.id}). Ya lo maneja handleEndCall.`);
+                return; 
+            }
+            // Para cualquier OTRO peer que abandone el canal de Reverb, lo consideramos una desconexión definitiva.
+            // Llama a handlePeerDisconnected con `true` para que lo elimine de la UI sin esperar.
+            handlePeerDisconnected(member.id.toString(), true); 
         });
 
         // --- Listener para señales WebRTC (Ofertas, Respuestas, Candidatos ICE) ---
@@ -991,6 +1082,17 @@ useEffect(() => {
               switch (data.type) {
                   // En tu VideoRoom.tsx, dentro de joinedChannel.listenForWhisper('Signal')
                   case 'offer':
+                    if (pc.signalingState !== 'stable' && pc.signalingState !== 'closed' && pc.signalingState !== 'have-remote-offer') {
+                         // Si la PC NO está en un estado listo para recibir una nueva oferta, o si ya tenemos una oferta remota
+                         // y esta es una oferta duplicada, lo ignoramos para evitar el error.
+                         if (pc.remoteDescription && pc.remoteDescription.sdp === data.sdp) {
+                             console.warn(`[SDP Offer] Oferta duplicada de ${from}. Ignorando.`);
+                             break;
+                         }
+                         console.warn(`[SDP Offer] Recibida oferta de ${from} en estado de señalización inesperado (${pc.signalingState}). Procediendo, pero esto podría ser un indicio de colisión no manejada.`);
+                         // Aquí, en un sistema más complejo, se podría implementar un "rollback" si se detecta colisión.
+                         // Pero con el modelo de ID, esto se minimiza.
+                      }
                       //console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
                       //console.log(`[SDP Offer Recv DEBUG] localStream disponible para ${from}?:`, !!localStream);
                       if (localStream) {
@@ -1036,6 +1138,19 @@ useEffect(() => {
                       break;
 
                   case 'answer':
+                    if (pc.signalingState !== 'have-local-offer') {
+                          console.warn(`[SDP Answer] Recibida respuesta de ${from} en estado inesperado (${pc.signalingState}). Ignorando para evitar InvalidStateError.`);
+                          // Si llega una respuesta y no tenemos una oferta local pendiente (have-local-offer),
+                          // significa que ya procesamos algo o es una respuesta de un ciclo que no iniciamos.
+                          // Este es el caso "Called in wrong state: stable" que estás viendo.
+                          break;
+                      }
+
+                      // Comprobación adicional para respuestas duplicadas
+                      if (pc.remoteDescription && pc.remoteDescription.type === 'answer' && pc.remoteDescription.sdp === data.sdp) {
+                          console.warn(`[SDP Answer] Respuesta duplicada de ${from}. Ignorando.`);
+                          break;
+                      }
                       //console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
                       await pc.setRemoteDescription(new RTCSessionDescription({
                           type: data.sdpType,
@@ -1179,6 +1294,7 @@ useEffect(() => {
     localStream,
     sendSignal,
     getOrCreatePeerConnection,
+    setupPeerConnectionForPeer,
     stopLocalStream, // Añadir como dependencia para que el linter no se queje
     stopScreenShare  // Añadir como dependencia para que el linter no se queje
   ]);
