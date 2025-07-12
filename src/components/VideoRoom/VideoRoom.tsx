@@ -927,6 +927,54 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
         }
     };
 }, [localStream]); // ¡IMPORTANTE! Añade localStream a las dependencias.
+const setupPeerConnectionForPeer = useCallback(async (peerId: string) => {
+    const localUserId = parseInt(currentUser.id.toString());
+    const remotePeerIdNum = parseInt(peerId);
+
+    const pc = getOrCreatePeerConnection(peerId);
+
+    // Añadir tracks locales si no están ya añadidos
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            const hasSender = pc.getSenders().some(sender => sender.track === track);
+            if (!hasSender) {
+                pc.addTrack(track, localStream);
+                console.log(`[PC] Añadido track ${track.kind} de localStream a PC para ${peerId}`);
+            }
+        });
+    } else {
+        console.warn(`[PC] localStream es NULO al configurar PC para ${peerId}. Los tracks no se añadirán.`);
+        // Considera si debes forzar una reconexión o un error aquí si el stream es vital.
+    }
+
+    // *** Lógica para determinar quién inicia la oferta (el "caller") ***
+    // El usuario con el ID más bajo siempre inicia la oferta para una pareja de peers.
+    if (localUserId < remotePeerIdNum) {
+        // Soy el "caller" para esta pareja de peers
+        console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Soy ${currentUser.id} (menor ID). Creando OFERTA para ${peerId}.`);
+
+        // Solo crear oferta si no hay una oferta local pendiente o activa
+        // O si el estado es `stable` y es una renegociación
+        if (pc.signalingState === 'stable' || pc.signalingState === 'closed') {
+             try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
+                console.log(`[PC Event] Oferta enviada a ${peerId}.`);
+            } catch (error) {
+                console.error(`Error al crear/enviar oferta a ${peerId}:`, error);
+            }
+        } else {
+            console.log(`[ON_NEGOTIATION] No creando oferta para ${peerId}. Estado de señalización actual: ${pc.signalingState}`);
+            // Esto podría ser un indicio de un problema si se espera una oferta y no se crea.
+            // Para la primera conexión, debería estar 'stable' al inicio para un nuevo peer.
+        }
+    } else {
+        // Soy el "callee" para esta pareja de peers
+        console.log(`[ON_NEGOTIATION] Soy ${currentUser.id} (mayor ID). ESPERANDO OFERTA de ${peerId}.`);
+        // No hago nada más que preparar la PC, el otro lado me enviará la oferta.
+    }
+}, [currentUser, localStream, getOrCreatePeerConnection, sendSignal]); // Dependencias del useCallback
 
   // --- useEffect PRINCIPAL PARA LA CONEXION A REVERB Y WEB RTC ---
 useEffect(() => {
@@ -963,7 +1011,7 @@ useEffect(() => {
                 micEnabled: true,
                 stream: null
               };
-
+              await setupPeerConnectionForPeer(member.id);
               // const remoteMemberId = parseInt(String(member.id));
               // Determina si este cliente debe iniciar la oferta
               // const shouldInitiate = localUserId < remoteMemberId;
@@ -996,7 +1044,7 @@ useEffect(() => {
                 };
                 return updatedParticipants;
             });
-
+            await setupPeerConnectionForPeer(member.id);
             getOrCreatePeerConnection(member.id);
 
         });
@@ -1042,6 +1090,17 @@ useEffect(() => {
               switch (data.type) {
                   // En tu VideoRoom.tsx, dentro de joinedChannel.listenForWhisper('Signal')
                   case 'offer':
+                    if (pc.signalingState !== 'stable' && pc.signalingState !== 'closed' && pc.signalingState !== 'have-remote-offer') {
+                         // Si la PC NO está en un estado listo para recibir una nueva oferta, o si ya tenemos una oferta remota
+                         // y esta es una oferta duplicada, lo ignoramos para evitar el error.
+                         if (pc.remoteDescription && pc.remoteDescription.sdp === data.sdp) {
+                             console.warn(`[SDP Offer] Oferta duplicada de ${from}. Ignorando.`);
+                             break;
+                         }
+                         console.warn(`[SDP Offer] Recibida oferta de ${from} en estado de señalización inesperado (${pc.signalingState}). Procediendo, pero esto podría ser un indicio de colisión no manejada.`);
+                         // Aquí, en un sistema más complejo, se podría implementar un "rollback" si se detecta colisión.
+                         // Pero con el modelo de ID, esto se minimiza.
+                      }
                       //console.log(`[SDP Offer] Recibida oferta de ${from}. Estableciendo RemoteDescription.`);
                       //console.log(`[SDP Offer Recv DEBUG] localStream disponible para ${from}?:`, !!localStream);
                       if (localStream) {
@@ -1087,6 +1146,19 @@ useEffect(() => {
                       break;
 
                   case 'answer':
+                    if (pc.signalingState !== 'have-local-offer') {
+                          console.warn(`[SDP Answer] Recibida respuesta de ${from} en estado inesperado (${pc.signalingState}). Ignorando para evitar InvalidStateError.`);
+                          // Si llega una respuesta y no tenemos una oferta local pendiente (have-local-offer),
+                          // significa que ya procesamos algo o es una respuesta de un ciclo que no iniciamos.
+                          // Este es el caso "Called in wrong state: stable" que estás viendo.
+                          break;
+                      }
+
+                      // Comprobación adicional para respuestas duplicadas
+                      if (pc.remoteDescription && pc.remoteDescription.type === 'answer' && pc.remoteDescription.sdp === data.sdp) {
+                          console.warn(`[SDP Answer] Respuesta duplicada de ${from}. Ignorando.`);
+                          break;
+                      }
                       //console.log(`[SDP Answer] Recibida respuesta de ${from}. Estableciendo RemoteDescription.`);
                       await pc.setRemoteDescription(new RTCSessionDescription({
                           type: data.sdpType,
@@ -1230,6 +1302,7 @@ useEffect(() => {
     localStream,
     sendSignal,
     getOrCreatePeerConnection,
+    setupPeerConnectionForPeer,
     stopLocalStream, // Añadir como dependencia para que el linter no se queje
     stopScreenShare  // Añadir como dependencia para que el linter no se queje
   ]);
