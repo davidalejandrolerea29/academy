@@ -773,52 +773,44 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
     // --- pc.onnegotiationneeded: Disparar oferta cuando se necesitan cambios ---
     // **Importante:** Esta es la ÚNICA definición de onnegotiationneeded.
     pc.onnegotiationneeded = async () => {
-        // console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
+    console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
 
-        // No es necesario añadir tracks aquí de nuevo, ya se añadieron al crear la PC.
-        // Pero es crucial que localStream tenga tracks antes de intentar una oferta.
-        if (!localStream || localStream.getTracks().length === 0) {
-            console.warn(`[onnegotiationneeded] localStream no está listo o no tiene tracks para peer ${peerId}. No se puede crear oferta.`);
-            return;
+    if (!localStream || localStream.getTracks().length === 0) {
+        console.warn(`[onnegotiationneeded] localStream no está listo o no tiene tracks para peer ${peerId}. No se puede crear oferta.`);
+        return;
+    }
+
+    // Esta comprobación es buena para evitar negociaciones si ya estamos en un proceso de SDP.
+    // Solo debemos iniciar una oferta si la PC está en estado `stable` o si ya no tiene una oferta local pendiente.
+    // Si estamos en 'have-local-offer', significa que ya enviamos una oferta y estamos esperando respuesta.
+    // Si estamos en 'have-remote-offer', significa que recibimos una oferta y estamos esperando nuestra respuesta.
+    // En ambos casos, no deberíamos iniciar OTRA oferta local aquí.
+    if (pc.signalingState !== 'stable') {
+        console.warn(`[PC Event] onnegotiationneeded disparado pero signalingState no es 'stable' (${pc.signalingState}). Ignorando por ahora.`);
+        return;
+    }
+
+    try {
+        const localUserId = parseInt(currentUser?.id.toString() || '0');
+        const remoteMemberId = parseInt(peerId);
+        const isInitiator = localUserId < remoteMemberId; // Lógica de iniciador basada en ID
+
+        // **DESCOMENTA ESTO Y ÚSALO**
+        if (isInitiator) { // <--- ¡Asegúrate que esto NO esté comentado!
+            console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Soy ${currentUser.id} (menor ID). Creando OFERTA para ${peerId}.`);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer); // <-- Aquí debería funcionar sin 'm-lines' error
+            sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type, from: currentUser?.id });
+            console.log(`[PC Event] Oferta enviada a ${peerId}.`);
+        } else {
+            console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Soy ${currentUser.id} (mayor ID). Esperando oferta de ${peerId}.`);
+            // El peer con ID mayor no hace nada en onnegotiationneeded; espera la oferta del otro.
         }
 
-        // Evitar negociaciones si la señalización no está en un estado estable
-        if (pc.signalingState !== 'stable') {
-            console.warn(`[PC Event] onnegotiationneeded disparado pero signalingState no es 'stable' (${pc.signalingState}). Ignorando por ahora.`);
-            return;
-        }
-
-        try {
-            // **Para depuración, elimina o comenta temporalmente la lógica del iniciador**
-            // para asegurar que ambos lados intenten enviar ofertas y ver si se conectan.
-            // Una vez que funcione, puedes reintroducir tu lógica de iniciador si lo deseas.
-            const localUserId = parseInt(currentUser?.id.toString() || '0');
-            const remoteMemberId = parseInt(peerId);
-            const isInitiator = localUserId < remoteMemberId; // Lógica de iniciador basada en ID
-
-            // **Opción 1: Usa la lógica de iniciador (más robusta en producción)**
-            // if (isInitiator) {
-                console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Creando OFERTA para ${peerId}.`);
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type, from: currentUser?.id });
-                console.log(`[PC Event] Oferta enviada a ${peerId}.`);
-            // } else {
-            //     console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Esperando oferta de ${peerId} (no soy el iniciador).`);
-            // }
-
-            // **Opción 2: Sin lógica de iniciador (útil para depurar)**
-            // console.log(`[ON_NEGOTIATION] Creando OFERTA para ${peerId}.`);
-            // const offer = await pc.createOffer();
-            // await pc.setLocalDescription(offer);
-            // sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type, from: currentUser?.id });
-            // console.log(`[PC Event] Oferta enviada a ${peerId}.`);
-
-
-        } catch (e) {
-            console.error(`[PC Event] Error en onnegotiationneeded para ${peerId}:`, e);
-        }
-    };
+    } catch (e) {
+        console.error(`[PC Event] Error en onnegotiationneeded para ${peerId}:`, e);
+    }
+};
 
     // --- pc.onicecandidate: Generar y enviar candidatos ICE ---
     pc.onicecandidate = (event) => {
