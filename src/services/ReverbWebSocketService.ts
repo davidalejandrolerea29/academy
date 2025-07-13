@@ -168,24 +168,25 @@ export class ReverbWebSocketService extends EventEmitter {
         };
 
         ws.onclose = (event) => {
-          console.warn('ReverbWebSocketService: Global WebSocket closed:', event.code, event.reason);
-          this.stopPingPong();
-          this.clearPongTimeout();
+  // ESTE ES EL LOG CLAVE QUE TIENE QUE APARECER
+  console.warn(`ReverbWebSocketService: onclose event - Global WebSocket closed! Code: ${event.code}, Reason: ${event.reason}`);
+  this.stopPingPong();
+  this.clearPongTimeout();
 
-          this.globalSocketId = null;
-          this.globalWs = null;
-          this.connectionPromise = null;
-          this.emit('disconnected', event);
+  this.globalSocketId = null;
+  this.globalWs = null;
+  this.connectionPromise = null;
 
-          if (event.code !== 1000) {
-            this.setConnectionState(false, true); // Desconectado, intentando reconectar
-            console.log("ReverbWebSocketService: Intentando reconectar debido a cierre anormal.");
-            this.attemptReconnect();
-          } else {
-            this.setConnectionState(false, false); // Desconectado, no reconectando (cierre normal)
-            console.log("ReverbWebSocketService: Cierre normal (código 1000). No se intenta reconectar automáticamente.");
-          }
-        };
+  if (event.code !== 1000) { // Si no es un cierre normal
+    console.log("ReverbWebSocketService: Cierre anormal detectado. Iniciando intento de reconexión.");
+    this.setConnectionState(false, true); // Desconectado, intentando reconectar
+    this.attemptReconnect();
+  } else {
+    console.log("ReverbWebSocketService: Cierre normal (código 1000). No se intenta reconectar automáticamente.");
+    this.setConnectionState(false, false); // Desconectado, no reconectando (cierre normal)
+  }
+  this.emit('disconnected', event);
+};
 
         ws.onerror = (error) => {
           console.error('ReverbWebSocketService: Global WebSocket error:', error);
