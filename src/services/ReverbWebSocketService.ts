@@ -46,7 +46,7 @@ export interface EchoChannel {
 
 // --- Clase Principal del Servicio WebSocket ---
 
-export class ReverbWebSocketService {
+export class ReverbWebSocketService extends EventEmitter {
   private options: WebSocketServiceOptions;
   private wsUrl: string;
   private globalWs: WebSocket | null = null;
