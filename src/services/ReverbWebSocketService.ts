@@ -46,40 +46,50 @@ export interface EchoChannel {
 
 // --- Clase Principal del Servicio WebSocket ---
 
+
 export class ReverbWebSocketService extends EventEmitter {
   private options: WebSocketServiceOptions;
   private wsUrl: string;
   private globalWs: WebSocket | null = null;
   private globalSocketId: string | null = null;
-  // Mapa para gestionar múltiples instancias de canales (ej. 'private-chat.1-2', 'video-room.xyz')
   private channels: Map<string, ChannelSubscription> = new Map();
-  private globalListeners: Map<string, Set<Function>> = new Map(); // Para eventos globales (ej. 'connected', 'disconnected')
+  private globalListeners: Map<string, Set<Function>> = new Map();
 
-  // Lógica de reconexión exponencial
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
-  private baseReconnectInterval = 1000; // 1 segundo
-  private connectionPromise: Promise<string> | null = null; // Para evitar múltiples intentos de conexión
+  private baseReconnectInterval = 1000;
+  private connectionPromise: Promise<string> | null = null;
   private activeChannelNames: Map<string, { isPresence: boolean, lastProcessedMessageId?: number }> = new Map();
- // --- NUEVAS PROPIEDADES PARA EL PING/PONG ---
+
   private pingIntervalId: NodeJS.Timeout | null = null;
-  // Intervalo de ping: Reverb (basado en Laravel Echo) típicamente usa un timeout de 60 segundos por defecto.
-  // Es buena práctica enviar pings un poco más seguido, digamos cada 30-45 segundos.
   private pingIntervalTime = 40000; // 40 segundos
+
+  // --- Mueve estas declaraciones AQUÍ, antes del constructor ---
   private _isConnected: boolean = false;
   private _isConnecting: boolean = false;
-constructor(options: WebSocketServiceOptions) {
-    this.options = options;
+  private currentUserId: string | null = null; // Asumiendo que necesitas esta propiedad en el servicio
+  // -----------------------------------------------------------
 
+  constructor(options: WebSocketServiceOptions) {
+    // --- ¡Esta DEBE ser la PRIMERA LÍNEA en el constructor de una clase derivada! ---
+    super();
+    // -------------------------------------------------------------------------------
+
+    this.options = options;
+    // Asumiendo que `options` contiene `token` que puedes usar para derivar un `currentUserId`
+    // Si `currentUser.token` es un JWT, puedes parsearlo para obtener el ID.
     const protocol = (options.wsHost === '127.0.0.1' || options.wsHost === 'localhost') ? 'ws' : 'wss';
-    // --- ASÍ ES COMO DEBE QUEDAR LA LÍNEA ---
     this.wsUrl = `${protocol}://${options.wsHost}:${options.wsPort}/app/${options.appKey}`;
-    // ----------------------------------------
-    this.setIsConnecting(true);
+
+    console.log("ReverbWebSocketService: Instancia creada. URL de conexión:", this.wsUrl);
+
+    // --- Llama a los setters *DESPUÉS* de `super()` ---
+    this.setIsConnecting(true); // Empezamos como conectando
     this.setIsConnected(false); // No conectado al inicio
-    //console.log("ReverbWebSocketService: URL de conexión construida:", this.wsUrl);
+    // --------------------------------------------------
   }
+
 private setIsConnected(status: boolean) {
     if (this._isConnected !== status) {
       this._isConnected = status;
