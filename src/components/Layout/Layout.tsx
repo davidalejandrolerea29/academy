@@ -376,9 +376,9 @@ const Layout: React.FC = () => {
             </div>
 
             {/* --- INDICADOR DE CONEXIÓN AÑADIDO AQUÍ --- */}
-            <div className="ml-auto mr-4">
+            {/* <div className="ml-auto mr-4">
               {getConnectionStatus()}
-            </div>
+            </div> */}
             {/* ------------------------------------------- */}
 
           </div>
