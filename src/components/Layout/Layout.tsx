@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../contexts/Auth/AuthContext'; // Updated path just in case
 import { useCall } from '../../contexts/CallContext';
 import VideoRoom from '../VideoRoom/VideoRoom';
 import {
@@ -32,25 +32,24 @@ const Layout: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState<boolean>(true); // Inicia como conectando para mostrar "Conectando..." al cargar
   const webSocketServiceRef = useRef<ReverbWebSocketService | null>(null);
 
-  // Remueve el estado isBrowserOnline ya que no es confiable para tu caso de uso
-  // const [isBrowserOnline, setIsBrowserOnline] = useState(navigator.onLine); 
-
   // Callbacks memoizados para los eventos del servicio WebSocket
+  // These callbacks are stable and won't cause unnecessary re-renders of the effect
+  // unless their dependencies change.
   const handleConnected = useCallback(() => {
     setIsWebSocketConnected(true);
     setIsConnecting(false);
     console.log('--- CONEXIÓN WEBSTOCKET: ¡Recuperada! ---');
     console.log('[UI Listener] WebSocketService: Estado CONECTADO. UI actualizado.');
-  }, []);
+  }, []); // Dependencies are empty because they don't rely on Layout's state directly
 
   const handleDisconnected = useCallback((event?: CloseEvent) => {
     setIsWebSocketConnected(false);
     if (event?.code !== 1000) {
-      setIsConnecting(true); // Indica que el servicio intentará reconectar
+      setIsConnecting(true); // Indicate that the service will try to reconnect
       console.log(`--- CONEXIÓN WEBSTOCKET: PERDIDA (${event?.reason || 'Sin razón'}). ---`);
       console.log(`[UI Listener] WebSocketService: Estado DESCONECTADO (intentando reconectar). Code: ${event?.code}, Reason: ${event?.reason}. UI actualizado.`);
     } else {
-      setIsConnecting(false); // Es un cierre normal (ej. logout), no intentamos reconectar
+      setIsConnecting(false); // Normal closure (e.g., logout), no reconnection attempt
       console.log(`[UI Listener] WebSocketService: Estado DESCONECTADO (cierre normal). Code: ${event?.code}, Reason: ${event?.reason}. UI actualizado.`);
     }
   }, []);
@@ -58,29 +57,23 @@ const Layout: React.FC = () => {
   const handleError = useCallback((error: any) => {
     console.error('[UI Listener] WebSocketService: ERROR inesperado. ', error);
     setIsWebSocketConnected(false);
-    // Si hay un error, el servicio intentará reconectar, así que ponemos isConnecting en true
-    setIsConnecting(true); 
+    setIsConnecting(true); // Assume an error might lead to a reconnection attempt
   }, []);
 
   const handlePermanentlyDisconnected = useCallback(() => {
     setIsWebSocketConnected(false);
-    setIsConnecting(false); // No se intentará reconectar más
+    setIsConnecting(false); // No more reconnection attempts
     console.error('--- CONEXIÓN WEBSTOCKET: DESCONEXIÓN PERMANENTE. Máximos reintentos alcanzados. ---');
     console.error('[UI Listener] WebSocketService: Estado PERMANENTEMENTE DESCONECTADO. UI actualizado.');
   }, []);
 
-  // --- MANTENER ESTE useEffect para la API de conexión/desconexión del navegador ---
-  // Aunque navigator.onLine no sea fiable para el *indicador*,
-  // sigue siendo útil para *forzar la lógica de desconexión* del WebSocket
-  // si el navegador informa de un offline (cuando sí lo haga correctamente).
-  // También es útil para forzar reconexión si el navegador vuelve a online.
+  // This useEffect listens to browser's online/offline events.
+  // It's kept for robustness, even if navigator.onLine isn't always reliable in your environment.
   useEffect(() => {
     console.log(`[Browser Network Status] Initial check: navigator.onLine = ${navigator.onLine}`);
     
     const handleOnline = () => {
       console.log('--- NAVEGADOR: Conectado a la red (online). ---');
-      // No actualizamos isBrowserOnline porque ya no lo usamos en la UI
-      // Solo usamos este evento para disparar una posible reconexión del WS
       if (webSocketServiceRef.current && !webSocketServiceRef.current.getIsConnected() && !webSocketServiceRef.current.getIsConnecting()) {
         console.log('[Browser Network Status] Navegador online. Intentando reconectar WebSocket si está inactivo.');
         webSocketServiceRef.current.connect().catch(e => console.error("Error al reconectar WS desde handler de online:", e));
@@ -89,8 +82,6 @@ const Layout: React.FC = () => {
 
     const handleOffline = () => {
       console.warn('--- NAVEGADOR: SIN CONEXIÓN a la red (offline). ---');
-      // No actualizamos isBrowserOnline
-      // Forzamos la desconexión del WS para que el onclose se dispare y active la reconexión.
       if (webSocketServiceRef.current && webSocketServiceRef.current.getIsConnected()) {
         console.warn('[Browser Network Status] Navegador offline. Forzando desconexión del WebSocket para activar reconexión.');
         webSocketServiceRef.current.disconnect(); 
@@ -106,7 +97,7 @@ const Layout: React.FC = () => {
     };
   }, []); 
 
-  // --- EL ÚNICO Y PRINCIPAL useEffect para la lógica de conexión del WebSocket ---
+  // --- THE ONLY AND MAIN useEffect for WebSocket connection logic ---
   useEffect(() => {
     console.log(`[Layout Effect Lifecycle] Ejecutando useEffect. currentUser token: ${currentUser?.token ? 'presente' : 'ausente'}.`);
 
@@ -114,6 +105,11 @@ const Layout: React.FC = () => {
       console.log("[Layout Effect Lifecycle] No currentUser token detectado. Iniciando limpieza del servicio WebSocket.");
       if (webSocketServiceRef.current) {
         console.log("[Layout Effect Lifecycle] Desconectando instancia existente de WebSocketService.");
+        // Explicitly remove listeners before disconnecting an old service instance
+        webSocketServiceRef.current.off('connected', handleConnected);
+        webSocketServiceRef.current.off('disconnected', handleDisconnected);
+        webSocketServiceRef.current.off('error', handleError);
+        webSocketServiceRef.current.off('permanently_disconnected', handlePermanentlyDisconnected);
         webSocketServiceRef.current.disconnect(); 
         webSocketServiceRef.current = null;
       }
@@ -123,9 +119,11 @@ const Layout: React.FC = () => {
       return;
     }
 
-    console.log("[Layout Effect Lifecycle] currentUser token presente. Obteniendo/Creando instancia de ReverbWebSocketService.");
+    // Get or create the service instance. This is a singleton.
     const service = createReverbWebSocketService(currentUser.token);
 
+    // If the ref currently holds an instance AND it's a DIFFERENT instance (shouldn't happen with singleton, but for safety)
+    // or if we are in StrictMode and it's an old instance being cleaned up.
     if (webSocketServiceRef.current && webSocketServiceRef.current !== service) {
       console.log("[Layout Effect Lifecycle] Detectada instancia de servicio ANTERIOR o diferente. Limpiando sus listeners.");
       webSocketServiceRef.current.off('connected', handleConnected);
@@ -134,40 +132,51 @@ const Layout: React.FC = () => {
       webSocketServiceRef.current.off('permanently_disconnected', handlePermanentlyDisconnected);
     }
     
+    // Always set the current service instance to the ref
     webSocketServiceRef.current = service;
 
+    // Register listeners on the CURRENT service instance.
     console.log("[Layout Effect Lifecycle] Registrando listeners de UI en la instancia actual del servicio.");
     service.on('connected', handleConnected);
     service.on('disconnected', handleDisconnected);
     service.on('error', handleError);
     service.on('permanently_disconnected', handlePermanentlyDisconnected);
 
+    // Initialize UI state immediately from the service's current state.
+    // This is crucial to show the correct status right away without waiting for an event.
+    // Use an immediate update from the service's current internal state.
     const currentServiceIsConnected = service.getIsConnected();
     const currentServiceIsConnecting = service.getIsConnecting();
     setIsWebSocketConnected(currentServiceIsConnected);
     setIsConnecting(currentServiceIsConnecting);
     console.log(`[Layout Effect Lifecycle] Estado inicial de UI establecido: isWebSocketConnected=${currentServiceIsConnected}, isConnecting=${currentServiceIsConnecting}.`);
 
+    // Ensure the service connects (idempotent: if already connected, resolves immediately).
     console.log("[Layout Effect Lifecycle] Llamando a service.connect() para asegurar la conexión.");
     service.connect().then(() => {
       console.log("[Layout Effect Lifecycle] service.connect() Promise resuelta exitosamente.");
     }).catch((e) => {
       console.error("[Layout Effect Lifecycle] service.connect() Promise fallida durante la inicialización:", e);
+      // If initial connection fails, ensure UI reflects disconnected state
       setIsWebSocketConnected(false);
       setIsConnecting(false);
     });
 
+    // Cleanup function for the useEffect.
+    // Runs before re-execution (due to dependency change) or component unmount.
     return () => {
       console.log('[Layout Effect Lifecycle] Ejecutando función de limpieza (cleanup).');
       if (webSocketServiceRef.current) {
         console.log('[Layout Effect Lifecycle] Limpiando listeners de WebSocket en la instancia actual (cleanup).');
+        // It's crucial to remove listeners to prevent memory leaks and unexpected behavior.
+        // DO NOT call webSocketServiceRef.current.disconnect() here unless logging out.
         webSocketServiceRef.current.off('connected', handleConnected);
         webSocketServiceRef.current.off('disconnected', handleDisconnected);
         webSocketServiceRef.current.off('error', handleError);
         webSocketServiceRef.current.off('permanently_disconnected', handlePermanentlyDisconnected);
       }
     };
-  }, [currentUser?.token, handleConnected, handleDisconnected, handleError, handlePermanentlyDisconnected]);
+  }, [currentUser?.token, handleConnected, handleDisconnected, handleError, handlePermanentlyDisconnected]); // Dependencies
 
   const handleLogout = async () => {
     console.log("[Logout] Iniciando proceso de cierre de sesión.");
@@ -178,8 +187,8 @@ const Layout: React.FC = () => {
       }
       if (webSocketServiceRef.current) {
         console.log("[Logout] Desconectando explícitamente ReverbWebSocketService debido a logout.");
-        webSocketServiceRef.current.disconnect();
-        webSocketServiceRef.current = null;
+        webSocketServiceRef.current.disconnect(); // This will close the actual connection with code 1000
+        webSocketServiceRef.current = null; // Clear the ref
       }
       await logout();
       console.log("[Logout] Redirigiendo a /login.");
@@ -203,12 +212,12 @@ const Layout: React.FC = () => {
     }
   };
 
-  // --- Lógica para mostrar el estado de la conexión en la UI ---
+  // --- Logic to display connection status in the UI ---
   const getConnectionStatus = () => {
     if (!currentUser) {
       return null;
     }
-    // YA NO USAMOS isBrowserOnline AQUÍ. SOLO LOS ESTADOS DEL SERVICIO WS.
+    // Only use the WebSocket service's states
     if (isConnecting) {
       return (
         <span className="flex items-center text-yellow-500 text-sm font-medium animate-pulse">
@@ -225,7 +234,7 @@ const Layout: React.FC = () => {
         </span>
       );
     }
-    // Si no está conectando y no está conectado
+    // If not connecting and not connected
     return (
       <span className="flex items-center text-red-500 text-sm font-medium">
         <WifiOff className="w-4 h-4 mr-1" />
@@ -400,7 +409,7 @@ const Layout: React.FC = () => {
             toggleMinimizeCall={toggleMinimizeCall}
             handleCallCleanup={endCall}
             reverbServiceInstance={webSocketServiceRef.current}
-            // ¡Pasamos los estados derivados del Layout directamente a VideoRoom!
+            // Pass the derived states from Layout directly to VideoRoom!
             isWebSocketConnected={isWebSocketConnected}
             isConnectingWebSocket={isConnecting}
           />
