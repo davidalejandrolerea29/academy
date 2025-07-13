@@ -366,7 +366,7 @@ const Layout: React.FC = () => {
             isCallMinimized={isCallMinimized}
             toggleMinimizeCall={toggleMinimizeCall}
             handleCallCleanup={endCall}
-            reverbService={webSocketServiceRef.current} // Pasamos la instancia de la ref
+            reverbServiceInstance={webSocketServiceRef.current}// Pasamos la instancia de la ref
             isWebSocketConnected={isWebSocketConnected}
             isConnectingWebSocket={isConnecting}
           />

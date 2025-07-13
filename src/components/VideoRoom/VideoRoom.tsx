@@ -19,8 +19,9 @@ interface VideoRoomProps {
    isCallMinimized: boolean; // Pass this from context
    toggleMinimizeCall: () => void; // Pass this from context
    handleCallCleanup: () => void; // Pass this from context
-   isWebSocketConnected: boolean;
-   isConnectingWebSocket: boolean;
+  //  isWebSocketConnected: boolean;
+  //  isConnectingWebSocket: boolean;
+  reverbServiceInstance: ReverbWebSocketService | null;
 }
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
@@ -34,8 +35,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
    isCallMinimized, // Destructure
    toggleMinimizeCall, // Destructure
    handleCallCleanup,
-   isWebSocketConnected,
-   isConnectingWebSocket
+   reverbServiceInstance,
+  //  isWebSocketConnected,
+  //  isConnectingWebSocket
  }) => {
   const API_URL = import.meta.env.VITE_API_URL;
   // const navigate = useNavigate();
@@ -89,71 +91,67 @@ const [participants, setParticipants] = useState<Record<string, {
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
   const [showAlert, setShowAlert] = useState(false);
   const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null);
- const getConnectionStatusIndicator = () => {
-        // Usamos un media query para detectar si es un dispositivo móvil
-        // Esto es una simplificación, en un entorno de producción podrías usar una librería o un hook personalizado.
-        const isMobile = window.innerWidth < 768; // Tailwind's 'md' breakpoint
+const getConnectionStatusIndicator = useCallback(() => {
+    const isMobile = window.innerWidth < 768;
 
-        if (isConnectingWebSocket) {
-            return (
-                <span className="flex items-center text-yellow-400 text-xs font-semibold animate-pulse">
-                    <Loader className="w-3 h-3 mr-1" />
-                    {!isMobile && "Conectando..."} {/* Solo texto en desktop */}
-                </span>
-            );
-        }
-        if (isWebSocketConnected) {
-            return (
-                <span className="flex items-center text-green-500 text-xs font-semibold">
-                    <Wifi className="w-3 h-3 mr-1" />
-                    {!isMobile && "Conectado"} {/* Solo texto en desktop */}
-                </span>
-            );
-        }
-        // Si está desconectado, siempre mostramos el texto para acompañar la alerta
-        return (
-            <span className="flex items-center text-red-500 text-xs font-semibold">
-                <WifiOff className="w-3 h-3 mr-1" />
-                Desconectado
-            </span>
-        );
+    // AHORA USAMOS reverbServiceInstance
+    const currentIsConnecting = reverbServiceInstance?.getIsConnecting() ?? false;
+    const currentIsConnected = reverbServiceInstance?.getIsConnected() ?? false;
+
+    if (currentIsConnecting) {
+      return (
+        <span className="flex items-center text-yellow-400 text-xs font-semibold animate-pulse">
+          <Loader className="w-3 h-3 mr-1" />
+          {!isMobile && "Conectando..."}
+        </span>
+      );
+    }
+    if (currentIsConnected) {
+      return (
+        <span className="flex items-center text-green-500 text-xs font-semibold">
+          <Wifi className="w-3 h-3 mr-1" />
+          {!isMobile && "Conectado"}
+        </span>
+      );
+    }
+    return (
+      <span className="flex items-center text-red-500 text-xs font-semibold">
+        <WifiOff className="w-3 h-3 mr-1" />
+        Desconectado
+      </span>
+    );
+  }, [reverbServiceInstance]); // <-- ¡CAMBIA LA DEPENDENCIA A reverbServiceInstance!
+
+  useEffect(() => {
+    // AHORA USAMOS reverbServiceInstance
+    const currentIsConnected = reverbServiceInstance?.getIsConnected() ?? false;
+    const currentIsConnecting = reverbServiceInstance?.getIsConnecting() ?? false;
+
+    console.log(`[VideoRoom Effect] WebSocket Conectado: ${currentIsConnected}, Conectando: ${currentIsConnecting}`);
+
+    if (alertTimeoutRef.current) {
+      clearTimeout(alertTimeoutRef.current);
+      alertTimeoutRef.current = null;
+    }
+
+    if (!currentIsConnected && !currentIsConnecting) {
+      console.log("[VideoRoom Effect] Conexión detectada como 'Desconectada'. Programando alerta.");
+      alertTimeoutRef.current = setTimeout(() => {
+        setShowAlert(true);
+        console.log("[VideoRoom Effect] Alerta de conexión mostrada.");
+      }, 5000);
+    } else {
+      console.log("[VideoRoom Effect] Conexión activa o en reintento. Ocultando alerta.");
+      setShowAlert(false);
+    }
+
+    return () => {
+      if (alertTimeoutRef.current) {
+        clearTimeout(alertTimeoutRef.current);
+        console.log("[VideoRoom Effect] Cleanup: Timeout de alerta limpiado.");
+      }
     };
-     useEffect(() => {
-        console.log(`[VideoRoom Effect] WebSocket Conectado: ${isWebSocketConnected}, Conectando: ${isConnectingWebSocket}`);
-
-        // Limpiar cualquier timeout existente al cambiar el estado de conexión
-        if (alertTimeoutRef.current) {
-            clearTimeout(alertTimeoutRef.current);
-            alertTimeoutRef.current = null;
-        }
-
-        // Si se desconecta y no está en estado "conectando" (es decir, una desconexión activa y no un reintento)
-        // Ojo con esta lógica: si isConnectingWebSocket ya es true (indicando reintento),
-        // no queremos mostrar el mensaje de "revisa tu conexión" inmediatamente,
-        // porque la app ya está intentando reconectar.
-        // Queremos el mensaje solo cuando la conexión está MUERTA.
-
-        if (!isWebSocketConnected && !isConnectingWebSocket) {
-            // La conexión está DOWN y NO estamos en proceso de reintento.
-            console.log("[VideoRoom Effect] Conexión detectada como 'Desconectada'. Programando alerta.");
-            alertTimeoutRef.current = setTimeout(() => {
-                setShowAlert(true);
-                console.log("[VideoRoom Effect] Alerta de conexión mostrada.");
-            }, 5000); // Muestra la alerta después de 5 segundos de desconexión efectiva.
-        } else {
-            // Si está conectado o conectando, ocultar la alerta inmediatamente
-            console.log("[VideoRoom Effect] Conexión activa o en reintento. Ocultando alerta.");
-            setShowAlert(false);
-        }
-
-        // Limpiar el timeout al desmontar el componente o al re-ejecutar el efecto
-        return () => {
-            if (alertTimeoutRef.current) {
-                clearTimeout(alertTimeoutRef.current);
-                console.log("[VideoRoom Effect] Cleanup: Timeout de alerta limpiado.");
-            }
-        };
-    }, [isWebSocketConnected, isConnectingWebSocket]); // Dependencias: reacciona a cambios en el estado de conexión
+  }, [reverbServiceInstance]); // <-- ¡CAMBIA LA DEPENDENCIA A reverbServiceInstance!
 
   useEffect(() => {
     // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.

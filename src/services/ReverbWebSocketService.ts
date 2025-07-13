@@ -64,7 +64,8 @@ export class ReverbWebSocketService extends EventEmitter {
 
   private pingIntervalId: NodeJS.Timeout | null = null;
   private pingIntervalTime = 40000; // 40 segundos
-
+  private isConnectedInternal: boolean = false;
+  private isConnectingInternal: boolean = false;
   // --- Mueve estas declaraciones AQUÍ, antes del constructor ---
   private _isConnected: boolean = false;
   private _isConnecting: boolean = false;
@@ -103,14 +104,13 @@ private setIsConnected(status: boolean) {
       console.log(`[ReverbWebSocketService State] isConnecting: ${status}`);
     }
   }
+  getIsConnected(): boolean {
+      return this.isConnectedInternal;
+    }
 
-  public getIsConnected(): boolean {
-    return this._isConnected;
-  }
-
-  public getIsConnecting(): boolean {
-    return this._isConnecting;
-  }
+    getIsConnecting(): boolean {
+      return this.isConnectingInternal;
+    }
   // --- Métodos de Gestión de la Conexión Global ---
 
  public async connect(): Promise<string> {
@@ -137,6 +137,8 @@ private setIsConnected(status: boolean) {
           console.log('ReverbWebSocketService: Global WebSocket opened!');
           this.reconnectAttempts = 0;
           this.clearReconnectTimeout();
+          this.isConnectedInternal = true; // Actualiza el estado interno
+          this.isConnectingInternal = false;
           this.emitGlobalEvent('connected');
           this.startPingPong(); // Iniciar el ping/pong al abrir la conexión
           ws.send(JSON.stringify({ event: 'pusher:ping', data: {} })); // Envía el primer ping inmediatamente
@@ -175,6 +177,7 @@ private setIsConnected(status: boolean) {
           this.globalSocketId = null;
           this.globalWs = null;
           this.connectionPromise = null;
+          this.isConnectedInternal = false;
           this.setIsConnected(false); // No conectado
           this.emitGlobalEvent('disconnected', event);
           this.channels.forEach(channel => {
@@ -182,9 +185,11 @@ private setIsConnected(status: boolean) {
           });
         
           if (event.code !== 1000) {
+              this.isConnectingInternal = true;
               console.log("ReverbWebSocketService: Intentando reconectar debido a cierre anormal.");
               this.attemptReconnect();
           } else {
+              this.isConnectingInternal = false;
               console.log("ReverbWebSocketService: Cierre normal (código 1000). No se intenta reconectar automáticamente.");
               this.setIsConnecting(false); // Si es un cierre normal, ya no estamos "conectando"
           }
