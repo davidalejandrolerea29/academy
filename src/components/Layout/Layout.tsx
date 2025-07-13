@@ -320,6 +320,8 @@ const Layout: React.FC = () => {
             toggleMinimizeCall={toggleMinimizeCall}
             handleCallCleanup={endCall}
             reverbService={webSocketService}
+            isWebSocketConnected={isWebSocketConnected}
+            isConnectingWebSocket={isConnecting}
           />
         </div>
       )}

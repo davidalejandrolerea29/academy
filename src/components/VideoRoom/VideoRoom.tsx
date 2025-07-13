@@ -9,7 +9,7 @@ import { useCall } from '../../contexts/CallContext';
 import {
   Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle,
   MessageSquare, PhoneOff, Minimize2, Maximize2, Users, // <-- NUEVO: Íconos de minimizar/maximizar
-  X, Move, Dot, ChevronLeft, ChevronRight
+  X, Move, Dot, ChevronLeft, ChevronRight, WifiOff, Wifi, Loader
 } from 'lucide-react';
 
 interface VideoRoomProps {
@@ -19,6 +19,8 @@ interface VideoRoomProps {
    isCallMinimized: boolean; // Pass this from context
    toggleMinimizeCall: () => void; // Pass this from context
    handleCallCleanup: () => void; // Pass this from context
+   isWebSocketConnected: boolean;
+   isConnectingWebSocket: boolean;
 }
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
@@ -31,7 +33,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
    isTeacher, // Destructure new prop
    isCallMinimized, // Destructure
    toggleMinimizeCall, // Destructure
-   handleCallCleanup // Destructure
+   handleCallCleanup,
+   isWebSocketConnected,
+   isConnectingWebSocket
  }) => {
   const API_URL = import.meta.env.VITE_API_URL;
   // const navigate = useNavigate();
@@ -83,59 +87,62 @@ const [participants, setParticipants] = useState<Record<string, {
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
+  const [showAlert, setShowAlert] = useState(false);
+  const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+ const getConnectionStatusIndicator = () => {
+        // Usamos un media query para detectar si es un dispositivo móvil
+        // Esto es una simplificación, en un entorno de producción podrías usar una librería o un hook personalizado.
+        const isMobile = window.innerWidth < 768; // Tailwind's 'md' breakpoint
 
+        if (isConnectingWebSocket) {
+            return (
+                <span className="flex items-center text-yellow-400 text-xs font-semibold animate-pulse">
+                    <Loader className="w-3 h-3 mr-1" />
+                    {!isMobile && "Conectando..."} {/* Solo texto en desktop */}
+                </span>
+            );
+        }
+        if (isWebSocketConnected) {
+            return (
+                <span className="flex items-center text-green-500 text-xs font-semibold">
+                    <Wifi className="w-3 h-3 mr-1" />
+                    {!isMobile && "Conectado"} {/* Solo texto en desktop */}
+                </span>
+            );
+        }
+        // Si está desconectado, siempre mostramos el texto para acompañar la alerta
+        return (
+            <span className="flex items-center text-red-500 text-xs font-semibold">
+                <WifiOff className="w-3 h-3 mr-1" />
+                Desconectado
+            </span>
+        );
+    };
+     useEffect(() => {
+        // Limpiar cualquier timeout existente al cambiar el estado de conexión
+        if (alertTimeoutRef.current) {
+            clearTimeout(alertTimeoutRef.current);
+            alertTimeoutRef.current = null;
+        }
 
-  const cleanupWebRTCAndReverb = useCallback(() => {
-    console.log("[CLEANUP GLOBAL] Iniciando limpieza completa de WebRTC y Reverb.");
+        // Si se desconecta y no está en estado "conectando"
+        if (!isWebSocketConnected && !isConnectingWebSocket) {
+            // Mostrar la alerta después de 5 segundos de desconexión
+            alertTimeoutRef.current = setTimeout(() => {
+                setShowAlert(true);
+            }, 5000);
+        } else {
+            // Si está conectado o conectando, ocultar la alerta inmediatamente
+            setShowAlert(false);
+        }
 
-    // 1. Cerrar todas las RTCPeerConnections
-    Object.keys(peerConnectionsRef.current).forEach(peerId => {
-      const pc = peerConnectionsRef.current[peerId];
-      if (pc && pc.connectionState !== 'closed') {
-        pc.close();
-        console.log(`[CLEANUP GLOBAL] Cerrada RTCPeerConnection con ${peerId}.`);
-      }
-      delete peerConnectionsRef.current[peerId]; // Asegurarse de eliminar la referencia
-    });
-    peerConnectionsRef.current = {}; // Reiniciar el objeto de refs
-
-    // 2. Detener los tracks de los streams locales
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-      setLocalStream(null); // Elimina la referencia del estado
-      console.log("[CLEANUP GLOBAL] Detenidos y limpiados tracks de localStream.");
-    }
-    if (screenShareStreamRef.current) {
-      screenShareStreamRef.current.getTracks().forEach(track => track.stop());
-      screenShareStreamRef.current = null; // Elimina la referencia de la ref
-      setIsSharingScreen(false);
-      console.log("[CLEANUP GLOBAL] Detenidos y limpiados tracks de screenShareStream.");
-    }
-
-    // 3. Limpiar colas de ICE candidates
-    iceCandidatesQueueRef.current = {};
-    console.log("[CLEANUP GLOBAL] Cola de ICE candidates limpiada.");
-
-    // 4. Abandonar el canal de Reverb
-    if (channelRef.current) {
-      if (typeof channelRef.current.leave === 'function') {
-        channelRef.current.leave();
-        console.log(`[CLEANUP GLOBAL] Abandonado canal de Reverb: ${channelRef.current.name}.`);
-      } else {
-        console.warn("[CLEANUP GLOBAL] El canal de Reverb no tiene un método 'leave'.");
-      }
-      channelRef.current = null; // Elimina la referencia al canal
-    }
-
-    // 5. Limpiar el estado de participantes (todos se han ido)
-    setParticipants({});
-    console.log("[CLEANUP GLOBAL] Estado de participantes limpiado.");
-
-    // 6. Finalmente, notificar al componente padre
-    onCallEnded();
-    console.log("[CLEANUP GLOBAL] onCallEnded invocado. Limpieza completa.");
-  }, [localStream, onCallEnded]); // Asegúrate de incluir las dependencias correctas
-   // --- Funciones de Drag and Drop (mantienen la lógica que ya te di) ---
+        // Limpiar el timeout al desmontar el componente o al re-ejecutar el efecto
+        return () => {
+            if (alertTimeoutRef.current) {
+                clearTimeout(alertTimeoutRef.current);
+            }
+        };
+    }, [isWebSocketConnected, isConnectingWebSocket]); // Dependencias: reacciona a cambios en el estado de conexión
 
   useEffect(() => {
     // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.
@@ -1561,6 +1568,15 @@ return (
                             <Dot className="w-5 h-5 text-red-500 mr-0 md:mr-2 animate-pulse-custom" />
                             <span className="hidden md:inline">Grabando</span>
                         </div>
+                        <div className="absolute top-4 right-4 z-10 bg-gray-800 bg-opacity-75 px-2 py-1 rounded-full">
+                            {getConnectionStatusIndicator()}
+                        </div>
+                        {showAlert && (
+                            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 p-2 px-4 bg-red-600 text-white rounded-lg shadow-lg text-sm text-center animate-fade-in-down">
+                                <p className="font-semibold">¡Problemas de conexión!</p>
+                                <p>Por favor, revisa tu conexión a internet.</p>
+                            </div>
+                        )}
                         {(() => {
                             if (currentScreenShareStream) {
                                 return (
@@ -1862,6 +1878,7 @@ return (
                         top: `${widgetPosition.y}px`,
                     }}
                 >
+                   
                     {/* Botón/barra de arrastre para DESKTOP (parte superior) - FUERA del div de videos */}
                     <div
                         className={`
@@ -1874,6 +1891,7 @@ return (
                     >
                         <Move size={20} className="text-gray-400" />
                     </div>
+                   
                     {/* Contenido de videos en miniatura para desktop minimizado */}
                     <div className="flex-1 flex flex-col bg-gray-950 rounded-lg overflow-hidden p-2 pointer-events-none">
                         {/* Pantalla compartida principal en miniatura (si aplica) */}
@@ -2003,6 +2021,7 @@ return (
                             <PhoneOff size={18} />
                         </button>
                     </div>
+                    
                 </div>
             )}
 
@@ -2022,6 +2041,7 @@ return (
                         bottom: widgetPosition.y === 0 ? '16px' : 'auto',
                     }}
                 >
+                  
                     {/* Botón de arrastre para MOBILE (en la parte superior para fácil acceso) - FUERA del div de contenido */}
                     <button
                         onMouseDown={handleDragButtonMouseDown}
