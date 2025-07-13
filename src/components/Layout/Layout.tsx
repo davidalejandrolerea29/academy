@@ -25,7 +25,7 @@ const Layout: React.FC = () => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { activeRoomId, endCall, isCallMinimized, toggleMinimizeCall } = useCall();
-
+const [isBrowserOnline, setIsBrowserOnline] = useState(navigator.onLine);
   // Estados locales para la conexión del WebSocket, manejados en Layout
   const [isWebSocketConnected, setIsWebSocketConnected] = useState<boolean>(false);
   const [isConnecting, setIsConnecting] = useState<boolean>(true); // Inicia como conectando para mostrar "Conectando..." al cargar
@@ -34,6 +34,43 @@ const Layout: React.FC = () => {
   // Callbacks memoizados para los eventos del servicio WebSocket
   // Estos callbacks son cruciales para actualizar el estado de la UI
   // y para loguear lo que el servicio WebSocket nos está reportando.
+  useEffect(() => {
+    console.log(`[Browser Network Status] Initial check: navigator.onLine = ${navigator.onLine}`);
+    setIsBrowserOnline(navigator.onLine); // Establece el estado inicial
+
+    const handleOnline = () => {
+      console.log('--- NAVEGADOR: Conectado a la red (online). ---');
+      setIsBrowserOnline(true);
+      // Cuando el navegador vuelve a estar online, si nuestro servicio está desconectado,
+      // podemos forzar un intento de conexión o reconexión aquí.
+      // El servicio ya tiene lógica de reconexión, pero esto asegura que se dispare si
+      // la pérdida de conexión del navegador fue el factor clave.
+      if (webSocketServiceRef.current && !webSocketServiceRef.current.getIsConnected() && !webSocketServiceRef.current.getIsConnecting()) {
+        console.log('[Browser Network Status] Navegador online. Intentando reconectar WebSocket si está inactivo.');
+        webSocketServiceRef.current.connect().catch(e => console.error("Error al reconectar WS desde handler de online:", e));
+      }
+    };
+
+    const handleOffline = () => {
+      console.warn('--- NAVEGADOR: SIN CONEXIÓN a la red (offline). ---');
+      setIsBrowserOnline(false);
+      // Cuando el navegador se desconecta, forzamos un cierre del WebSocket.
+      // Esto debería disparar el `onclose` en el servicio con un código de error,
+      // lo que a su vez activará la lógica de reconexión de tu servicio.
+      if (webSocketServiceRef.current && webSocketServiceRef.current.getIsConnected()) {
+        console.warn('[Browser Network Status] Navegador offline. Forzando desconexión del WebSocket para activar reconexión.');
+        webSocketServiceRef.current.disconnect(); // Esto debería llevar al onclose con un código anormal
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []); 
   const handleConnected = useCallback(() => {
     setIsWebSocketConnected(true);
     setIsConnecting(false);
@@ -197,13 +234,23 @@ const Layout: React.FC = () => {
   // --- Lógica para mostrar el estado de la conexión en la UI ---
   const getConnectionStatus = () => {
     if (!currentUser) {
-      return null; // No mostrar el estado si no hay usuario logueado
+      return null;
     }
+    // Si el navegador está offline, muestra un mensaje específico
+    if (!isBrowserOnline) {
+      return (
+        <span className="flex items-center text-red-700 text-sm font-medium">
+          <WifiOff className="w-4 h-4 mr-1" />
+          Sin conexión a Internet (Navegador)
+        </span>
+      );
+    }
+    // Si el navegador está online, procede con el estado de WebSocket
     if (isConnecting) {
       return (
         <span className="flex items-center text-yellow-500 text-sm font-medium animate-pulse">
           <Loader className="w-4 h-4 mr-1" />
-          Conectando...
+          Conectando WebSocket...
         </span>
       );
     }
@@ -211,14 +258,15 @@ const Layout: React.FC = () => {
       return (
         <span className="flex items-center text-green-600 text-sm font-medium">
           <Wifi className="w-4 h-4 mr-1" />
-          Conectado
+          WebSocket Conectado
         </span>
       );
     }
+    // Si no está conectando y no está conectado (pero el navegador está online)
     return (
       <span className="flex items-center text-red-500 text-sm font-medium">
         <WifiOff className="w-4 h-4 mr-1" />
-        Desconectado
+        WebSocket Desconectado
       </span>
     );
   };
