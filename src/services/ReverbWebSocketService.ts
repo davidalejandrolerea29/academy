@@ -212,17 +212,27 @@ export class ReverbWebSocketService extends EventEmitter {
   }
 
   private startPingPong() {
-    this.stopPingPong();
-    this.clearPongTimeout();
+    this.stopPingPong(); // Limpia cualquier ping anterior
+    this.clearPongTimeout(); // Limpia cualquier pong timeout anterior
+    console.log(`ReverbWebSocketService: Iniciando Ping-Pong. Ping cada ${this.pingIntervalTime / 1000}s, Pong timeout ${this.pongTimeoutTime / 1000}s.`);
     this.pingIntervalId = setInterval(() => {
       if (this.globalWs && this.globalWs.readyState === WebSocket.OPEN) {
+        console.log('ReverbWebSocketService: Enviando ping...');
         this.globalWs.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+        // Establecer un timeout para esperar el pong
         this.pongTimeoutId = setTimeout(() => {
-          console.warn('ReverbWebSocketService: Pong timeout! Closing WebSocket due to inactivity.');
+          console.warn('ReverbWebSocketService: ¡PONG TIMEOUT! Cerrando WebSocket debido a inactividad.');
+          // CAMBIO CLAVE AQUÍ: No pases el código 1006.
+          // Al no pasar ningún código, el navegador cerrará la conexión
+          // y el evento onclose se disparará con el código 1006 (Abnormal Closure)
+          // si no hay un cierre de protocolo adecuado.
           if (this.globalWs) {
-            this.globalWs.close(1006, "Pong timeout");
+            this.globalWs.close(); // <--- ¡Simplemente llama a close() sin argumentos!
           }
         }, this.pongTimeoutTime);
+      } else {
+        console.warn('ReverbWebSocketService: Intentando enviar ping, pero WebSocket no está OPEN. Deteniendo ping-pong.');
+        this.stopPingPong(); // Si no está OPEN, detener el intervalo de ping
       }
     }, this.pingIntervalTime);
   }
