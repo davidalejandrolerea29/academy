@@ -46,6 +46,7 @@ export interface EchoChannel {
 
 // --- Clase Principal del Servicio WebSocket ---
 
+// --- Clase Principal del Servicio WebSocket ---
 export class ReverbWebSocketService extends EventEmitter {
   private options: WebSocketServiceOptions;
   private wsUrl: string;
@@ -58,59 +59,59 @@ export class ReverbWebSocketService extends EventEmitter {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private baseReconnectInterval = 1000;
+
   private connectionPromise: Promise<string> | null = null;
   private activeChannelNames: Map<string, { isPresence: boolean, lastProcessedMessageId?: number }> = new Map();
 
+  // --- Propiedades de PING/PONG AÑADIDAS/AJUSTADAS ---
   private pingIntervalId: NodeJS.Timeout | null = null;
-  private pingIntervalTime = 40000; // 40 segundos
+  private pongTimeoutId: NodeJS.Timeout | null = null; // Nuevo timeout para el pong
+  private pingIntervalTime = 25000; // Envía un ping cada 25 segundos
+  private pongTimeoutTime = 5000;   // Espera 5 segundos para el pong
+  // ----------------------------------------------------
 
-  // --- CONSOLIDADO: Usamos solo estas dos propiedades para el estado ---
   private _isConnected: boolean = false;
   private _isConnecting: boolean = false;
-  // -------------------------------------------------------------------
-
-  // `currentUserId` es independiente del estado de conexión
   private currentUserId: string | null = null;
 
   constructor(options: WebSocketServiceOptions) {
     super();
-
     this.options = options;
     const protocol = (options.wsHost === '127.0.0.1' || options.wsHost === 'localhost') ? 'ws' : 'wss';
-    this.wsUrl = `${protocol}://${options.wsHost}:${options.wsPort}/app/${options.appKey}`;
+    const port = options.forceTLS ? options.wssPort : options.wsPort; // Usa el puerto correcto
+    this.wsUrl = `${protocol}://${options.wsHost}:${port}/app/${options.appKey}`;
+
 
     console.log("ReverbWebSocketService: Instancia creada. URL de conexión:", this.wsUrl);
-
-    // Al construir, el servicio se está iniciando para conectar
-    this.setConnectionState(false, true); // No conectado, pero sí conectando
+    this.setConnectionState(false, true);
   }
 
-  // --- Método ÚNICO para Actualizar el Estado de Conexión ---
   private setConnectionState(isConnected: boolean, isConnecting: boolean) {
     if (this._isConnected !== isConnected) {
       this._isConnected = isConnected;
-      console.log(`[ReverbWebSocketService State] isConnected: ${this._isConnected}`);
-      // Opcional: emitir un evento si quieres que los componentes reaccionen a este cambio interno
-      // this.emit('internal_connected_state_changed', this._isConnected);
+      console.log(`[ReverbWebSocketService Internal State] _isConnected: ${this._isConnected}`);
     }
     if (this._isConnecting !== isConnecting) {
       this._isConnecting = isConnecting;
-      console.log(`[ReverbWebSocketService State] isConnecting: ${this._isConnecting}`);
-      // Opcional: emitir un evento
-      // this.emit('internal_connecting_state_changed', this._isConnecting);
+      console.log(`[ReverbWebSocketService Internal State] _isConnecting: ${this._isConnecting}`);
     }
+
+    // Emitir eventos solo si el estado global ha cambiado
+    if (isConnected && !this._isConnected) { // Si pasamos a conectado
+      this.emit('connected');
+    } else if (!isConnected && this._isConnected) { // Si pasamos a desconectado
+      this.emit('disconnected');
+    }
+    // Podrías emitir un evento 'connecting_changed' si quieres, pero 'connected'/'disconnected' suelen ser suficientes.
   }
 
-  // --- Getters que retornan las propiedades CORRECTAS ---
-  getIsConnected(): boolean {
+  public getIsConnected(): boolean {
     return this._isConnected;
   }
 
-  getIsConnecting(): boolean {
+  public getIsConnecting(): boolean {
     return this._isConnecting;
   }
-
-  // --- Métodos de Gestión de la Conexión Global ---
 
   public async connect(): Promise<string> {
     if (this.connectionPromise) {
@@ -120,8 +121,8 @@ export class ReverbWebSocketService extends EventEmitter {
     if (this.globalWs && this.globalWs.readyState === WebSocket.OPEN && this.globalSocketId) {
       this.clearReconnectTimeout();
       this.reconnectAttempts = 0;
-      this.startPingPong();
-      this.setConnectionState(true, false); // Ya conectado
+      this.startPingPong(); // Asegura que el ping-pong esté activo si ya está conectado
+      this.setConnectionState(true, false);
       return Promise.resolve(this.globalSocketId);
     }
 
@@ -138,9 +139,8 @@ export class ReverbWebSocketService extends EventEmitter {
           this.reconnectAttempts = 0;
           this.clearReconnectTimeout();
           this.setConnectionState(true, false); // ¡CONECTADO!
-          this.emitGlobalEvent('connected');
-          this.startPingPong();
-          ws.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+          this.emit('connected'); // Emitir evento para el listener en Layout
+          this.startPingPong(); // Inicia el ping-pong al abrir la conexión
         };
 
         ws.onmessage = (event) => {
@@ -161,7 +161,9 @@ export class ReverbWebSocketService extends EventEmitter {
               }
             });
           } else if (message.event === 'pusher:pong') {
-            // console.log('ReverbWebSocketService: Received global pong.');
+            // Recibimos un pong, limpiamos el timeout
+            // console.log('ReverbWebSocketService: Received global pong. Clearing pong timeout.');
+            this.clearPongTimeout();
           }
 
           this.dispatchToChannelListeners(message);
@@ -169,14 +171,13 @@ export class ReverbWebSocketService extends EventEmitter {
 
         ws.onclose = (event) => {
           console.warn('ReverbWebSocketService: Global WebSocket closed:', event.code, event.reason);
-          this.stopPingPong();
+          this.stopPingPong(); // Detener ambos timeouts de ping/pong
+          this.clearPongTimeout(); // Asegurarse de que cualquier timeout de pong pendiente se limpie
+
           this.globalSocketId = null;
           this.globalWs = null;
           this.connectionPromise = null;
-          this.emitGlobalEvent('disconnected', event);
-          this.channels.forEach(channel => {
-            channel.listeners.get('disconnected')?.forEach(cb => cb());
-          });
+          this.emit('disconnected', event); // Emitir evento para el listener en Layout
 
           if (event.code !== 1000) {
             this.setConnectionState(false, true); // Desconectado, intentando reconectar
@@ -191,14 +192,13 @@ export class ReverbWebSocketService extends EventEmitter {
         ws.onerror = (error) => {
           console.error('ReverbWebSocketService: Global WebSocket error:', error);
           this.stopPingPong();
+          this.clearPongTimeout();
+
           this.globalSocketId = null;
           this.globalWs = null;
           this.connectionPromise = null;
           this.setConnectionState(false, false); // Desconectado, no conectando (error)
-          this.emitGlobalEvent('error', error);
-          this.channels.forEach(channel => {
-            channel.listeners.get('error')?.forEach(cb => cb(error));
-          });
+          this.emit('error', error); // Emitir evento para el listener en Layout
           this.attemptReconnect(); // Aunque sea un error, intentar reconectar
         };
 
@@ -213,13 +213,22 @@ export class ReverbWebSocketService extends EventEmitter {
     return this.connectionPromise;
   }
 
-  // --- LÓGICA DE PING/PONG ---
+  // --- LÓGICA DE PING/PONG ACTUALIZADA ---
   private startPingPong() {
-    this.stopPingPong(); // Limpiar cualquier intervalo existente para evitar duplicados
+    this.stopPingPong(); // Limpia cualquier ping anterior
+    this.clearPongTimeout(); // Limpia cualquier pong timeout anterior
     this.pingIntervalId = setInterval(() => {
       if (this.globalWs && this.globalWs.readyState === WebSocket.OPEN) {
-        //console.log('ReverbWebSocketService: Sending global ping.');
+        // console.log('ReverbWebSocketService: Sending ping...');
         this.globalWs.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+        // Establecer un timeout para esperar el pong
+        this.pongTimeoutId = setTimeout(() => {
+          console.warn('ReverbWebSocketService: Pong timeout! Closing WebSocket due to inactivity.');
+          // Si no recibimos pong, cerramos la conexión forzadamente para disparar onclose
+          if (this.globalWs) {
+            this.globalWs.close(1006, "Pong timeout"); // Código 1006 para cierre anormal
+          }
+        }, this.pongTimeoutTime);
       }
     }, this.pingIntervalTime);
   }
@@ -230,34 +239,45 @@ export class ReverbWebSocketService extends EventEmitter {
       this.pingIntervalId = null;
     }
   }
+
+  private clearPongTimeout() {
+    if (this.pongTimeoutId) {
+      clearTimeout(this.pongTimeoutId);
+      this.pongTimeoutId = null;
+    }
+  }
+  // ---------------------------------------
+
   // --- FIN LÓGICA PING/PONG ---
 
   // Lógica de reconexión exponencial
-   private attemptReconnect() {
+private attemptReconnect() {
     if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
-    
-    if (this._isConnected) { // Usa _isConnected
+
+    if (this._isConnected) {
       console.log("ReverbWebSocketService: Ya conectado, cancelando intento de reconexión.");
       this.reconnectAttempts = 0;
-      this.setConnectionState(true, false); // Ya conectado
+      this.setConnectionState(true, false);
       return;
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error("ReverbWebSocketService: Máximo de intentos de reconexión alcanzado. No se intentará más.");
-      this.setConnectionState(false, false); // Permanentemente desconectado
-      this.emitGlobalEvent('permanently_disconnected');
+      this.setConnectionState(false, false);
+      this.emit('permanently_disconnected');
       return;
     }
 
     const delay = this.baseReconnectInterval * Math.pow(2, this.reconnectAttempts);
     console.log(`ReverbWebSocketService: Intentando reconectar en ${delay / 1000} segundos... (Intento ${this.reconnectAttempts + 1})`);
-    this.setConnectionState(false, true); // Intentando reconectar
+    this.setConnectionState(false, true);
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectAttempts++;
       this.connect().catch(e => {
         console.error("ReverbWebSocketService: Error en intento de reconexión:", e);
-        // El catch del connect ya maneja el estado internamente
+        // Si el intento de conexión falló, asegurar que el estado sea desconectado y no conectando
+        this.setConnectionState(false, false);
+        this.attemptReconnect(); // Intentar de nuevo después de un error
       });
     }, delay);
   }
@@ -657,25 +677,20 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
 
   // Método para cerrar todas las conexiones y limpiar
    public disconnect() {
-    console.log("ReverbWebSocketService: Iniciando desconexión manual de WebSocket global.");
+    console.log("ReverbWebSocketService: Desconexión solicitada por la aplicación.");
+    this.clearReconnectTimeout();
+    this.stopPingPong();
+    this.clearPongTimeout(); // Asegurarse de limpiar el timeout del pong
     if (this.globalWs) {
-      this.globalWs.close(1000, "Client initiated disconnect"); // Cierre con código 1000
-      // La lógica en `onclose` manejará el resto del cleanup
-    } else {
-        console.log("ReverbWebSocketService: No hay WebSocket global activo para desconectar.");
-        // Si no hay WS activo, simplemente limpiamos los estados
-        this.globalSocketId = null;
-        this.channels.clear();
-        this.globalListeners.clear();
-        this.clearReconnectTimeout();
-        this.reconnectAttempts = 0;
-        this.connectionPromise = null;
-        this.activeChannelNames.clear();
-        this.stopPingPong(); // Asegurarse de parar el ping
-        this.setIsConnected(false);
-        this.setIsConnecting(false);
-        this.emitGlobalEvent('disconnected', { code: 1000, reason: "Manual Disconnect (no active WS)" });
+      this.globalWs.close(1000, "App disconnected");
     }
+    this.globalSocketId = null;
+    this.globalWs = null;
+    this.connectionPromise = null;
+    this.setConnectionState(false, false);
+    this.channels.clear();
+    this.activeChannelNames.clear();
+    this.emit('disconnected', new CloseEvent('close', { code: 1000, reason: "App disconnected" }));
   }
 }
 
