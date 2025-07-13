@@ -169,39 +169,42 @@ export class ReverbWebSocketService extends EventEmitter {
         };
 
         ws.onclose = (event) => {
-          console.warn(`ReverbWebSocketService: onclose event - Global WebSocket closed! Code: ${event.code}, Reason: ${event.reason}`);
-          console.log(`ReverbWebSocketService: Estado de red en 'onclose': navigator.onLine = ${navigator.onLine}`); // <--- Añadido
-          this.stopPingPong();
-          this.clearPongTimeout();
+    console.warn(`ReverbWebSocketService: onclose event - Global WebSocket closed! Code: ${event.code}, Reason: ${event.reason}`);
+    console.log(`ReverbWebSocketService: Estado de red en 'onclose': navigator.onLine = ${navigator.onLine}`);
 
-          this.globalSocketId = null;
-          this.globalWs = null;
-          this.connectionPromise = null;
+    this.stopPingPong();
+    this.clearPongTimeout();
 
-          if (event.code !== 1000) { // Si no es un cierre normal
-            console.log("ReverbWebSocketService: Cierre anormal detectado. Iniciando intento de reconexión.");
-            this.setConnectionState(false, true); // Desconectado, intentando reconectar
-            this.attemptReconnect();
-          } else {
-            console.log("ReverbWebSocketService: Cierre normal (código 1000). No se intenta reconectar automáticamente.");
-            this.setConnectionState(false, false); // Desconectado, no reconectando (cierre normal)
-          }
-          this.emit('disconnected', event);
-        };
+    this.globalSocketId = null;
+    this.globalWs = null;
+    this.connectionPromise = null;
 
-       ws.onerror = (error) => {
-          console.error('ReverbWebSocketService: Global WebSocket error:', error);
-          console.log(`ReverbWebSocketService: Estado de red en 'onerror': navigator.onLine = ${navigator.onLine}`); // <--- Añadido
-          this.stopPingPong();
-          this.clearPongTimeout();
+    // Si el código NO es 1000 (cierre normal) O es nuestro código de PONG TIMEOUT (4000)
+    if (event.code !== 1000 || event.code === 4000) { 
+        console.log("ReverbWebSocketService: Cierre anormal o por PONG TIMEOUT detectado. Iniciando intento de reconexión.");
+        this.setConnectionState(false, true); // Desconectado, intentando reconectar
+        this.attemptReconnect();
+    } else {
+        console.log("ReverbWebSocketService: Cierre normal (código 1000). No se intenta reconectar automáticamente.");
+        this.setConnectionState(false, false); // Desconectado, no reconectando (cierre normal)
+    }
+    this.emit('disconnected', event);
+};
 
-          this.globalSocketId = null;
-          this.globalWs = null;
-          this.connectionPromise = null;
-          this.setConnectionState(false, false);
-          this.emit('error', error);
-          this.attemptReconnect();
-        };
+// Asegúrate de que el onerror también llame a attemptReconnect()
+ws.onerror = (error) => {
+    console.error('ReverbWebSocketService: Global WebSocket error:', error);
+    console.log(`ReverbWebSocketService: Estado de red en 'onerror': navigator.onLine = ${navigator.onLine}`);
+    this.stopPingPong();
+    this.clearPongTimeout();
+
+    this.globalSocketId = null;
+    this.globalWs = null;
+    this.connectionPromise = null;
+    this.setConnectionState(false, false); // Error, está desconectado
+    this.emit('error', error);
+    this.attemptReconnect(); // <--- CRUCIAL: Asegúrate de que esto siempre esté aquí
+};
 
       } catch (e: any) {
         console.error('ReverbWebSocketService: Error creating global WebSocket:', e);
@@ -214,31 +217,32 @@ export class ReverbWebSocketService extends EventEmitter {
     return this.connectionPromise;
   }
 
-  private startPingPong() {
-    this.stopPingPong(); // Limpia cualquier ping anterior
-    this.clearPongTimeout(); // Limpia cualquier pong timeout anterior
-    console.log(`ReverbWebSocketService: Iniciando Ping-Pong. Ping cada ${this.pingIntervalTime / 1000}s, Pong timeout ${this.pongTimeoutTime / 1000}s.`);
-    this.pingIntervalId = setInterval(() => {
-      if (this.globalWs && this.globalWs.readyState === WebSocket.OPEN) {
-        console.log('ReverbWebSocketService: Enviando ping...');
-        this.globalWs.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
-        // Establecer un timeout para esperar el pong
-        this.pongTimeoutId = setTimeout(() => {
-          console.warn('ReverbWebSocketService: ¡PONG TIMEOUT! Cerrando WebSocket debido a inactividad.');
-          // CAMBIO CLAVE AQUÍ: No pases el código 1006.
-          // Al no pasar ningún código, el navegador cerrará la conexión
-          // y el evento onclose se disparará con el código 1006 (Abnormal Closure)
-          // si no hay un cierre de protocolo adecuado.
-          if (this.globalWs) {
-            this.globalWs.close(); // <--- ¡Simplemente llama a close() sin argumentos!
-          }
-        }, this.pongTimeoutTime);
-      } else {
-        console.warn('ReverbWebSocketService: Intentando enviar ping, pero WebSocket no está OPEN. Deteniendo ping-pong.');
-        this.stopPingPong(); // Si no está OPEN, detener el intervalo de ping
-      }
-    }, this.pingIntervalTime);
-  }
+private startPingPong() {
+  this.stopPingPong();
+  this.clearPongTimeout();
+  console.log(`ReverbWebSocketService: Iniciando Ping-Pong. Ping cada ${this.pingIntervalTime / 1000}s, Pong timeout ${this.pongTimeoutTime / 1000}s.`);
+  this.pingIntervalId = setInterval(() => {
+    if (this.globalWs && this.globalWs.readyState === WebSocket.OPEN) {
+      console.log('ReverbWebSocketService: Enviando ping...');
+      this.globalWs.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+
+      this.clearPongTimeout(); // Limpiar el timeout anterior antes de crear uno nuevo.
+      this.pongTimeoutId = setTimeout(() => {
+        console.warn('ReverbWebSocketService: ¡PONG TIMEOUT! Cerrando WebSocket debido a inactividad.');
+        if (this.globalWs) {
+          this.globalWs.close(4000, "Pong Timeout Detected"); // Usar un código personalizado para identificarlo
+        }
+        // Importante: No llamar attemptReconnect() aquí, deja que el onclose lo haga
+        // para mantener la lógica de reconexión centralizada en onclose/onerror.
+        // La clave es el código 4000 que lo marcará como NO-NORMAL.
+      }, this.pongTimeoutTime);
+    } else {
+      console.warn('ReverbWebSocketService: Intentando enviar ping, pero WebSocket no está OPEN. Deteniendo ping-pong.');
+      this.stopPingPong();
+      this.clearPongTimeout();
+    }
+  }, this.pingIntervalTime);
+}
 
   private stopPingPong() {
     if (this.pingIntervalId) {
