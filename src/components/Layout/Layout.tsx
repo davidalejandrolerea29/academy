@@ -20,8 +20,7 @@ import {
 import logo from '../../assets/logo.png';
 
 // Importa tu servicio WebSocket
-import { createReverbWebSocketService, ReverbWebSocketService } from '../../services/ReverbWebSocketService';
-
+import { createReverbWebSocketService, EchoChannel, ReverbWebSocketService } from '../../services/ReverbWebSocketService'; // <-- Asegúrate de importar ReverbWebSocketService aquí
 const Layout: React.FC = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
