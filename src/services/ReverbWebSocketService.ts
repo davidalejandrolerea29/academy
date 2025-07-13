@@ -55,8 +55,6 @@ export class ReverbWebSocketService extends EventEmitter {
   private globalSocketId: string | null = null;
   private channels: Map<string, ChannelSubscription> = new Map();
   private globalListeners: Map<string, Set<Function>> = new Map();
-  private _isLogoutInitiated: boolean = false; // <-- NUEVA PROPIEDAD
-
 
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
@@ -170,11 +168,10 @@ export class ReverbWebSocketService extends EventEmitter {
           this.dispatchToChannelListeners(message);
         };
 
-       // Dentro de la función connect, en el callback de ws.onclose
-ws.onclose = (event) => {
+        ws.onclose = (event) => {
     console.warn(`ReverbWebSocketService: onclose event - Global WebSocket closed! Code: ${event.code}, Reason: ${event.reason}`);
     console.log(`ReverbWebSocketService: Estado de red en 'onclose': navigator.onLine = ${navigator.onLine}`);
-    
+
     this.stopPingPong();
     this.clearPongTimeout();
 
@@ -182,40 +179,16 @@ ws.onclose = (event) => {
     this.globalWs = null;
     this.connectionPromise = null;
 
-    // Aquí está el cambio crucial:
-    // Siempre intentaremos reconectar A MENOS QUE sea un cierre explícito de la aplicación (logout).
-    // Si tu `logout` en Layout llama a `service.disconnect()`,
-    // podrías pasarle un flag especial o un código específico (ej. 1000)
-    // para que aquí sepa que NO debe reconectar.
-    // Por ahora, asumimos que SOLO el logout explícito debe evitar la reconexión.
-    
-    // Si event.code es 1000 Y la razón es "App disconnected", y esto viene de un logout
-    // NO queremos reconectar. En cualquier otro caso (incluyendo pong timeout, red, otros errores) SÍ.
-
-    // Necesitamos una manera de diferenciar el disconnect por logout del disconnect por otros motivos.
-    // Una forma es que el `disconnect()` del servicio acepte un parámetro `isAppInitiatedLogout`.
-
-    // **OPCIÓN MÁS SEGURA: Añadir una propiedad al servicio para indicar un logout.**
-    // Asume que tienes una propiedad `private _isLogoutInitiated: boolean = false;` en tu clase.
-    // Y tu método `disconnect()` la setea a `true`.
-    // this.disconnect(isLogout: boolean = false) { if (isLogout) this._isLogoutInitiated = true; /* ... */ }
-
-    // En el onclose:
-    if (this._isLogoutInitiated) {
-        console.log("ReverbWebSocketService: Cierre debido a logout de la aplicación. No se reconecta.");
-        this.setConnectionState(false, false); // Desconectado, no reconectando.
-        this._isLogoutInitiated = false; // Resetear el flag después de usarlo
-    } else if (event.code !== 1000 || event.code === 4000) { // O cualquier otro código no normal, o nuestro código de timeout
-        console.log("ReverbWebSocketService: Cierre anormal (o 4000) detectado. Iniciando intento de reconexión.");
+    // Si el código NO es 1000 (cierre normal) O es nuestro código de PONG TIMEOUT (4000)
+    if (event.code !== 1000 || event.code === 4000) { 
+        console.log("ReverbWebSocketService: Cierre anormal o por PONG TIMEOUT detectado. Iniciando intento de reconexión.");
         this.setConnectionState(false, true); // Desconectado, intentando reconectar
         this.attemptReconnect();
-    } else { // Si es 1000 y no es por logout, es un caso que no esperamos. Reconsiderar.
-        console.warn("ReverbWebSocketService: Cierre inesperado con código 1000 y no marcado como logout. Intentando reconectar por precaución.");
-        this.setConnectionState(false, true); // Intentar reconectar por si acaso
-        this.attemptReconnect();
+    } else {
+        console.log("ReverbWebSocketService: Cierre normal (código 1000). No se intenta reconectar automáticamente.");
+        this.setConnectionState(false, false); // Desconectado, no reconectando (cierre normal)
     }
-    
-    this.emit('disconnected', event); // Siempre emitir el evento 'disconnected' a los listeners de la UI
+    this.emit('disconnected', event);
 };
 
 // Asegúrate de que el onerror también llame a attemptReconnect()
@@ -593,7 +566,6 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
           //console.log(`ReverbWebSocketService: Sent unsubscribe request for channel: "${channelName}"`);
         }
         this.channels.delete(channelName); // Eliminar el canal del mapa
-        this.activeChannelNames.delete(channelName);
         //console.log(`ReverbWebSocketService: Channel "${channelName}" left.`);
       },
       subscribed: (callback: Function) => {
@@ -716,27 +688,21 @@ private getOrCreateChannelSubscription(channelName: string): ChannelSubscription
   }
 
   // Método para cerrar todas las conexiones y limpiar
-  public disconnect(isLogout: boolean = false) {
-    console.log(`ReverbWebSocketService: Desconexión solicitada por la aplicación. (isLogout: ${isLogout})`);
-    if (isLogout) {
-        this._isLogoutInitiated = true; // Establece el flag si es un logout explícito
-    }
+    public disconnect() {
+    console.log("ReverbWebSocketService: Desconexión solicitada por la aplicación.");
+    this.clearReconnectTimeout();
     this.stopPingPong();
     this.clearPongTimeout();
-    this.clearReconnectTimeout(); // Asegúrate de limpiar también el timeout de reconexión
-
     if (this.globalWs) {
-      // Envía un código de cierre normal (1000) con una razón personalizada
-      // Si la razón ya viene del server o es otra cosa, onclose se encargará.
-      // Aquí, forzamos un cierre limpio desde la app.
-      if (this.globalWs.readyState === WebSocket.OPEN || this.globalWs.readyState === WebSocket.CONNECTING) {
-        this.globalWs.close(1000, "App disconnected"); // Cierre limpio.
-      }
-      this.globalWs = null;
+      this.globalWs.close(1000, "App disconnected");
     }
     this.globalSocketId = null;
+    this.globalWs = null;
     this.connectionPromise = null;
-    // La emisión de 'disconnected' y el ajuste de estados se harán en el onclose.
+    this.setConnectionState(false, false);
+    this.channels.clear();
+    this.activeChannelNames.clear();
+    this.emit('disconnected', new CloseEvent('close', { code: 1000, reason: "App disconnected" }));
   }
 
   // --- Nueva función para establecer el token y forzar reconexión si cambia ---

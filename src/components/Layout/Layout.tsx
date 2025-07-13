@@ -186,8 +186,8 @@ const Layout: React.FC = () => {
       }
       if (webSocketServiceRef.current) {
         console.log("[Logout] Desconectando explícitamente ReverbWebSocketService debido a logout.");
-        // Al hacer logout, SI desconectamos el servicio explícitamente y lo marcamos como logout.
-        webSocketServiceRef.current.disconnect(true); // <-- Pasar true aquí
+        // Al hacer logout, SI desconectamos el servicio explícitamente.
+        webSocketServiceRef.current.disconnect();
         webSocketServiceRef.current = null; // Limpiar la referencia
       }
       await logout();
