@@ -119,20 +119,30 @@ const [participants, setParticipants] = useState<Record<string, {
         );
     };
      useEffect(() => {
+        console.log(`[VideoRoom Effect] WebSocket Conectado: ${isWebSocketConnected}, Conectando: ${isConnectingWebSocket}`);
+
         // Limpiar cualquier timeout existente al cambiar el estado de conexión
         if (alertTimeoutRef.current) {
             clearTimeout(alertTimeoutRef.current);
             alertTimeoutRef.current = null;
         }
 
-        // Si se desconecta y no está en estado "conectando"
+        // Si se desconecta y no está en estado "conectando" (es decir, una desconexión activa y no un reintento)
+        // Ojo con esta lógica: si isConnectingWebSocket ya es true (indicando reintento),
+        // no queremos mostrar el mensaje de "revisa tu conexión" inmediatamente,
+        // porque la app ya está intentando reconectar.
+        // Queremos el mensaje solo cuando la conexión está MUERTA.
+
         if (!isWebSocketConnected && !isConnectingWebSocket) {
-            // Mostrar la alerta después de 5 segundos de desconexión
+            // La conexión está DOWN y NO estamos en proceso de reintento.
+            console.log("[VideoRoom Effect] Conexión detectada como 'Desconectada'. Programando alerta.");
             alertTimeoutRef.current = setTimeout(() => {
                 setShowAlert(true);
-            }, 5000);
+                console.log("[VideoRoom Effect] Alerta de conexión mostrada.");
+            }, 5000); // Muestra la alerta después de 5 segundos de desconexión efectiva.
         } else {
             // Si está conectado o conectando, ocultar la alerta inmediatamente
+            console.log("[VideoRoom Effect] Conexión activa o en reintento. Ocultando alerta.");
             setShowAlert(false);
         }
 
@@ -140,6 +150,7 @@ const [participants, setParticipants] = useState<Record<string, {
         return () => {
             if (alertTimeoutRef.current) {
                 clearTimeout(alertTimeoutRef.current);
+                console.log("[VideoRoom Effect] Cleanup: Timeout de alerta limpiado.");
             }
         };
     }, [isWebSocketConnected, isConnectingWebSocket]); // Dependencias: reacciona a cambios en el estado de conexión
