@@ -5,7 +5,7 @@ import { Video, VideoOff, Mic, MicOff, ScreenShare } from 'lucide-react';
 
 // Define las props que RemoteVideo espera recibir
 interface RemoteVideoProps {
-  stream: MediaStream;
+  stream: MediaStream | null; // Cambiado a MediaStream | null para mayor robustez
   participantId: string;
   participantName: string;
   videoEnabled: boolean;
@@ -28,18 +28,19 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
   className, // Aceptar className
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  // showVideo ahora solo depende de videoEnabled (para cámara) o si es pantalla compartida
+  // showVideoContent ahora solo depende de videoEnabled (para cámara) o si es pantalla compartida
   const showVideoContent = isScreenShare ? true : videoEnabled; // Determina si se muestra el video o el placeholder
   const [isMuted, setIsMuted] = useState(isLocal); // Inicializa isMuted basado en isLocal
 
   // Log para ver cuándo se renderiza el componente
-  console.log(`[RemoteVideo RENDER] Componente RemoteVideo renderizando para ${participantName} (ID: ${participantId})`);
+  console.log(`[RemoteVideo RENDER] Componente RemoteVideo renderizando para ${participantName} (ID: ${participantId}) ${isScreenShare ? '(SCREEN SHARE)' : ''}`);
 
   useEffect(() => {
     console.log(`[RemoteVideo DEBUG] --- INICIO useEffect para ${participantName} (ID: ${participantId}) ---`);
     console.log(`[RemoteVideo DEBUG] Prop 'stream' recibida:`, stream ? stream.id : 'null');
     console.log(`[RemoteVideo DEBUG] Prop 'videoEnabled' recibida:`, videoEnabled);
     console.log(`[RemoteVideo DEBUG] Prop 'micEnabled' recibida:`, micEnabled);
+    console.log(`[RemoteVideo DEBUG] Prop 'isScreenShare' recibida:`, isScreenShare); // <-- Log esta prop también
     console.log(`[RemoteVideo DEBUG] Valor de videoRef.current al inicio:`, videoRef.current);
 
     if (!videoRef.current) {
@@ -54,7 +55,9 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
     }
 
     videoRef.current.srcObject = stream;
-    videoRef.current.muted = isMuted; // Asigna el estado de mute basado en el estado interno
+    // Solo si el stream es remoto Y no es pantalla compartida, manejamos el muteo manual.
+    // Los streams locales y de pantalla compartida remota suelen tener sus propias reglas de muteo.
+    videoRef.current.muted = isLocal || isMuted || isScreenShare; // Mutea si es local, o si el usuario lo ha muteado manualmente, o si es pantalla compartida (por defecto no queremos audio duplicado de pantalla)
 
     console.log(`[RemoteVideo DEBUG] Asignando srcObject para ${participantName}. Tracks:`, stream.getTracks().map(t => t.kind));
 
@@ -62,7 +65,8 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
       console.log(`[RemoteVideo Track Debug for ${participantName}] Kind: ${track.kind}, ID: ${track.id}, Label: ${track.label}, Enabled: ${track.enabled}, ReadyState: ${track.readyState}`);
       if (track.kind === 'video') {
         const settings = track.getSettings();
-        console.log(`[RemoteVideo Video Track Settings for ${participantName}] Width: ${settings.width}, Height: ${settings.height}, FrameRate: ${settings.frameRate}, AspectRatio: ${settings.aspectRatio}`);
+        // Asegurarse de que settings tenga las propiedades antes de acceder
+        console.log(`[RemoteVideo Video Track Settings for ${participantName}] Width: ${settings?.width}, Height: ${settings?.height}, FrameRate: ${settings?.frameRate}, AspectRatio: ${settings?.aspectRatio}`);
       }
     });
 
@@ -127,6 +131,7 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
         currentVideoRef.onplaying = null;
         currentVideoRef.onpause = null;
         currentVideoRef.onerror = null;
+        currentVideoRef.srcObject = null; // Limpiar srcObject al desmontar
       }
     };
   }, [stream, participantName, participantId, isMuted, videoEnabled, micEnabled, isLocal, isScreenShare]);
@@ -141,17 +146,20 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
     }
   };
 
+  // Clases CSS para el borde de la pantalla compartida
+  const screenShareBorderClass = isScreenShare ? 'border-4 border-blue-500' : '';
+  const videoObjectFitClass = isScreenShare ? 'object-contain' : 'object-cover'; // Usar object-contain para pantalla compartida
+
   return (
     // Agrega `className` aquí para permitir estilos desde el padre
-    <div className={`relative bg-gray-800 rounded-lg overflow-hidden aspect-video ${className || ''}`}>
+    <div className={`relative bg-gray-800 rounded-lg overflow-hidden aspect-video ${className || ''} ${screenShareBorderClass}`}>
       {/* El elemento video solo se muestra si showVideoContent es true */}
       <video
         ref={videoRef}
         autoPlay
         playsInline // Importante para iOS
-        muted={isLocal || isMuted} // Mutea si es local O si el usuario lo ha muteado manualmente
-        className="w-full h-full object-cover"
-        // La visibilidad se controla con Tailwind, no con style.display
+        muted={isLocal || isMuted || isScreenShare} // Mutea si es local, o si el usuario lo ha muteado manualmente, o si es pantalla compartida (para evitar eco)
+        className={`w-full h-full ${videoObjectFitClass}`} // Clase de object-fit dinámica
       ></video>
 
       {/* Placeholder con ícono de VideoOff si el video no está habilitado y no es pantalla compartida */}
@@ -166,9 +174,8 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
         {participantName}
       </div>
 
-      {/* Botón de mute/unmute para el audio de los REMOTOS (no local) */}
-      {/* Solo se muestra si NO es pantalla compartida y NO es el stream local */}
-      {!isScreenShare && !isLocal && (
+      {/* Botón de mute/unmute para el audio de los REMOTOS (no local, no pantalla compartida) */}
+      {!isScreenShare && !isLocal && ( // Solo se muestra si NO es pantalla compartida y NO es el stream local
         <button
             onClick={toggleMute}
             className="absolute top-2 left-2 bg-gray-800 bg-opacity-70 text-white p-1 rounded-full text-xs z-10"
@@ -218,8 +225,7 @@ const RemoteVideo = React.memo(RemoteVideoComponent, (prevProps, nextProps) => {
     prevProps.micEnabled === nextProps.micEnabled &&
     prevProps.isLocal === nextProps.isLocal &&
     prevProps.isScreenShare === nextProps.isScreenShare &&
-    prevProps.className === nextProps.className // También compara className
-    // No comparamos `volume` ni `isMuted` porque son manejados internamente o no requieren un re-render del video.
+    prevProps.className === nextProps.className
   );
 });
 
