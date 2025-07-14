@@ -512,24 +512,35 @@ const startDragging = useCallback((clientX: number, clientY: number) => {
     }
   }, [localStream, videoEnabled, micEnabled]); // Asegúrate de que videoEnabled y micEnabled sean dependencias
   // Dentro de tu función sendSignal:
-  const sendSignal = useCallback(async (toPeerId: string, signalData: any) => {
+const sendSignal = useCallback(async (toPeerId: string, signalData: any) => {
     if (!channelRef.current) {
-      console.error("sendSignal: Canal no disponible.");
-      return;
+        console.error("sendSignal: Canal no disponible.");
+        return;
     }
-    // Añade este log para verificar si la señal 'answer' se está intentando enviar
-    //console.log(`[SIGNAL OUT DEBUG] Intentando enviar señal de tipo ${signalData.type} de ${currentUser?.id} a ${toPeerId}`);
+
     try {
-      await channelRef.current.whisper('Signal', {
-        to: toPeerId,
-        from: String(currentUser?.id), // Asegúrate de que esto sea la ID correcta del remitente
-        data: signalData
-      });
-      //console.log(`[SIGNAL OUT DEBUG] ✅ Señal ${signalData.type} enviada de ${currentUser?.id} a ${toPeerId}`);
+        // --- LÓGICA CLAVE: Diferenciar el tipo de whisper a enviar ---
+        if (signalData.type === 'screenShareStatus') {
+            // Si el tipo es 'screenShareStatus', lo enviamos con su propio nombre de evento whisper
+            await channelRef.current.whisper('screenShareStatus', { // <-- Nombre de evento 'screenShareStatus'
+                to: toPeerId,
+                from: String(currentUser?.id),
+                data: signalData // Aquí `signalData` ya contiene `{ type: 'screenShareStatus', isSharing: true/false }`
+            });
+            console.log(`[WHISPER OUT - screenShareStatus] ✅ Señal enviada de ${currentUser?.id} a ${toPeerId}:`, signalData);
+        } else {
+            // Para todos los demás tipos (offer, answer, candidate), los enviamos como 'Signal'
+            await channelRef.current.whisper('Signal', { // <-- Nombre de evento 'Signal'
+                to: toPeerId,
+                from: String(currentUser?.id),
+                data: signalData // Aquí `signalData` contiene { type: 'offer/answer/candidate', ... }
+            });
+            console.log(`[WHISPER OUT - Signal] ✅ Señal enviada de ${currentUser?.id} a ${toPeerId}:`, signalData.type);
+        }
     } catch (error) {
-      console.error(`[SIGNAL OUT ERROR] Error al enviar señal ${signalData.type} de ${currentUser?.id} a ${toPeerId}:`, error);
+        console.error(`[SIGNAL OUT ERROR] Error al enviar señal ${signalData.type} de ${currentUser?.id} a ${toPeerId}:`, error);
     }
-  }, [currentUser, channelRef]); // Asegúrate de que currentUser esté en las dependencias si lo usas
+}, [currentUser, channelRef]); // Dependencias se mantienen
 const handlePeerDisconnected = useCallback((
     peerId: string,
     isIntentionalDisconnect: boolean // true si es una desconexión que DEBE ELIMINAR al peer
@@ -877,45 +888,57 @@ pc.ontrack = (event) => {
 };
     // --- pc.onnegotiationneeded: Disparar oferta cuando se necesitan cambios ---
     // **Importante:** Esta es la ÚNICA definición de onnegotiationneeded.
-    pc.onnegotiationneeded = async () => {
-    console.log(`[onnegotiationneeded] Iniciando negociación para peer: ${peerId}.`);
-
-    if (!localStream || localStream.getTracks().length === 0) {
-        console.warn(`[onnegotiationneeded] localStream no está listo o no tiene tracks para peer ${peerId}. No se puede crear oferta.`);
-        return;
-    }
-
-    // Esta comprobación es buena para evitar negociaciones si ya estamos en un proceso de SDP.
-    // Solo debemos iniciar una oferta si la PC está en estado `stable` o si ya no tiene una oferta local pendiente.
-    // Si estamos en 'have-local-offer', significa que ya enviamos una oferta y estamos esperando respuesta.
-    // Si estamos en 'have-remote-offer', significa que recibimos una oferta y estamos esperando nuestra respuesta.
-    // En ambos casos, no deberíamos iniciar OTRA oferta local aquí.
-    if (pc.signalingState !== 'stable') {
-        console.warn(`[PC Event] onnegotiationneeded disparado pero signalingState no es 'stable' (${pc.signalingState}). Ignorando por ahora.`);
-        return;
+  
+pc.onnegotiationneeded = async () => {
+    // Si la PC ya está en un estado de oferta local, o si ya estamos en un proceso de cerrar/reabrir,
+    // podríamos querer ignorar o retrasar.
+    if (pc.signalingState === 'have-local-offer' || pc.signalingState === 'stable') {
+        console.log(`[ON_NEGOTIATION] ${peerId}: onnegotiationneeded disparado en estado ${pc.signalingState}. Procediendo.`);
+    } else {
+        console.warn(`[ON_NEGOTIATION] ${peerId}: onnegotiationneeded disparado en estado inusual (${pc.signalingState}).`);
     }
 
     try {
-        const localUserId = parseInt(currentUser?.id.toString() || '0');
-        const remoteMemberId = parseInt(peerId);
-        const isInitiator = localUserId < remoteMemberId; // Lógica de iniciador basada en ID
-
-        // **DESCOMENTA ESTO Y ÚSALO**
-        if (isInitiator) { // <--- ¡Asegúrate que esto NO esté comentado!
-            console.log(`[ON_NEGOTIATION - OFERTA INICIADA] Soy ${currentUser.id} (menor ID). Creando OFERTA para ${peerId}.`);
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer); // <-- Aquí debería funcionar sin 'm-lines' error
-            sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type, from: currentUser?.id });
-            console.log(`[PC Event] Oferta enviada a ${peerId}.`);
-        } else {
-            console.log(`[ON_NEGOTIATION - ESPERANDO OFERTA] Soy ${currentUser.id} (mayor ID). Esperando oferta de ${peerId}.`);
-            // El peer con ID mayor no hace nada en onnegotiationneeded; espera la oferta del otro.
+        // Asegúrate de que todos los tracks locales activos estén en la PC
+        // Esta parte es CRÍTICA. Debemos asegurarnos de que la PC tenga los tracks correctos
+        // ANTES de crear la oferta.
+        // Si el localStream existe y está activo (video/mic)
+        if (localStream && (videoEnabled || micEnabled)) {
+            localStream.getTracks().forEach(track => {
+                // Si el track ya tiene un sender asociado a esta PC, no lo agregamos de nuevo.
+                if (!pc.getSenders().some(sender => sender.track === track)) {
+                    pc.addTrack(track, localStream);
+                    console.log(`[ON_NEGOTIATION] ✅ Añadido/Re-añadido track local ${track.kind} a PC de ${peerId}`);
+                }
+            });
         }
+        
+        // Si la compartición de pantalla local está activa, asegúrate de que sus tracks también estén.
+        // Los tracks de pantalla deberían haber sido añadidos/reemplazados por ScreenShareManager.
+        // Pero es bueno hacer una verificación aquí o asegurarse de que el ScreenShareManager
+        // maneje correctamente la adición/remoción de tracks en la PC específica.
+
+        // Eliminar tracks que ya no deberían estar presentes.
+        // Por ejemplo, si pasaste de cámara a pantalla, y la cámara fue `stop()`'d por ScreenShareManager,
+        // sus tracks ya no deberían estar asociados al `localStream` activo (si lo estás usando como fuente única).
+        // Una forma más segura de manejar esto es que `ScreenShareManager` sea el único que añada/remueva tracks
+        // en la PC, y `onnegotiationneeded` solo cree la oferta.
+        // Para simplificar, asumiremos que ScreenShareManager gestiona los `addTrack/removeTrack`.
+
+        // Crea la oferta
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal(peerId, { type: 'offer', sdp: offer.sdp, sdpType: offer.type });
+        console.log(`[ON_NEGOTIATION] Oferta creada y enviada a ${peerId}.`);
 
     } catch (e) {
-        console.error(`[PC Event] Error en onnegotiationneeded para ${peerId}:`, e);
+        console.error(`[ON_NEGOTIATION] Error en onnegotiationneeded para ${peerId}:`, e);
+        // Si el error es por "InvalidStateError: Failed to set local offer sdp: The order of m-lines...",
+        // a veces reintentar con un pequeño retraso puede funcionar, o forzar una recreación de la PC
+        // (aunque esto último es más disruptivo).
     }
 };
+
 
     // --- pc.onicecandidate: Generar y enviar candidatos ICE ---
     pc.onicecandidate = (event) => {
@@ -1329,52 +1352,52 @@ useEffect(() => {
               console.error("Error processing WebRTC signal:", e);
           }
       });
-      joinedChannel.listenForWhisper('screenShareStatus', (e: { to: string; from: string; data: { isSharing: boolean } }) => {
-                const { to, from, data } = e;
-                console.log(`[WHISPER - screenShareStatus] Recibido de ${from}: isSharing=${data.isSharing}`);
+     joinedChannel.listenForWhisper('screenShareStatus', (e: { to: string; from: string; data: { isSharing: boolean } }) => {
+    const { to, from, data } = e;
+    console.log(`[WHISPER - screenShareStatus] Recibido de ${from}: isSharing=${data.isSharing}`);
 
-                if (to !== String(currentUser.id)) {
-                    console.warn(`[WHISPER - screenShareStatus] Mensaje para otro usuario. Mi ID: ${currentUser.id}, Mensaje TO: ${to}`);
-                    return;
-                }
+    if (to !== String(currentUser.id)) {
+        console.warn(`[WHISPER - screenShareStatus] Mensaje para otro usuario. Mi ID: ${currentUser.id}, Mensaje TO: ${to}`);
+        return;
+    }
 
-                setParticipants(prev => {
-                    const participantId = from; // 'from' es el ID del que envía la señal
-                    const existingParticipant = prev[participantId];
-                    if (!existingParticipant) {
-                        console.warn(`[WHISPER] Participante ${participantId} no encontrado al recibir 'screenShareStatus'.`);
-                        return prev;
-                    }
+    setParticipants(prev => {
+        const participantId = from;
+        const existingParticipant = prev[participantId];
+        if (!existingParticipant) {
+            console.warn(`[WHISPER] Participante ${participantId} no encontrado al recibir 'screenShareStatus'.`);
+            return prev;
+        }
 
-                    const updatedParticipant = {
-                        ...existingParticipant,
-                        isSharingRemoteScreen: data.isSharing
-                    };
+        const updatedParticipant = {
+            ...existingParticipant,
+            isSharingRemoteScreen: data.isSharing
+        };
 
-                    // Lógica para limpiar streams si deja de compartir
-                    if (!data.isSharing) {
-                        if (updatedParticipant.screenStream) {
-                            console.log(`[WHISPER] Peer ${participantId} dejó de compartir pantalla. Deteniendo tracks y limpiando screenStream.`);
-                            updatedParticipant.screenStream.getTracks().forEach(track => track.stop());
-                            updatedParticipant.screenStream = null;
-                        }
-                    } else {
-                        // Si empieza a compartir, limpiamos la cámara si estaba presente.
-                        // El nuevo stream de pantalla llegará por `ontrack`.
-                        if (updatedParticipant.cameraStream) {
-                            console.log(`[WHISPER] Peer ${participantId} empezó a compartir. Deteniendo tracks y limpiando cameraStream.`);
-                            updatedParticipant.cameraStream.getTracks().forEach(track => track.stop());
-                            updatedParticipant.cameraStream = null;
-                        }
-                    }
+        // Lógica para limpiar streams si deja de compartir (mantenerla)
+        if (!data.isSharing) {
+            if (updatedParticipant.screenStream) {
+                console.log(`[WHISPER] Peer ${participantId} dejó de compartir pantalla. Deteniendo tracks y limpiando screenStream.`);
+                updatedParticipant.screenStream.getTracks().forEach(track => track.stop());
+                updatedParticipant.screenStream = null;
+            }
+        } else {
+            // Si empieza a compartir, limpiamos la cámara si estaba presente.
+            // Esto es crucial para que `ontrack` asigne el nuevo stream de pantalla.
+            if (updatedParticipant.cameraStream) {
+                console.log(`[WHISPER] Peer ${participantId} empezó a compartir. Deteniendo tracks y limpiando cameraStream.`);
+                updatedParticipant.cameraStream.getTracks().forEach(track => track.stop());
+                updatedParticipant.cameraStream = null;
+            }
+        }
 
-                    console.log(`[WHISPER] Estado de participante ${participantId} actualizado por 'screenShareStatus':`, updatedParticipant);
-                    return {
-                        ...prev,
-                        [participantId]: updatedParticipant
-                    };
-                });
-            });
+        console.log(`[WHISPER] Estado de participante ${participantId} actualizado por 'screenShareStatus':`, updatedParticipant);
+        return {
+            ...prev,
+            [participantId]: updatedParticipant
+        };
+    });
+});
 
       })
       .catch(error => {
