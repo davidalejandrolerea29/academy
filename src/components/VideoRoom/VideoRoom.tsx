@@ -1383,7 +1383,6 @@ useEffect(() => {
       enabled: audioTrack.enabled,
     });
   };
-
 const toggleScreenShare = useCallback(async () => {
     if (!localStream) {
         console.warn("localStream no está disponible. No se puede iniciar/detener la compartición de pantalla.");
@@ -1392,8 +1391,7 @@ const toggleScreenShare = useCallback(async () => {
 
     if (isSharingScreen) {
         // --- Lógica para DETENER la compartición de pantalla ---
-        // (La lógica que te di antes es la correcta para esto, re-inclúyela aquí)
-
+        console.log("[toggleScreenShare] DETENIENDO compartición de pantalla...");
         if (screenShareStreamRef.current) {
             screenShareStreamRef.current.getTracks().forEach(track => track.stop());
             screenShareStreamRef.current = null;
@@ -1403,74 +1401,77 @@ const toggleScreenShare = useCallback(async () => {
             const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc);
             if (!peerId) return;
 
-            // Busca los senders de PANTALLA que fueron creados
-            const screenVideoSender = pc.getSenders().find(sender => sender.track?.kind === 'video' && sender.track?.id === (screenShareStreamRef.current?.getVideoTracks()[0]?.id || ''));
-            const screenAudioSender = pc.getSenders().find(sender => sender.track?.kind === 'audio' && sender.track?.id === (screenShareStreamRef.current?.getAudioTracks()[0]?.id || ''));
+            // Busca el sender de video (que actualmente está enviando la pantalla)
+            // No uses screenShareSendersRef.current[peerId] si estás con replaceTrack, busca el sender activo.
+            const videoSender = pc.getSenders().find(sender => sender.track?.kind === 'video' && sender.track?.id === (screenShareStreamRef.current?.getVideoTracks()[0]?.id || ''));
+            const audioSender = pc.getSenders().find(sender => sender.track?.kind === 'audio' && sender.track?.id === (screenShareStreamRef.current?.getAudioTracks()[0]?.id || ''));
 
-            // Ojo: Si guardabas los senders en `screenShareSendersRef.current`, úsalos directamente.
-            // Para la nueva lógica de 'replaceTrack', no es estrictamente necesario removerlos.
-            // Los vamos a REEMPLAZAR con los tracks de cámara.
+            // Prepara los tracks de la cámara/micrófono local para volver
+            const cameraVideoTrack = localStream?.getVideoTracks()[0] || null;
+            const cameraAudioTrack = localStream?.getAudioTracks()[0] || null;
 
-            // --- Reemplazar track de pantalla por track de cámara ---
-            const cameraVideoTrack = localStream?.getVideoTracks()[0];
-            if (screenVideoSender) { // Si existe un sender de video de pantalla
+            // REEMPLAZAR VIDEO
+            if (videoSender) {
                 if (cameraVideoTrack && videoEnabled) {
-                    screenVideoSender.replaceTrack(cameraVideoTrack).catch(e => console.error("Error replacing screen video with camera:", e));
+                    // Reemplaza la pantalla por la cámara
+                    videoSender.replaceTrack(cameraVideoTrack).catch(e => console.error("Error replacing screen video with camera:", e));
                     console.log(`[ScreenShare Stop] Replaced screen video track with camera for PC ${peerId}.`);
                 } else {
-                    // Si no hay cámara activa, nulificar el track del sender de video
-                    screenVideoSender.replaceTrack(null).catch(e => console.error("Error nullifying screen video track:", e));
+                    // Si no hay cámara activa, nulifica el track del sender de video
+                    videoSender.replaceTrack(null).catch(e => console.error("Error nullifying screen video track:", e));
                     console.log(`[ScreenShare Stop] Nullified screen video track for PC ${peerId} (camera not active).`);
                 }
             } else {
-                // Si por alguna razón no se encontró el sender de pantalla, pero sí hay cámara local,
-                // asegurarnos de que la cámara se esté enviando. (Lógica de contingencia)
+                // Caso de contingencia: Si no se encontró un sender de pantalla para reemplazar,
+                // pero la cámara local debería estar activa, asegúrate de que se añada.
                 const existingCameraSender = pc.getSenders().find(sender => sender.track?.kind === 'video' && sender.track?.id === cameraVideoTrack?.id);
-                 if (!existingCameraSender && cameraVideoTrack && videoEnabled) {
+                if (!existingCameraSender && cameraVideoTrack && videoEnabled) {
                     pc.addTrack(cameraVideoTrack, localStream);
                     console.log(`[ScreenShare Stop] Added camera track back as no screen sender found for PC ${peerId}.`);
-                 }
+                }
             }
 
-
-            const cameraAudioTrack = localStream?.getAudioTracks()[0];
-            if (screenAudioSender) { // Si existe un sender de audio de pantalla
-                 if (cameraAudioTrack && micEnabled) {
-                     screenAudioSender.replaceTrack(cameraAudioTrack).catch(e => console.error("Error replacing screen audio with mic:", e));
-                     console.log(`[ScreenShare Stop] Replaced screen audio track with mic for PC ${peerId}.`);
-                 } else {
-                     // Si no hay micrófono activo, nulificar el track del sender de audio
-                     screenAudioSender.replaceTrack(null).catch(e => console.error("Error nullifying screen audio track:", e));
-                     console.log(`[ScreenShare Stop] Nullified screen audio track for PC ${peerId} (mic not active).`);
-                 }
+            // REEMPLAZAR AUDIO (si la pantalla compartida tenía audio del sistema)
+            if (audioSender) {
+                if (cameraAudioTrack && micEnabled) {
+                    // Reemplaza el audio de la pantalla por el audio del micrófono
+                    audioSender.replaceTrack(cameraAudioTrack).catch(e => console.error("Error replacing screen audio with mic:", e));
+                    console.log(`[ScreenShare Stop] Replaced screen audio track with mic for PC ${peerId}.`);
+                } else {
+                    // Si no hay micrófono activo, nulifica el track del sender de audio
+                    audioSender.replaceTrack(null).catch(e => console.error("Error nullifying screen audio track:", e));
+                    console.log(`[ScreenShare Stop] Nullified screen audio track for PC ${peerId} (mic not active).`);
+                }
             } else {
-                // Lógica de contingencia para el audio
+                 // Caso de contingencia para audio
                 const existingMicSender = pc.getSenders().find(sender => sender.track?.kind === 'audio' && sender.track?.id === cameraAudioTrack?.id);
                 if (!existingMicSender && cameraAudioTrack && micEnabled) {
                     pc.addTrack(cameraAudioTrack, localStream);
                     console.log(`[ScreenShare Stop] Added mic track back as no screen audio sender found for PC ${peerId}.`);
                 }
             }
-            
-            // Ya no necesitas borrar de screenShareSendersRef.current[peerId] si usas replaceTrack en lugar de removeTrack
-            // Si tu lógica externa aún depende de limpiar screenShareSendersRef, asegúrate de que sea compatible.
-            // Para un uso puro de replaceTrack, esta ref no sería estrictamente necesaria para la detención.
+
+            // Ya no es necesario usar screenShareSendersRef para remover, ya que estamos reemplazando.
+            // Si screenShareSendersRef se usa en otra parte, ajusta su gestión.
         });
 
-        // Asegúrate de que el video local vuelva a mostrar la cámara
         if (localVideoRef.current && localStream) {
-            localVideoRef.current.srcObject = localStream;
+            localVideoRef.current.srcObject = localStream; // Vuelve a mostrar tu cámara
         }
 
+        // Envía la señal de estado de compartición a todos los peers
         Object.keys(peerConnectionsRef.current).forEach(peerId => {
             sendSignal(peerId, { type: 'screenShareStatus', isSharing: false, from: currentUser?.id });
         });
 
         setIsSharingScreen(false);
+        console.log("[toggleScreenShare] Detención de compartición finalizada.");
         return;
-    }
+
+    } // Fin de la lógica de DETENER
 
     // --- Lógica para INICIAR la compartición de pantalla ---
+    console.log("[toggleScreenShare] INICIANDO compartición de pantalla...");
     try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         screenShareStreamRef.current = screenStream;
@@ -1478,64 +1479,55 @@ const toggleScreenShare = useCallback(async () => {
         const screenVideoTrack = screenStream.getVideoTracks()[0];
         const screenAudioTrack = screenStream.getAudioTracks()[0];
 
-        // Mostrar la pantalla compartida en el video local del usuario
         if (localVideoRef.current) {
-            localVideoRef.current.srcObject = screenStream;
+            localVideoRef.current.srcObject = screenStream; // Muestra la pantalla localmente
         }
 
         Object.values(peerConnectionsRef.current).forEach(pc => {
             const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc);
             if (!peerId) return;
 
-            // ***** CAMBIO CLAVE AQUÍ: Buscar el sender de video/audio existente y reemplazar su track *****
+            // ***** CAMBIO CLAVE AQUÍ: Buscar sender existente de video/audio y REEMPLAZAR su track *****
+            // Este es el sender de la cámara local
             let videoSender = pc.getSenders().find(sender => sender.track?.kind === 'video');
             let audioSender = pc.getSenders().find(sender => sender.track?.kind === 'audio');
 
+            // Manejo de VIDEO (Cámara -> Pantalla)
             if (videoSender) {
-                // Reemplaza el track de la cámara por el de la pantalla
+                // SI YA HAY UN SENDER DE VIDEO, REEMPLAZA EL TRACK EXISTENTE POR EL DE LA PANTALLA
                 videoSender.replaceTrack(screenVideoTrack).catch(e => console.error("Error replacing camera video with screen:", e));
-                console.log(`[ScreenShare Start] Replaced camera video track with screen for PC ${peerId}.`);
+                console.log(`[ScreenShare Start] Replaced existing video track with screen track for PC ${peerId}.`);
             } else {
-                // Si no hay un sender de video existente (ej. cámara apagada al inicio), agrega uno nuevo
+                // SI NO HAY UN SENDER DE VIDEO (ej. cámara apagada al inicio), AÑADE UNO NUEVO PARA LA PANTALLA
                 videoSender = pc.addTrack(screenVideoTrack, screenStream);
-                console.log(`[ScreenShare Start] Added NEW screen video track to PC for ${peerId}.`);
+                console.log(`[ScreenShare Start] Added NEW screen video track to PC for ${peerId} (no existing video sender).`);
             }
 
+            // Manejo de AUDIO (Micrófono -> Audio de Pantalla)
             if (screenAudioTrack) { // Solo si la pantalla compartida tiene track de audio
                 if (audioSender) {
-                    // Reemplaza el track de micrófono por el de la pantalla
+                    // SI YA HAY UN SENDER DE AUDIO, REEMPLAZA EL TRACK EXISTENTE POR EL DE LA PANTALLA
                     audioSender.replaceTrack(screenAudioTrack).catch(e => console.error("Error replacing mic audio with screen:", e));
-                    console.log(`[ScreenShare Start] Replaced mic audio track with screen for PC ${peerId}.`);
+                    console.log(`[ScreenShare Start] Replaced existing audio track with screen audio for PC ${peerId}.`);
                 } else {
-                    // Si no hay un sender de audio existente, agrega uno nuevo
+                    // SI NO HAY UN SENDER DE AUDIO, AÑADE UNO NUEVO PARA EL AUDIO DE LA PANTALLA
                     audioSender = pc.addTrack(screenAudioTrack, screenStream);
-                    console.log(`[ScreenShare Start] Added NEW screen audio track to PC for ${peerId}.`);
+                    console.log(`[ScreenShare Start] Added NEW screen audio track to PC for ${peerId} (no existing audio sender).`);
                 }
-            } else if (audioSender && localStream?.getAudioTracks().length > 0) {
+            } else if (audioSender) {
                 // Si la pantalla compartida NO tiene audio, pero ya estábamos enviando audio de micrófono,
-                // asegurarnos de que el micrófono siga activo si no se reemplazó.
-                // Esto podría no ser necesario si tu lógica asume que el audio de la pantalla siempre reemplaza el audio del micrófono.
-                // Es un caso borde a considerar. Si quieres silenciar el micrófono al compartir pantalla sin audio, déjalo sin reemplazar.
-                 audioSender.replaceTrack(null).catch(e => console.error("Error nullifying audio track during screen share without audio:", e));
-                 console.log(`[ScreenShare Start] Nullified audio track for PC ${peerId} (screen has no audio).`);
+                // nulificamos el track de audio para dejar de enviar micrófono.
+                audioSender.replaceTrack(null).catch(e => console.error("Error nullifying audio track during screen share without audio:", e));
+                console.log(`[ScreenShare Start] Nullified audio track for PC ${peerId} (screen has no audio).`);
             }
-
-
-            // Guarda los senders DE LA CÁMARA/MICRÓFONO ORIGINALES (no los de la pantalla)
-            // O mejor, el sender que AHORA está enviando (ya sea cámara o pantalla).
-            // La ref `screenShareSendersRef` parece que la usas para guardar los senders DE LA PANTALLA.
-            // Si vas a usar replaceTrack, no necesitas guardar los senders específicamente para "removerlos".
-            // Simplemente actúas sobre los senders existentes.
-            // Si aún necesitas `screenShareSendersRef` para alguna otra lógica, revisa bien qué guardas.
-            // Por ahora, asumiré que los senders que buscas con pc.getSenders() son suficientes.
-            // Si necesitas acceder a ellos más tarde por una ID específica, podrías almacenar la ID del track activo.
+            // screenShareSendersRef ya no es necesario aquí si usas replaceTrack en lugar de removeTrack.
+            // Si lo usas para otra cosa, asegúrate de que no haya conflicto.
         });
 
         // Evento para detectar cuando el usuario detiene la compartición desde el control del navegador
         screenVideoTrack.onended = () => {
             console.log("[ScreenShare] Screen share ended by user (browser control).");
-            // Llama a toggleScreenShare para que ejecute la lógica de detención
-            toggleScreenShare();
+            toggleScreenShare(); // Llama a la misma función para la lógica de detención
         };
 
         // Enviar señal a los demás sobre el cambio de estado de compartición
@@ -1544,15 +1536,16 @@ const toggleScreenShare = useCallback(async () => {
         });
 
         setIsSharingScreen(true);
+        console.log("[toggleScreenShare] Inicio de compartición finalizado.");
+
     } catch (error) {
         console.error("Error sharing screen:", error);
         setIsSharingScreen(false);
-        // Si hay un error, asegúrate de que el video local vuelva a mostrar la cámara
         if (localVideoRef.current && localStream) {
             localVideoRef.current.srcObject = localStream;
         }
     }
-}, [isSharingScreen, localStream, sendSignal, currentUser, videoEnabled, micEnabled]); // Agrega videoEnabled y micEnabled a las dependencias
+}, [isSharingScreen, localStream, sendSignal, currentUser, videoEnabled, micEnabled]); // ¡Asegúrate de que estas dependencias estén aquí!
 const [roomParticipantId, setRoomParticipantId] = useState<number | null>(null);
 useEffect(() => {
   const fetchRoomParticipantId = async () => {
