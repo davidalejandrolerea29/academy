@@ -783,7 +783,8 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
     peerConnectionsRef.current = { ...peerConnectionsRef.current, [peerId]: pc };
 
     // --- pc.ontrack: Manejar streams entrantes ---
-  pc.ontrack = (event) => {
+  
+pc.ontrack = (event) => {
     const incomingStream = event.streams[0];
     const track = event.track;
 
@@ -802,63 +803,66 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
             micEnabled: false,
             cameraStream: null,
             screenStream: null,
-            isSharingRemoteScreen: false, // Asegura inicialización
+            isSharingRemoteScreen: false,
         };
 
         const updatedParticipant = { ...existingParticipant };
 
         console.log(`[PC ontrack DEBUG] Recibiendo track ${track.kind} de ${currentPeerId}. Stream ID: ${incomingStream.id}, Track ID: ${track.id}`);
-        console.log(`[PC ontrack DEBUG] Estado actual de isSharingRemoteScreen para ${currentPeerId} (al inicio del setParticipants): ${updatedParticipant.isSharingRemoteScreen}`);
+        console.log(`[PC ontrack DEBUG] Estado de isSharingRemoteScreen para ${currentPeerId} (en ontrack): ${updatedParticipant.isSharingRemoteScreen}`);
 
-        // === Lógica clave para manejar Screen Share y Camera Streams ===
         if (track.kind === 'video') {
+            // Decidimos si es screen o camera basado en la bandera isSharingRemoteScreen
+            // o si el incomingStream es un MediaStream de display (aunque esto último es menos fiable sin metadata)
             if (updatedParticipant.isSharingRemoteScreen) {
-                // Si el participante está compartiendo pantalla, asigna este video a screenStream
-                console.log(`[PC ontrack VIDEO] -> Peer ${currentPeerId} (isSharingRemoteScreen: true). Asignando a screenStream.`);
+                // Si ya sabemos que está compartiendo pantalla, asignamos el video al screenStream
                 if (!updatedParticipant.screenStream || updatedParticipant.screenStream.id !== incomingStream.id) {
                     updatedParticipant.screenStream = incomingStream;
-                    console.log(`[PC ontrack VIDEO] ACTUALIZADO screenStream para ${currentPeerId}. Stream ID: ${incomingStream.id}`);
+                    console.log(`[PC ontrack VIDEO] Asignando stream ID ${incomingStream.id} a screenStream para ${currentPeerId}.`);
                 }
-                // Si previamente había una cameraStream con el mismo ID de stream (significa que se reemplazó el track)
-                if (updatedParticipant.cameraStream && updatedParticipant.cameraStream.id === incomingStream.id) {
-                    // Opcional: Podrías considerar limpiar cameraStream si este stream es definitivamente de pantalla
-                    // Sin embargo, replaceTrack ya debería manejar esto al nivel del sender.
-                    // Por robustez, aseguramos que el screenStream sea el "activo" si la flag está en true.
-                    updatedParticipant.cameraStream = null; // Limpiar cameraStream para evitar conflictos visuales
-                    console.log(`[PC ontrack VIDEO] Limpiado cameraStream de ${currentPeerId} porque el stream entrante ahora es de pantalla.`);
+                // Si hay un cameraStream activo y no es el mismo que el incomingStream, lo limpiamos
+                // Esto es crucial para asegurar que solo la pantalla se muestre en el widget principal.
+                if (updatedParticipant.cameraStream && updatedParticipant.cameraStream.id !== incomingStream.id) {
+                    console.log(`[PC ontrack VIDEO] Limpiando cameraStream (ID: ${updatedParticipant.cameraStream.id}) para ${currentPeerId} porque screenShare es activo.`);
+                    updatedParticipant.cameraStream = null;
                 }
-                updatedParticipant.videoEnabled = true; // Si llega video, el video está habilitado
+                updatedParticipant.videoEnabled = true; // El video está habilitado si estamos recibiendo algo
             } else {
-                // Si no está compartiendo pantalla, asigna este video a cameraStream
-                console.log(`[PC ontrack VIDEO] -> Peer ${currentPeerId} (isSharingRemoteScreen: false). Asignando a cameraStream.`);
+                // Si no está compartiendo pantalla, asignamos el video al cameraStream
                 if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
                     updatedParticipant.cameraStream = incomingStream;
-                    console.log(`[PC ontrack VIDEO] ACTUALIZADO cameraStream para ${currentPeerId}. Stream ID: ${incomingStream.id}`);
+                    console.log(`[PC ontrack VIDEO] Asignando stream ID ${incomingStream.id} a cameraStream para ${currentPeerId}.`);
                 }
-                // Asegúrate de que screenStream sea nulo si estamos recibiendo una cámara
-                if (updatedParticipant.screenStream) {
+                // Si hay un screenStream activo y no es el mismo que el incomingStream, lo limpiamos
+                if (updatedParticipant.screenStream && updatedParticipant.screenStream.id !== incomingStream.id) {
+                    console.log(`[PC ontrack VIDEO] Limpiando screenStream (ID: ${updatedParticipant.screenStream.id}) para ${currentPeerId} porque no hay screenShare activo.`);
                     updatedParticipant.screenStream = null;
-                    console.log(`[PC ontrack VIDEO] Limpiado screenStream de ${currentPeerId} porque el stream entrante ahora es de cámara.`);
                 }
                 updatedParticipant.videoEnabled = true;
             }
         } else if (track.kind === 'audio') {
-            // Para el audio, es más complicado porque puede venir del mismo stream de video o de uno diferente.
-            // Generalmente, el audio de la pantalla compartida (si existe) viene en el mismo MediaStream.
-            // Si el isSharingRemoteScreen es true y el audio corresponde al screenStream, lo adjuntamos.
-            // De lo contrario, lo consideramos audio de la cámara.
+            // El audio puede pertenecer al stream de cámara o al de pantalla.
+            // Si el participante está compartiendo pantalla y el stream de audio entrante
+            // corresponde al stream de video de la pantalla (o si solo hay screenStream),
+            // lo asociamos con la pantalla. De lo contrario, con la cámara.
             if (updatedParticipant.isSharingRemoteScreen && updatedParticipant.screenStream && updatedParticipant.screenStream.id === incomingStream.id) {
+                // Asegúrate de que el track no esté ya añadido para evitar errores
                 if (!updatedParticipant.screenStream.getAudioTracks().some(t => t.id === track.id)) {
                     updatedParticipant.screenStream.addTrack(track);
-                    console.log(`[PC ontrack AUDIO] Añadido audio a screenStream de ${currentPeerId}. Stream ID: ${incomingStream.id}`);
+                    console.log(`[PC ontrack AUDIO] Añadido audio track ID ${track.id} a screenStream de ${currentPeerId}.`);
                 }
             } else {
-                if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
-                    updatedParticipant.cameraStream = incomingStream;
-                }
-                if (!updatedParticipant.cameraStream.getAudioTracks().some(t => t.id === track.id)) {
-                    updatedParticipant.cameraStream.addTrack(track);
-                    console.log(`[PC ontrack AUDIO] Añadido audio a cameraStream de ${currentPeerId}. Stream ID: ${incomingStream.id}`);
+                // Si no hay pantalla compartida, o el audio no viene de la pantalla, lo añadimos a la cámara
+                if (!updatedParticipant.cameraStream) {
+                    // Si no hay cameraStream, creamos uno temporal o usamos el incomingStream si es válido
+                    // Podríamos necesitar un MediaStream vacío aquí para añadir el track de audio
+                    updatedParticipant.cameraStream = incomingStream; // Asignamos el incomingStream directamente para el audio
+                    console.log(`[PC ontrack AUDIO] Creando/Asignando cameraStream para audio track ID ${track.id} a ${currentPeerId}.`);
+                } else {
+                    if (!updatedParticipant.cameraStream.getAudioTracks().some(t => t.id === track.id)) {
+                        updatedParticipant.cameraStream.addTrack(track);
+                        console.log(`[PC ontrack AUDIO] Añadido audio track ID ${track.id} a cameraStream de ${currentPeerId}.`);
+                    }
                 }
                 updatedParticipant.micEnabled = true;
             }
@@ -1276,37 +1280,7 @@ useEffect(() => {
                       break;
 
                     // Dentro de joinedChannel.listenForWhisper('Signal')
-                    // Dentro de joinedChannel.listenForWhisper('Signal')
-case 'screenShareStatus':
-        console.log(`[WHISPER] Recibido 'screenShareStatus' de ${data.from}: isSharing=${data.isSharing}`);
-        setParticipants(prev => {
-            const participantId = data.from;
-            const existingParticipant = prev[participantId];
-            if (!existingParticipant) {
-                console.warn(`[WHISPER] Participante ${participantId} no encontrado al recibir 'screenShareStatus'.`);
-                return prev;
-            }
-
-            const updatedParticipant = {
-                ...existingParticipant,
-                isSharingRemoteScreen: data.isSharing // ¡Esto es clave!
-            };
-
-            // Lógica para limpiar streams si deja de compartir
-            if (!data.isSharing) {
-                // Si el usuario deja de compartir, limpia su screenStream
-                console.log(`[WHISPER] Peer ${participantId} dejó de compartir pantalla. Limpiando screenStream.`);
-                updatedParticipant.screenStream = null;
-                // Opcional: si sabes que siempre debería volver a la cámara, podrías re-evaluar si tienes un cameraStream válido aquí
-                // Pero lo más robusto es que ontrack se encargue de reasignar el stream de la cámara si llega.
-            }
-            console.log(`[WHISPER] Estado de participante ${participantId} actualizado por 'screenShareStatus':`, updatedParticipant);
-            return {
-                ...prev,
-                [participantId]: updatedParticipant
-            };
-        });
-        break;
+ 
                   // VideoRoom.tsx - dentro de joinedChannel.listenForWhisper('Signal')
                  case 'candidate':
                     // Agrega una verificación más estricta para data.candidate y data.candidate.candidate
@@ -1350,11 +1324,57 @@ case 'screenShareStatus':
                   default:
                       console.warn(`[SIGNAL IN] Tipo de señal desconocido: ${data.type}`);
               }
+              
           } catch (e) {
               console.error("Error processing WebRTC signal:", e);
           }
       });
+      joinedChannel.listenForWhisper('screenShareStatus', (e: { to: string; from: string; data: { isSharing: boolean } }) => {
+                const { to, from, data } = e;
+                console.log(`[WHISPER - screenShareStatus] Recibido de ${from}: isSharing=${data.isSharing}`);
 
+                if (to !== String(currentUser.id)) {
+                    console.warn(`[WHISPER - screenShareStatus] Mensaje para otro usuario. Mi ID: ${currentUser.id}, Mensaje TO: ${to}`);
+                    return;
+                }
+
+                setParticipants(prev => {
+                    const participantId = from; // 'from' es el ID del que envía la señal
+                    const existingParticipant = prev[participantId];
+                    if (!existingParticipant) {
+                        console.warn(`[WHISPER] Participante ${participantId} no encontrado al recibir 'screenShareStatus'.`);
+                        return prev;
+                    }
+
+                    const updatedParticipant = {
+                        ...existingParticipant,
+                        isSharingRemoteScreen: data.isSharing
+                    };
+
+                    // Lógica para limpiar streams si deja de compartir
+                    if (!data.isSharing) {
+                        if (updatedParticipant.screenStream) {
+                            console.log(`[WHISPER] Peer ${participantId} dejó de compartir pantalla. Deteniendo tracks y limpiando screenStream.`);
+                            updatedParticipant.screenStream.getTracks().forEach(track => track.stop());
+                            updatedParticipant.screenStream = null;
+                        }
+                    } else {
+                        // Si empieza a compartir, limpiamos la cámara si estaba presente.
+                        // El nuevo stream de pantalla llegará por `ontrack`.
+                        if (updatedParticipant.cameraStream) {
+                            console.log(`[WHISPER] Peer ${participantId} empezó a compartir. Deteniendo tracks y limpiando cameraStream.`);
+                            updatedParticipant.cameraStream.getTracks().forEach(track => track.stop());
+                            updatedParticipant.cameraStream = null;
+                        }
+                    }
+
+                    console.log(`[WHISPER] Estado de participante ${participantId} actualizado por 'screenShareStatus':`, updatedParticipant);
+                    return {
+                        ...prev,
+                        [participantId]: updatedParticipant
+                    };
+                });
+            });
 
       })
       .catch(error => {
