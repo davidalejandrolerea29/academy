@@ -20,7 +20,6 @@ interface ScreenShareManagerProps {
     micEnabled: boolean;   // Estado del micrófono local
 }
 
-// Envuelve el componente con forwardRef
 const ScreenShareManager = forwardRef<ScreenShareManagerHandle, ScreenShareManagerProps>(({
     localStream,
     peerConnections,
@@ -30,18 +29,13 @@ const ScreenShareManager = forwardRef<ScreenShareManagerHandle, ScreenShareManag
     onScreenShareStop,
     videoEnabled,
     micEnabled
-}, ref) => { // 'ref' es el ref que el padre pasará
-
-    // El estado isSharingScreen ahora es puramente interno a ScreenShareManager
+}, ref) => {
     const [isSharingScreen, setIsSharingScreen] = useState(false);
     const screenShareStreamRef = useRef<MediaStream | null>(null);
 
-    // No necesitamos un useEffect para sincronizar con isSharingScreenProp
-    // porque este estado es la fuente de verdad para la compartición.
-
     // Función para detener la compartición de pantalla
     const stopScreenShare = useCallback(() => {
-        console.log("[ScreenShareManager] Deteniendo compartición de pantalla...");
+        console.log("[SSM] Deteniendo compartición de pantalla...");
         if (screenShareStreamRef.current) {
             screenShareStreamRef.current.getTracks().forEach(track => track.stop());
             screenShareStreamRef.current = null;
@@ -58,44 +52,55 @@ const ScreenShareManager = forwardRef<ScreenShareManagerHandle, ScreenShareManag
             const audioSender = pc.getSenders().find(sender => sender.track?.kind === 'audio');
 
             if (videoSender) {
+                // Si la cámara está habilitada y hay un track, reemplazar
                 if (cameraVideoTrack && videoEnabled) {
-                    videoSender.replaceTrack(cameraVideoTrack).catch(e => console.error(`[ScreenShareManager] Error replacing screen video with camera for ${peerId}:`, e));
-                    console.log(`[ScreenShareManager] Replaced screen video track with camera for PC ${peerId}.`);
+                    videoSender.replaceTrack(cameraVideoTrack).catch(e => console.error(`[SSM] Error reemplazando video de pantalla con cámara para ${peerId}:`, e));
+                    console.log(`[SSM] Reemplazado track de video de pantalla por cámara para PC ${peerId}.`);
                 } else {
-                    videoSender.replaceTrack(null).catch(e => console.error(`[ScreenShareManager] Error nullifying screen video track for ${peerId}:`, e));
-                    console.log(`[ScreenShareManager] Nullified screen video track for PC ${peerId} (camera not active).`);
+                    // Si la cámara no está habilitada o no hay track, poner null
+                    videoSender.replaceTrack(null).catch(e => console.error(`[SSM] Error nullifying screen video track for ${peerId}:`, e));
+                    console.log(`[SSM] Nulificado track de video de pantalla para PC ${peerId} (cámara no activa).`);
                 }
             } else if (cameraVideoTrack && videoEnabled) {
+                 // Si no hay sender pero hay track de cámara activo, añadirlo
                  pc.addTrack(cameraVideoTrack, localStream!);
-                 console.log(`[ScreenShareManager] Added camera track back as no video sender found for PC ${peerId}.`);
+                 console.log(`[SSM] Añadido track de cámara porque no se encontró sender de video para PC ${peerId}.`);
             }
 
             if (audioSender) {
+                // Si el micrófono está habilitado y hay un track, reemplazar
                 if (cameraAudioTrack && micEnabled) {
-                    audioSender.replaceTrack(cameraAudioTrack).catch(e => console.error(`[ScreenShareManager] Error replacing screen audio with mic for ${peerId}:`, e));
-                    console.log(`[ScreenShareManager] Replaced screen audio track with mic for PC ${peerId}.`);
+                    audioSender.replaceTrack(cameraAudioTrack).catch(e => console.error(`[SSM] Error reemplazando audio de pantalla con micro para ${peerId}:`, e));
+                    console.log(`[SSM] Reemplazado track de audio de pantalla por micro para PC ${peerId}.`);
                 } else {
-                    audioSender.replaceTrack(null).catch(e => console.error(`[ScreenShareManager] Error nullifying screen audio track for ${peerId}:`, e));
-                    console.log(`[ScreenShareManager] Nullified screen audio track for PC ${peerId} (mic not active).`);
+                    // Si el micrófono no está habilitado o no hay track, poner null
+                    audioSender.replaceTrack(null).catch(e => console.error(`[SSM] Error nullifying screen audio track for ${peerId}:`, e));
+                    console.log(`[SSM] Nulificado track de audio de pantalla para PC ${peerId} (micrófono no activo).`);
                 }
             } else if (cameraAudioTrack && micEnabled) {
+                // Si no hay sender pero hay track de audio activo, añadirlo
                 pc.addTrack(cameraAudioTrack, localStream!);
-                console.log(`[ScreenShareManager] Added mic track back as no audio sender found for PC ${peerId}.`);
+                console.log(`[SSM] Añadido track de micro porque no se encontró sender de audio para PC ${peerId}.`);
+            }
+
+            // --- ¡IMPORTANTE! Envía la señal de estado de pantalla compartida aquí ---
+            if (currentUser) {
+                sendSignal(peerId, { type: 'screenShareStatus', isSharing: false, from: currentUser.id });
+                console.log(`[SSM] Señal 'screenShareStatus: false' enviada a ${peerId}.`);
             }
         });
 
         onScreenShareStop();
         setIsSharingScreen(false);
-        console.log("[ScreenShareManager] Detención de compartición finalizada.");
-    }, [localStream, peerConnections, onScreenShareStop, videoEnabled, micEnabled]);
+        console.log("[SSM] Detención de compartición finalizada.");
+    }, [localStream, peerConnections, onScreenShareStop, videoEnabled, micEnabled, sendSignal, currentUser]);
 
 
     // Función para iniciar la compartición de pantalla
     const startScreenShare = useCallback(async () => {
-        console.log("[ScreenShareManager] Iniciando compartición de pantalla...");
+        console.log("[SSM] Iniciando compartición de pantalla...");
         if (!localStream) {
-            console.warn("[ScreenShareManager] localStream no disponible al intentar iniciar compartición.");
-            // Esto no debería pasar si la llamada ya está activa, pero es buena precaución
+            console.warn("[SSM] localStream no disponible al intentar iniciar compartición.");
             return;
         }
 
@@ -114,42 +119,54 @@ const ScreenShareManager = forwardRef<ScreenShareManagerHandle, ScreenShareManag
                 let audioSender = pc.getSenders().find(sender => sender.track?.kind === 'audio');
 
                 if (videoSender) {
-                    videoSender.replaceTrack(screenVideoTrack).catch(e => console.error(`[ScreenShareManager] Error replacing video track for ${peerId}:`, e));
-                    console.log(`[ScreenShareManager] Replaced existing video track with screen track for PC ${peerId}.`);
+                    videoSender.replaceTrack(screenVideoTrack).catch(e => console.error(`[SSM] Error reemplazando track de video para ${peerId}:`, e));
+                    console.log(`[SSM] Reemplazado track de video existente por track de pantalla para PC ${peerId}.`);
                 } else {
                     pc.addTrack(screenVideoTrack, screenStream);
-                    console.log(`[ScreenShareManager] Added NEW screen video track to PC for ${peerId} (no existing video sender).`);
+                    console.log(`[SSM] Añadido NUEVO track de video de pantalla a PC para ${peerId} (no hay sender de video existente).`);
                 }
 
                 if (screenAudioTrack) {
                     if (audioSender) {
-                        audioSender.replaceTrack(screenAudioTrack).catch(e => console.error(`[ScreenShareManager] Error replacing audio track for ${peerId}:`, e));
-                        console.log(`[ScreenShareManager] Replaced existing audio track with screen audio for PC ${peerId}.`);
+                        audioSender.replaceTrack(screenAudioTrack).catch(e => console.error(`[SSM] Error reemplazando track de audio para ${peerId}:`, e));
+                        console.log(`[SSM] Reemplazado track de audio existente por audio de pantalla para PC ${peerId}.`);
                     } else {
                         pc.addTrack(screenAudioTrack, screenStream);
-                        console.log(`[ScreenShareManager] Added NEW screen audio track to PC for ${peerId} (no existing audio sender).`);
+                        console.log(`[SSM] Añadido NUEVO track de audio de pantalla a PC para ${peerId} (no hay sender de audio existente).`);
                     }
                 } else if (audioSender) {
-                    audioSender.replaceTrack(null).catch(e => console.error(`[ScreenShareManager] Error nullifying audio track for ${peerId}:`, e));
-                    console.log(`[ScreenShareManager] Nullified audio track for PC ${peerId} (screen has no audio).`);
+                    // Si la pantalla no tiene audio, pero hay un sender de audio (ej. de la cámara),
+                    // deberíamos nullificarlo o mantener el de la cámara si esa es la intención.
+                    // Por ahora, lo nulificamos para asegurar que solo haya audio de la pantalla.
+                    audioSender.replaceTrack(null).catch(e => console.error(`[SSM] Error nullifying audio track for ${peerId}:`, e));
+                    console.log(`[SSM] Nulificado track de audio para PC ${peerId} (la pantalla no tiene audio).`);
                 }
+                // Si no había audioSender y la pantalla no tiene audio, no hacemos nada.
             });
 
             screenVideoTrack.onended = () => {
-                console.log("[ScreenShareManager] Screen share ended by user (browser control).");
+                console.log("[SSM] Compartición de pantalla finalizada por el usuario (control del navegador).");
                 stopScreenShare();
             };
 
             onScreenShareStart(screenStream);
             setIsSharingScreen(true);
-            console.log("[ScreenShareManager] Inicio de compartición finalizado.");
+            console.log("[SSM] Inicio de compartición finalizado.");
+
+            // --- ¡IMPORTANTE! Envía la señal de estado de pantalla compartida aquí ---
+            if (currentUser) {
+                Object.keys(peerConnections).forEach(peerId => {
+                     sendSignal(peerId, { type: 'screenShareStatus', isSharing: true, from: currentUser.id });
+                     console.log(`[SSM] Señal 'screenShareStatus: true' enviada a ${peerId}.`);
+                });
+            }
 
         } catch (error) {
-            console.error("[ScreenShareManager] Error sharing screen:", error);
+            console.error("[SSM] Error al compartir pantalla:", error);
             onScreenShareStop();
             setIsSharingScreen(false);
         }
-    }, [localStream, peerConnections, onScreenShareStart, onScreenShareStop, sendSignal, currentUser, videoEnabled, micEnabled]);
+    }, [localStream, peerConnections, onScreenShareStart, onScreenShareStop, sendSignal, currentUser]); // Agrega sendSignal y currentUser a las dependencias.
 
 
     // La función principal que se expondrá al padre
