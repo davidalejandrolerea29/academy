@@ -1345,7 +1345,6 @@ useEffect(() => {
       enabled: audioTrack.enabled,
     });
   };
-
 const toggleScreenShare = useCallback(async () => {
     if (!localStream) {
         console.warn("localStream no está disponible. No se puede iniciar/detener la compartición de pantalla.");
@@ -1356,86 +1355,53 @@ const toggleScreenShare = useCallback(async () => {
         // --- Lógica para DETENER la compartición de pantalla ---
         if (screenShareStreamRef.current) {
             screenShareStreamRef.current.getTracks().forEach(track => track.stop());
-            screenShareStreamRef.current = null;
+            screenShareStreamRef.current = null; // Importantísimo que esto sea null para el useEffect
         }
 
-        Object.values(peerConnectionsRef.current).forEach(pc => {
-            const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc);
-            if (!peerId) return;
-
-            const sendersForThisPeer = screenShareSendersRef.current[peerId];
-
-            if (sendersForThisPeer?.video) {
-                pc.removeTrack(sendersForThisPeer.video); // Remueve el sender que guardaste
-                console.log(`[ScreenShare Stop] Removed screen video track from PC for ${peerId}.`);
-            }
-            if (sendersForThisPeer?.audio) {
-                pc.removeTrack(sendersForThisPeer.audio); // Remueve el sender que guardaste
-                console.log(`[ScreenShare Stop] Removed screen audio track from PC for ${peerId}.`);
-            }
-            // Limpia los senders de este peer del ref
-            delete screenShareSendersRef.current[peerId];
-        });
+        // El useEffect de sincronización se encargará de cambiar a la cámara
+        // y de 'mutear' los senders de pantalla si es necesario.
+        // NO HAGAS pc.removeTrack(sendersForThisPeer.video/audio) AQUÍ.
+        
+        // Limpia los senders de pantalla específicos si los tenías guardados,
+        // pero la lógica principal ahora es el replaceTrack del useEffect
+        // screenShareSendersRef.current = {}; // Si lo usas para otra cosa, considera cómo resetearlo.
 
         if (localVideoRef.current && localStream) {
             localVideoRef.current.srcObject = localStream;
         }
 
+        // Señaliza a los demás que dejaste de compartir
         Object.keys(peerConnectionsRef.current).forEach(peerId => {
             sendSignal(peerId, { type: 'screenShareStatus', isSharing: false, from: currentUser?.id });
         });
 
-        setIsSharingScreen(false);
+        setIsSharingScreen(false); // Esto disparará el useEffect de sincronización
         return;
     }
 
     // --- Lógica para INICIAR la compartición de pantalla ---
     try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        screenShareStreamRef.current = screenStream;
-
-        const screenVideoTrack = screenStream.getVideoTracks()[0];
-        const screenAudioTrack = screenStream.getAudioTracks()[0];
-
-        // NO INTENTES ASIGNAR screenVideoTrack.id = '...' o screenAudioTrack.id = '...'
-        // Usa la ID que ya tienen o propiedades personalizadas si realmente las necesitas
-        // para algo más que buscar el sender, pero para el sender no es necesario.
+        screenShareStreamRef.current = screenStream; // Importantísimo que esto se setee para el useEffect
 
         if (localVideoRef.current) {
             localVideoRef.current.srcObject = screenStream;
         }
 
-        Object.values(peerConnectionsRef.current).forEach(pc => {
-            const peerId = Object.keys(peerConnectionsRef.current).find(key => peerConnectionsRef.current[key] === pc);
-            if (!peerId) return;
-
-            // Al añadir el track, guarda el RTCRtpSender que retorna addTrack
-            const videoSender = pc.addTrack(screenVideoTrack, screenStream);
-            console.log(`[ScreenShare Start] Added NEW screen video track to PC for ${peerId}.`);
-
-            let audioSender: RTCRtpSender | undefined;
-            if (screenAudioTrack) {
-                audioSender = pc.addTrack(screenAudioTrack, screenStream);
-                console.log(`[ScreenShare Start] Added NEW screen audio track to PC for ${peerId}.`);
-            }
-
-            // Guarda los senders en la ref para poder removerlos después
-            screenShareSendersRef.current[peerId] = {
-                video: videoSender,
-                audio: audioSender
-            };
-        });
-
-        screenVideoTrack.onended = () => {
+        screenStream.getVideoTracks()[0].onended = () => { // Solo el track de video de pantalla tiene onended.
             console.log("[ScreenShare] Screen share ended by user (browser control).");
-            toggleScreenShare();
+            // No llames a toggleScreenShare directamente aquí, solo actualiza el estado.
+            // toggleScreenShare() llamaría a este mismo useCallback, lo que puede causar un loop.
+            // Mejor: setIsSharingScreen(false); y que el useEffect haga la limpieza.
+            setIsSharingScreen(false); 
         };
 
+        // Señaliza a los demás que estás compartiendo
         Object.keys(peerConnectionsRef.current).forEach(peerId => {
             sendSignal(peerId, { type: 'screenShareStatus', isSharing: true, from: currentUser?.id });
         });
 
-        setIsSharingScreen(true);
+        setIsSharingScreen(true); // Esto disparará el useEffect de sincronización
     } catch (error) {
         console.error("Error sharing screen:", error);
         setIsSharingScreen(false);
@@ -1443,8 +1409,7 @@ const toggleScreenShare = useCallback(async () => {
             localVideoRef.current.srcObject = localStream;
         }
     }
-}, [isSharingScreen, localStream, sendSignal, currentUser]);
-
+}, [isSharingScreen, localStream, sendSignal, currentUser]); // peerConnectionsRef si es necesario
 const [roomParticipantId, setRoomParticipantId] = useState<number | null>(null);
 useEffect(() => {
   const fetchRoomParticipantId = async () => {
