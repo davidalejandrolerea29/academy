@@ -383,35 +383,58 @@ const startDragging = useCallback((clientX: number, clientY: number) => {
     setLocalStream(null);
   }
 }, [localStream]);
-  const stopScreenShare = useCallback(() => {
-  if (screenShareStreamRef.current) {
-    screenShareStreamRef.current.getTracks().forEach(track => track.stop());
-    screenShareStreamRef.current = null;
-    setIsSharingScreen(false);
+ const stopScreenShare = useCallback(() => {
+    if (screenShareStreamRef.current) {
+      // Detener todos los tracks del stream de pantalla compartida
+      screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+      screenShareStreamRef.current = null; // Limpiar la referencia al stream de pantalla
+      setIsSharingScreen(false); // Actualizar el estado de compartición de pantalla
 
-    Object.values(peerConnectionsRef.current).forEach(pc => {
-      const videoSender = pc.getSenders().find(sender => sender.track?.kind === 'video');
-      if (videoSender && localStream) {
-        const cameraVideoTrack = localStream.getVideoTracks()[0];
-        if (cameraVideoTrack) {
-          videoSender.replaceTrack(cameraVideoTrack);
-        } else {
-          pc.removeTrack(videoSender);
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+        // --- Manejo del Track de Video ---
+        const videoSender = pc.getSenders().find(sender => sender.track?.kind === 'video');
+        if (videoSender) { // Si hay un sender de video...
+          const cameraVideoTrack = localStream?.getVideoTracks()[0]; // Intenta obtener el track de la cámara local
+
+          if (cameraVideoTrack && videoEnabled) { // Si hay un track de cámara Y la cámara está habilitada
+            // Reemplaza el track de pantalla por el track de la cámara
+            videoSender.replaceTrack(cameraVideoTrack).catch(e => {
+              console.error("Error al reemplazar track de video con cámara:", e);
+            });
+            console.log("Track de video de pantalla reemplazado por track de cámara.");
+          } else {
+            // Si no hay track de cámara activo o la cámara está deshabilitada,
+            // simplemente "nulifica" el track en el sender. Esto mantiene el sender activo
+            // pero deja de enviar video. Es preferible a remover el sender por completo.
+            videoSender.replaceTrack(null).catch(e => {
+              console.error("Error al nulificar track de video:", e);
+            });
+            console.log("Track de video de pantalla nulificado (cámara no activa).");
+          }
         }
-      }
-      const audioSender = pc.getSenders().find(sender => sender.track?.kind === 'audio');
-      if (audioSender && localStream) {
-        const cameraAudioTrack = localStream.getAudioTracks()[0];
-        if (cameraAudioTrack) {
-          audioSender.replaceTrack(cameraAudioTrack);
-        } else {
-          pc.removeTrack(audioSender);
+
+        // --- Manejo del Track de Audio (si la pantalla compartida tenía audio) ---
+        // Esto es importante si la pantalla compartida incluía audio del sistema.
+        const audioSender = pc.getSenders().find(sender => sender.track?.kind === 'audio');
+        if (audioSender) {
+          const cameraAudioTrack = localStream?.getAudioTracks()[0];
+
+          if (cameraAudioTrack && micEnabled) { // Si hay track de micrófono Y el micrófono está habilitado
+            audioSender.replaceTrack(cameraAudioTrack).catch(e => {
+              console.error("Error al reemplazar track de audio con micrófono:", e);
+            });
+            console.log("Track de audio de pantalla reemplazado por track de micrófono.");
+          } else {
+            audioSender.replaceTrack(null).catch(e => {
+              console.error("Error al nulificar track de audio:", e);
+            });
+            console.log("Track de audio de pantalla nulificado (micrófono no activo).");
+          }
         }
-      }
-    });
-    console.log("Compartir pantalla detenido.");
-  }
-}, [localStream]);
+      });
+      console.log("Compartir pantalla detenido y tracks ajustados.");
+    }
+  }, [localStream, videoEnabled, micEnabled]); // Asegúrate de que videoEnabled y micEnabled sean dependencias
 
   // Dentro de tu función sendSignal:
   const sendSignal = useCallback(async (toPeerId: string, signalData: any) => {
