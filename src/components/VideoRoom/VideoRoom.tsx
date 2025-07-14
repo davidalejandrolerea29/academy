@@ -72,6 +72,8 @@ const [isChatOpenMobile, setIsChatOpenMobile] = useState(false);
 const [isChatOpenDesktop, setIsChatOpenDesktop] = useState(true); 
   // Estado para streams remotos y participantes
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+
+
   // participants ahora incluye toda la info necesaria para renderizar y gestionar el estado del usuario
 const [participants, setParticipants] = useState<Record<string, {
     id: string,
@@ -91,6 +93,11 @@ const [participants, setParticipants] = useState<Record<string, {
   const volume = useMicVolume(localStream); // Usa tu hook para el volumen del micrófono local
   const [showAlert, setShowAlert] = useState(false);
   const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const mainVideoContainerRef = useRef<HTMLDivElement>(null); // Ref para el contenedor de videos principal
+  const thumbnailsContainerRef = useRef<HTMLDivElement>(null); // Ref para el contenedor de miniaturas
+  const [mainVideoHeight, setMainVideoHeight] = useState('auto'); // Estado para la altura calculada del video principal
+
 const getConnectionStatusIndicator = useCallback(() => {
     const isMobile = window.innerWidth < 768;
 
@@ -121,6 +128,105 @@ const getConnectionStatusIndicator = useCallback(() => {
       </span>
     );
   }, [reverbServiceInstance]); // <-- ¡CAMBIA LA DEPENDENCIA A reverbServiceInstance!
+
+ // Tus definiciones actuales (Mantener estas):
+const remoteScreenShareParticipant = Object.values(participants).find(p => p.screenStream);
+const currentScreenShareStream = isSharingScreen ? screenShareStreamRef.current : (remoteScreenShareParticipant?.screenStream || null);
+const currentScreenShareOwnerId = isSharingScreen ? currentUser?.id : remoteScreenShareParticipant?.id;
+const currentScreenShareOwnerName = isSharingScreen ? `${currentUser?.name || 'Tú'} (Mi Pantalla)` : (remoteScreenShareParticipant ? `${remoteScreenShareParticipant.name} (Pantalla)` : '');
+
+  // Función para calcular y establecer la altura del video principal
+  const calculateMainVideoHeight = useCallback(() => {
+    if (mainVideoContainerRef.current && thumbnailsContainerRef.current) {
+      const parentHeight = mainVideoContainerRef.current.clientHeight;
+      const thumbnailsHeight = thumbnailsContainerRef.current.offsetHeight; // offsetHeight incluye padding y border
+      const calculatedHeight = parentHeight - thumbnailsHeight - (16 * 2); // Resta altura de miniaturas y un poco de padding/gap
+
+      // Asegúrate de que no sea negativo y tenga un mínimo
+      setMainVideoHeight(`${Math.max(calculatedHeight, 200)}px`); // Mínimo de 200px para evitar que desaparezca
+    } else if (mainVideoContainerRef.current && !currentScreenShareStream) {
+      // Si no hay pantalla compartida y no hay miniaturas, simplemente ocupa todo el padre
+      setMainVideoHeight(`${mainVideoContainerRef.current.clientHeight}px`);
+    } else {
+        setMainVideoHeight('auto'); // Fallback si no hay refs aún
+    }
+  }, [currentScreenShareStream]); // Dependencia para recalcular si cambia la pantalla compartida
+
+  useEffect(() => {
+    // Escuchar cambios de tamaño en el contenedor padre y la ventana
+    const resizeObserver = new ResizeObserver(entries => {
+      // Recalcular solo si el tamaño del elemento observado cambia
+      for (let entry of entries) {
+        if (entry.target === mainVideoContainerRef.current || entry.target === thumbnailsContainerRef.current) {
+          calculateMainVideoHeight();
+          break;
+        }
+      }
+    });
+
+    // Observa el contenedor principal de videos
+    if (mainVideoContainerRef.current) {
+      resizeObserver.observe(mainVideoContainerRef.current);
+    }
+    // Observa el contenedor de miniaturas si existe
+    if (thumbnailsContainerRef.current) {
+      resizeObserver.observe(thumbnailsContainerRef.current);
+    }
+    // Observa la ventana para cambios generales de tamaño
+    window.addEventListener('resize', calculateMainVideoHeight);
+
+    // Ejecuta el cálculo inicial
+    calculateMainVideoHeight();
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', calculateMainVideoHeight);
+    };
+  }, [calculateMainVideoHeight]); // Depende de calculateMainVideoHeight
+
+// --- Nueva lógica para videos secundarios/miniaturas ---
+let secondaryStreams = [];
+
+// Si estás compartiendo pantalla (tú eres el currentScreenShareOwnerId),
+// tu CÁMARA debe ir como un video secundario, pero en grande.
+// Si eres tú el que comparte, queremos ver tu cámara grande también.
+if (isSharingScreen && localStream && videoEnabled) {
+    // Si yo comparto, mi cámara va a ser un stream secundario pero importante.
+    secondaryStreams.push({ type: 'camera', stream: localStream, isLocal: true, id: currentUser?.id, name: `${currentUser?.name || 'Tú'} (Yo)` });
+} else if (!isSharingScreen && localStream && videoEnabled && !currentScreenShareStream) {
+    // Si NO se comparte pantalla, y no hay una pantalla principal, mi cámara va a la cuadrícula principal.
+    // Esto ya se maneja en el else{} del JSX, así que no la agregamos aquí si NO HAY pantalla principal.
+    // Pero si hay pantalla principal Y NO SOY YO el que comparte, mi cámara sí va a las miniaturas.
+    if (localStream && videoEnabled) {
+        secondaryStreams.push({ type: 'camera', stream: localStream, isLocal: true, id: currentUser?.id, name: `${currentUser?.name || 'Tú'} (Yo)` });
+    }
+}
+
+
+// Cámaras de participantes remotos (siempre miniaturas si hay pantalla principal)
+Object.values(participants).forEach(p => {
+    if (p.cameraStream && p.videoEnabled) {
+        secondaryStreams.push({ type: 'camera', stream: p.cameraStream, isLocal: false, id: p.id, name: p.name });
+    }
+});
+
+// Pantallas remotas que NO son la 'currentScreenShareStream' principal
+Object.values(participants).forEach(p => {
+    if (p.screenStream && p.id !== currentScreenShareOwnerId) {
+        secondaryStreams.push({ type: 'screen', stream: p.screenStream, isLocal: false, id: p.id, name: `${p.name} (Pantalla)` });
+    }
+});
+
+// Si estoy compartiendo mi pantalla, y no es la pantalla principal (es decir, un remoto es la principal),
+// entonces mi propia pantalla compartida va como miniatura.
+// Esto es importante para el escenario de "yo comparto, pero veo la pantalla de otro en grande".
+if (isSharingScreen && screenShareStreamRef.current && currentScreenShareOwnerId !== currentUser?.id) {
+    secondaryStreams.push({ type: 'screen', stream: screenShareStreamRef.current, isLocal: true, id: `${currentUser?.id}-my-screen-mini`, name: `${currentUser?.name || 'Tú'} (Mi pantalla)` });
+}
+
+
+const totalVideosInGrid = secondaryStreams.length; // Conteo para la sección de miniaturas
+
 
   useEffect(() => {
     // AHORA USAMOS reverbServiceInstance
@@ -1445,135 +1551,87 @@ if (!roomParticipantId) return;
     );
   }
 
- // Tus definiciones actuales (Mantener estas):
-const remoteScreenShareParticipant = Object.values(participants).find(p => p.screenStream);
-const currentScreenShareStream = isSharingScreen ? screenShareStreamRef.current : (remoteScreenShareParticipant?.screenStream || null);
-const currentScreenShareOwnerId = isSharingScreen ? currentUser?.id : remoteScreenShareParticipant?.id;
-const currentScreenShareOwnerName = isSharingScreen ? `${currentUser?.name || 'Tú'} (Mi Pantalla)` : (remoteScreenShareParticipant ? `${remoteScreenShareParticipant.name} (Pantalla)` : '');
-
-
-// --- Nueva lógica para videos secundarios/miniaturas ---
-let secondaryStreams = [];
-
-// Si estás compartiendo pantalla (tú eres el currentScreenShareOwnerId),
-// tu CÁMARA debe ir como un video secundario, pero en grande.
-// Si eres tú el que comparte, queremos ver tu cámara grande también.
-if (isSharingScreen && localStream && videoEnabled) {
-    // Si yo comparto, mi cámara va a ser un stream secundario pero importante.
-    secondaryStreams.push({ type: 'camera', stream: localStream, isLocal: true, id: currentUser?.id, name: `${currentUser?.name || 'Tú'} (Yo)` });
-} else if (!isSharingScreen && localStream && videoEnabled && !currentScreenShareStream) {
-    // Si NO se comparte pantalla, y no hay una pantalla principal, mi cámara va a la cuadrícula principal.
-    // Esto ya se maneja en el else{} del JSX, así que no la agregamos aquí si NO HAY pantalla principal.
-    // Pero si hay pantalla principal Y NO SOY YO el que comparte, mi cámara sí va a las miniaturas.
-    if (localStream && videoEnabled) {
-        secondaryStreams.push({ type: 'camera', stream: localStream, isLocal: true, id: currentUser?.id, name: `${currentUser?.name || 'Tú'} (Yo)` });
-    }
-}
-
-
-// Cámaras de participantes remotos (siempre miniaturas si hay pantalla principal)
-Object.values(participants).forEach(p => {
-    if (p.cameraStream && p.videoEnabled) {
-        secondaryStreams.push({ type: 'camera', stream: p.cameraStream, isLocal: false, id: p.id, name: p.name });
-    }
-});
-
-// Pantallas remotas que NO son la 'currentScreenShareStream' principal
-Object.values(participants).forEach(p => {
-    if (p.screenStream && p.id !== currentScreenShareOwnerId) {
-        secondaryStreams.push({ type: 'screen', stream: p.screenStream, isLocal: false, id: p.id, name: `${p.name} (Pantalla)` });
-    }
-});
-
-// Si estoy compartiendo mi pantalla, y no es la pantalla principal (es decir, un remoto es la principal),
-// entonces mi propia pantalla compartida va como miniatura.
-// Esto es importante para el escenario de "yo comparto, pero veo la pantalla de otro en grande".
-if (isSharingScreen && screenShareStreamRef.current && currentScreenShareOwnerId !== currentUser?.id) {
-    secondaryStreams.push({ type: 'screen', stream: screenShareStreamRef.current, isLocal: true, id: `${currentUser?.id}-my-screen-mini`, name: `${currentUser?.name || 'Tú'} (Mi pantalla)` });
-}
-
-
-const totalVideosInGrid = secondaryStreams.length; // Conteo para la sección de miniaturas
-
 // Esta variable no la usaremos de la misma forma, el renderizado será más explícito.
 // const allActiveStreams = streamsInGridOrThumbnails;
 return (
         // Contenedor general que ocupa toda la pantalla (h-screen)
         // Ya tienes `h-screen` aquí cuando no está minimizado
-        <div className={`flex bg-black text-white w-full ${isCallMinimized ? 'flex-col' : 'h-screen flex-col md:flex-row'}`}>
+       <div className={`flex bg-black text-white w-full ${isCallMinimized ? 'flex-col' : 'h-screen flex-col md:flex-row'}`}>
 
-            {/* Contenedor principal de videos (siempre ocupa el espacio disponible) */}
-            {/* Si NO está minimizado, queremos que esto ocupe todo el espacio principal */}
-            {!isCallMinimized && (
-                <div className={`flex flex-1 flex-col ${isChatOpenMobile ? 'hidden' : ''} md:flex`}> {/* 'hidden' para móvil si chat overlay está abierto, md:flex para mostrar en desktop */}
-                    {/* Contenido de los videos */}
-                    <div className="flex-grow relative p-2 md:p-4 bg-gray-950 flex flex-col"> {/* AÑADIR flex flex-col AQUÍ */}
-                        <div className="absolute top-4 left-4 z-10 flex items-center bg-gray-800 bg-opacity-75 px-2 py-1 rounded-full text-sm font-semibold md:px-3 md:py-1">
-                            <Dot className="w-5 h-5 text-red-500 mr-0 md:mr-2 animate-pulse-custom" />
-                            <span className="hidden md:inline">Grabando</span>
-                        </div>
-                        <div className="absolute top-4 right-4 z-10 bg-gray-800 bg-opacity-75 px-2 py-1 rounded-full">
-                            {getConnectionStatusIndicator()}
-                        </div>
-                        {showAlert && (
-                            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 p-2 px-4 bg-red-600 text-white rounded-lg shadow-lg text-sm text-center animate-fade-in-down">
-                                <p className="font-semibold">¡Problemas de conexión!</p>
-                                <p>Por favor, revisa tu conexión a internet.</p>
-                            </div>
-                        )}
-                        {(() => {
-                      if (currentScreenShareStream) {
-        return (
-            <>
-                {/* Contenedor Principal: Pantalla Compartida (la que está activa, sea tuya o de otro) */}
-                <div className="w-full h-full flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden mb-2 md:mb-4">
-                    <RemoteVideo
-                        stream={currentScreenShareStream}
-                        participantId={`${currentScreenShareOwnerId}-screen`}
-                        participantName={currentScreenShareOwnerName}
-                        videoEnabled={true}
-                        micEnabled={currentScreenShareStream.getAudioTracks().length > 0}
-                        isLocal={currentScreenShareOwnerId === currentUser?.id}
-                        volume={0}
-                        isScreenShare={true}
-                        className="w-full h-full object-contain" // Asegura que la pantalla se ajuste y no se corte
-                    />
-                </div>
-
-                {/* Miniaturas o Videos Secundarios (tu cámara, otras cámaras, otras pantallas) */}
-                {totalVideosInGrid > 0 && (
-                    <div className="w-full flex gap-2 md:gap-3 flex-shrink-0 overflow-x-auto p-1 md:p-2 scrollbar-hide">
-                        {secondaryStreams.map((item) => {
-                            const { type, stream, isLocal, id, name } = item;
-
-                            // Clase de tamaño para las miniaturas
-                            const thumbnailClasses = "flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40";
-                            
-                            // Si soy yo el que comparte, y esta es mi cámara, quiero que sea más grande
-                            const isMyCameraWhileSharing = isSharingScreen && isLocal && type === 'camera';
-                            const bigCameraClasses = "flex-none w-48 h-32 sm:w-64 sm:h-40 md:w-80 md:h-52 lg:w-96 lg:h-64"; // Clases para cámara grande
-
-                            return (
-                                <div key={id} className={isMyCameraWhileSharing ? bigCameraClasses : thumbnailClasses}>
-                                    <RemoteVideo
-                                        stream={stream}
-                                        participantId={id}
-                                        participantName={name}
-                                        videoEnabled={stream.getVideoTracks().length > 0 && (type === 'camera' ? (isLocal ? videoEnabled : Object.values(participants).find(p => p.id === id)?.videoEnabled) : true)}
-                                        micEnabled={stream.getAudioTracks().length > 0 && (type === 'camera' ? (isLocal ? micEnabled : Object.values(participants).find(p => p.id === id)?.micEnabled) : true)}
-                                        isLocal={isLocal}
-                                        volume={0}
-                                        isScreenShare={type === 'screen'}
-                                        className="w-full h-full object-cover" // object-cover para cámaras
-                                    />
-                                </div>
-                            );
-                        })}
+        {!isCallMinimized && (
+            <div className={`flex flex-1 flex-col ${isChatOpenMobile ? 'hidden' : ''} md:flex`}>
+                {/* Contenido de los videos */}
+                {/* CAMBIO CLAVE AQUÍ: Usar Grid en lugar de Flexbox para la distribución vertical.
+                    Eliminamos 'flex flex-col' de aquí, y en su lugar usamos grid para controlar las filas.
+                    También añadimos gap para la separación entre la pantalla compartida y las miniaturas.
+                */}
+                <div ref={mainVideoContainerRef} className="flex-grow relative p-2 md:p-4 bg-gray-950 grid grid-rows-[1fr_auto] gap-3 md:gap-4"> {/* <--- MODIFICADO */}
+                    <div className="absolute top-4 left-4 z-10 flex items-center bg-gray-800 bg-opacity-75 px-2 py-1 rounded-full text-sm font-semibold md:px-3 md:py-1">
+                        <Dot className="w-5 h-5 text-red-500 mr-0 md:mr-2 animate-pulse-custom" />
+                        <span className="hidden md:inline">Grabando</span>
                     </div>
-                )}
-            </>
-        );
-    } else {
+                    <div className="absolute top-4 right-4 z-10 bg-gray-800 bg-opacity-75 px-2 py-1 rounded-full">
+                        {getConnectionStatusIndicator()}
+                    </div>
+                    {showAlert && (
+                        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 p-2 px-4 bg-red-600 text-white rounded-lg shadow-lg text-sm text-center animate-fade-in-down">
+                            <p className="font-semibold">¡Problemas de conexión!</p>
+                            <p>Por favor, revisa tu conexión a internet.</p>
+                        </div>
+                    )}
+                    {(() => {
+                          if (currentScreenShareStream) {
+                            return (
+                                <>
+                                    {/* Contenedor Principal: Pantalla Compartida */}
+                                    {/* Ocupará la primera fila (1fr) */}
+                                    <div className="w-full flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden">
+                                        <RemoteVideo
+                                            stream={currentScreenShareStream}
+                                            participantId={`${currentScreenShareOwnerId}-screen`}
+                                            participantName={currentScreenShareOwnerName}
+                                            videoEnabled={true}
+                                            micEnabled={currentScreenShareStream.getAudioTracks().length > 0}
+                                            isLocal={currentScreenShareOwnerId === currentUser?.id}
+                                            volume={0}
+                                            isScreenShare={true}
+                                            className="w-full h-full"
+                                        />
+                                    </div>
+
+                                    {/* Miniaturas de otros participantes y tu cámara/pantalla si no son la principal */}
+                                    {/* Ocupará la segunda fila (auto), tomando el espacio que necesita */}
+                                    {totalVideosInGrid > 0 && (
+                                        <div className="w-full flex gap-2 md:gap-3 flex-shrink-0 overflow-x-auto p-1 md:p-2 scrollbar-hide">
+                                            {secondaryStreams.map((item) => {
+                                                const { type, stream, isLocal, id, name } = item;
+
+                                                const thumbnailClasses = "flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40";
+                                                const isMyCameraWhileSharing = isSharingScreen && isLocal && type === 'camera';
+                                                const bigCameraClasses = "flex-none w-48 h-32 sm:w-64 sm:h-40 md:w-80 md:h-52 lg:w-96 lg:h-64";
+
+                                                return (
+                                                    <div key={id} className={isMyCameraWhileSharing ? bigCameraClasses : thumbnailClasses}>
+                                                        <RemoteVideo
+                                                            stream={stream}
+                                                            participantId={id}
+                                                            participantName={name}
+                                                            videoEnabled={stream.getVideoTracks().length > 0 && (type === 'camera' ? (isLocal ? videoEnabled : Object.values(participants).find(p => p.id === id)?.videoEnabled) : true)}
+                                                            micEnabled={stream.getAudioTracks().length > 0 && (type === 'camera' ? (isLocal ? micEnabled : Object.values(participants).find(p => p.id === id)?.micEnabled) : true)}
+                                                            isLocal={isLocal}
+                                                            volume={0}
+                                                            isScreenShare={type === 'screen'}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </>
+                            );
+                        } else {
+
         // Lógica actual para la cuadrícula cuando NO hay pantalla compartida principal (todos en cuadrícula)
         let gridColsClass = "grid-cols-1";
         if (totalVideosInGrid === 2) gridColsClass = "grid-cols-1 sm:grid-cols-2";
@@ -1581,7 +1639,7 @@ return (
         else if (totalVideosInGrid === 4) gridColsClass = "grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4";
         else if (totalVideosInGrid >= 5) gridColsClass = "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
 
-        return (
+             return (
             <div className="flex-1 flex items-center justify-center p-2">
                 <div className={`w-full h-full grid ${gridColsClass} gap-3 md:gap-4 auto-rows-fr`}>
                     {secondaryStreams.map((item) => { // Aquí secondaryStreams incluye a todos, no solo "secundarios"
