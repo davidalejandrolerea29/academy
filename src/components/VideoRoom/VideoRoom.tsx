@@ -518,67 +518,92 @@ const handleEndCall = useCallback(() => {
     }
 }, [currentUser, handlePeerDisconnected, onCallEnded]);
 useEffect(() => {
-    // Si no hay localStream, o si isSharingScreen es true pero no hay screenShareStreamRef.current,
-    // significa que los tracks que queremos enviar pueden no estar listos.
-    // El efecto se re-ejecutará cuando localStream o screenShareStreamRef.current cambien.
-    // No saltes completamente si solo falta uno de los tracks deseados.
+    // Si no hay localStream, no podemos sincronizar tracks.
+    if (!localStream) {
+        console.warn("[SYNC TRACKS] localStream no disponible. Saltando sincronización de tracks.");
+        return;
+    }
 
     // Define los tracks que queremos enviar
     const currentVideoTrackToSend = isSharingScreen
         ? screenShareStreamRef.current?.getVideoTracks()[0] || null
-        : localStream?.getVideoTracks()[0] || null; // Asegúrate de verificar localStream?.
+        : localStream.getVideoTracks()[0] || null;
 
     const currentAudioTrackToSend = isSharingScreen
         ? screenShareStreamRef.current?.getAudioTracks()[0] || null
-        : localStream?.getAudioTracks()[0] || null; // Asegúrate de verificar localStream?.
+        : localStream.getAudioTracks()[0] || null;
     
-    // No necesitas este console.warn aquí. El `replaceTrack(null)` ya lo manejará.
-    // if (!currentVideoTrackToSend && !currentAudioTrackToSend) {
-    //     console.warn("[SYNC TRACKS] No hay tracks de video o audio para enviar. Es posible que el localStream o screenShareStream no estén listos.");
-    // }
+    // Si no hay ningún track de audio o video para enviar (ej. localStream vacío, o isSharingScreen true pero screenShareStreamRef es null)
+    if (!currentVideoTrackToSend && !currentAudioTrackToSend) {
+        console.warn("[SYNC TRACKS] No hay tracks de video o audio para enviar. Es posible que el localStream o screenShareStream no estén listos.");
+        // Podrías considerar detener los senders existentes aquí si es un estado esperado.
+    }
+
 
     Object.values(peerConnectionsRef.current).forEach(pc => {
         let videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
         let audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
 
         // --- Gestión del Sender de Video ---
-        // Si no hay un sender de video, intenta añadir un transceptor primero
-        if (!videoSender) {
-            pc.addTransceiver('video', { direction: 'sendrecv' });
-            videoSender = pc.getSenders().find(s => s.track?.kind === 'video'); // Intenta obtenerlo de nuevo
-            if (!videoSender) {
-                console.error("[SYNC TRACKS] No se pudo obtener/crear un sender de video. Saltando actualización de video.");
-                return; // No podemos hacer nada sin un sender
+        if (currentVideoTrackToSend) {
+            if (videoSender) {
+                // Si el sender ya existe, y está enviando un track diferente, reemplázalo.
+                if (videoSender.track !== currentVideoTrackToSend) {
+                    videoSender.replaceTrack(currentVideoTrackToSend)
+                        .then(() => console.log(`[SYNC TRACKS] Video: Reemplazado track a ${isSharingScreen ? 'pantalla' : 'cámara'}.`))
+                        .catch(e => console.error("Error al reemplazar video track:", e));
+                }
+                // Si ya está enviando el track correcto, no hacer nada.
+            } else {
+                // Si no hay un sender de video, añádelo. Esto solo debería ocurrir al inicio o si fue removido.
+                pc.addTrack(currentVideoTrackToSend, isSharingScreen ? screenShareStreamRef.current! : localStream);
+                console.log(`[SYNC TRACKS] Video: Añadido track de ${isSharingScreen ? 'pantalla' : 'cámara'}.`);
             }
-        }
-        
-        // Ahora que tenemos un videoSender (o al menos lo intentamos)
-        if (videoSender.track !== currentVideoTrackToSend) { // Solo reemplaza si el track es diferente
-            videoSender.replaceTrack(currentVideoTrackToSend)
-                .then(() => console.log(`[SYNC TRACKS] Video: Reemplazado track a ${isSharingScreen ? 'pantalla' : 'cámara'} (o null).`))
-                .catch(e => console.error("Error al reemplazar video track:", e));
+        } else { // No hay un track de video para enviar (ej. cámara/pantalla deshabilitada)
+            if (videoSender) {
+                // Si hay un sender pero no hay track para enviar, puedes reemplazarlo con null para "mutear"
+                // o removerlo si es un comportamiento deseado (esto puede causar renegociación de m-lines).
+                // MÁS SEGURO: Reemplazar con `null` si quieres mantener el `m-line` para posibles futuros usos.
+                videoSender.replaceTrack(null)
+                    .then(() => console.log("[SYNC TRACKS] Video: Muteado sender de video (track a null)."))
+                    .catch(e => console.error("Error al mutear video track:", e));
+                // O si quieres eliminar el m-line:
+                // pc.removeTrack(videoSender); 
+                // console.log("[SYNC TRACKS] Video: Removido sender de video.");
+            }
         }
 
         // --- Gestión del Sender de Audio ---
-        // Si no hay un sender de audio, intenta añadir un transceptor primero
-        if (!audioSender) {
-            pc.addTransceiver('audio', { direction: 'sendrecv' });
-            audioSender = pc.getSenders().find(s => s.track?.kind === 'audio'); // Intenta obtenerlo de nuevo
-            if (!audioSender) {
-                console.error("[SYNC TRACKS] No se pudo obtener/crear un sender de audio. Saltando actualización de audio.");
-                return; // No podemos hacer nada sin un sender
+        if (currentAudioTrackToSend) {
+            if (audioSender) {
+                // Si el sender ya existe, y está enviando un track diferente, reemplázalo.
+                if (audioSender.track !== currentAudioTrackToSend) {
+                    audioSender.replaceTrack(currentAudioTrackToSend)
+                        .then(() => console.log(`[SYNC TRACKS] Audio: Reemplazado track a ${isSharingScreen ? 'pantalla' : 'cámara'}.`))
+                        .catch(e => console.error("Error al reemplazar audio track:", e));
+                }
+            } else {
+                // Si no hay un sender de audio, añádelo.
+                pc.addTrack(currentAudioTrackToSend, isSharingScreen ? screenShareStreamRef.current! : localStream);
+                console.log(`[SYNC TRACKS] Audio: Añadido track de ${isSharingScreen ? 'pantalla' : 'cámara'}.`);
+            }
+        } else { // No hay un track de audio para enviar
+            if (audioSender) {
+                audioSender.replaceTrack(null)
+                    .then(() => console.log("[SYNC TRACKS] Audio: Muteado sender de audio (track a null)."))
+                    .catch(e => console.error("Error al mutear audio track:", e));
+                // O si quieres eliminar el m-line:
+                // pc.removeTrack(audioSender);
+                // console.log("[SYNC TRACKS] Audio: Removido sender de audio.");
             }
         }
         
-        // Ahora que tenemos un audioSender (o al menos lo intentamos)
-        if (audioSender.track !== currentAudioTrackToSend) { // Solo reemplaza si el track es diferente
-            audioSender.replaceTrack(currentAudioTrackToSend)
-                .then(() => console.log(`[SYNC TRACKS] Audio: Reemplazado track a ${isSharingScreen ? 'pantalla' : 'cámara'} (o null).`))
-                .catch(e => console.error("Error al reemplazar audio track:", e));
-        }
+        // La renegociación se disparará automáticamente vía `onnegotiationneeded` si `replaceTrack` lo requiere.
+        // No necesitamos forzarlo manualmente con `dispatchEvent`.
     });
 
-}, [localStream, isSharingScreen, screenShareStreamRef, peerConnectionsRef]);
+}, [localStream, isSharingScreen, screenShareStreamRef, peerConnectionsRef]); // Añade peerConnectionsRef a las dependencias.
+
   // La función `processSignal` ya maneja la lógica de limpiar `screenStream` si `isSharing` es false.
   // --- Función auxiliar para obtener/crear RTCPeerConnection ---
 const getOrCreatePeerConnection = useCallback((peerId: string) => {
@@ -626,42 +651,18 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
     // --- **CRÍTICO:** Añadir los tracks locales INMEDIATAMENTE al crear la PC ---
     // Esto asegura que pc.onnegotiationneeded se dispare si es necesario
     // o que la oferta inicial contenga los tracks.
-        // Video Transceiver (para el video de cámara o pantalla)
-    const existingVideoTransceiver = pc.getTransceivers().find(t => t.receiver.track.kind === 'video');
-    if (!existingVideoTransceiver) {
-        pc.addTransceiver('video', { direction: 'sendrecv' });
-        console.log(`[PC Creation] Añadido transceptor de video para ${peerId}.`);
-    }
-
-    // Audio Transceiver (para el audio de cámara o pantalla)
-    const existingAudioTransceiver = pc.getTransceivers().find(t => t.receiver.track.kind === 'audio');
-    if (!existingAudioTransceiver) {
-        pc.addTransceiver('audio', { direction: 'sendrecv' });
-        console.log(`[PC Creation] Añadido transceptor de audio para ${peerId}.`);
-    }
-
-    // AHORA SÍ, asigna los tracks a los senders de esos transceptores si localStream ya existe.
-    // Ojo: Si el localStream cambia, el `useEffect` de sincronización lo manejará.
-    // Aquí solo nos aseguramos de que el sender inicial tenga un track si ya está disponible.
     if (localStream) {
-        const videoTrack = localStream.getVideoTracks()[0];
-        const audioTrack = localStream.getAudioTracks()[0];
-
-        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
-        if (videoSender && videoTrack && videoSender.track !== videoTrack) {
-            videoSender.replaceTrack(videoTrack)
-                .then(() => console.log(`[PC Creation] Asignado track de video de cámara a sender inicial para ${peerId}.`))
-                .catch(e => console.error("Error al asignar track de video inicial:", e));
-        }
-
-        const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
-        if (audioSender && audioTrack && audioSender.track !== audioTrack) {
-            audioSender.replaceTrack(audioTrack)
-                .then(() => console.log(`[PC Creation] Asignado track de audio de cámara a sender inicial para ${peerId}.`))
-                .catch(e => console.error("Error al asignar track de audio inicial:", e));
-        }
+        localStream.getTracks().forEach(track => {
+            // Solo añade el track si no hay un sender para él ya (previene duplicados si se llama varias veces)
+            if (!pc.getSenders().some(sender => sender.track === track)) {
+                pc.addTrack(track, localStream);
+                console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+            } else {
+                console.log(`[PC Creation] Track ${track.kind} ya EXISTE para ${peerId}. No se añade de nuevo.`);
+            }
+        });
     } else {
-        console.warn(`[PC Creation] localStream es NULO al crear PC para ${peerId}. Los tracks iniciales se asignarán después.`);
+        console.warn(`[PC Creation] localStream es NULO al crear PC para ${peerId}. No se pueden añadir tracks locales iniciales.`);
     }
 
     // Guardar la referencia a la PeerConnection
