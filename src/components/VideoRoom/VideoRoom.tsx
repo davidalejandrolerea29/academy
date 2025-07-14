@@ -1458,18 +1458,39 @@ if (!roomParticipantId) return;
     const currentScreenShareStream = isSharingScreen ? screenShareStreamRef.current : (remoteScreenShareParticipant?.screenStream || null);
     const currentScreenShareOwnerId = isSharingScreen ? currentUser?.id : remoteScreenShareParticipant?.id;
     const currentScreenShareOwnerName = isSharingScreen ? `${currentUser?.name || 'Tú'} (Mi Pantalla)` : (remoteScreenShareParticipant ? `${remoteScreenShareParticipant.name} (Pantalla)` : '');
-    const allActiveStreams = [
-        localStream,
-        ...Object.values(participants).map(p => p.cameraStream),
-        ...Object.values(participants).filter(p => p.screenStream && p.id !== currentScreenShareOwnerId).map(p => p.screenStream)
-    ].filter(Boolean); // Filtra los streams nulos
-let totalVideosInGrid = 0;
-  if (!currentScreenShareStream) { // Solo si NO hay pantalla compartida principal
-    if (localStream && videoEnabled) { // Tu cámara solo cuenta si está habilitada
-        totalVideosInGrid += 1;
+
+  let streamsInGridOrThumbnails = [];
+
+// Tu propia cámara, si está activa y visible
+if (localStream && videoEnabled) {
+    streamsInGridOrThumbnails.push(localStream);
+}
+
+// Cámaras de participantes remotos
+Object.values(participants).forEach(p => {
+    if (p.cameraStream && p.videoEnabled) {
+        streamsInGridOrThumbnails.push(p.cameraStream);
     }
-    totalVideosInGrid += Object.values(participants).filter(p => p.cameraStream && p.videoEnabled).length;
-  }
+});
+
+// Pantallas compartidas, incluyendo la tuya si no es la principal, o las remotas que no son la principal
+// Si 'isSharingScreen' es true, tu pantalla (screenShareStreamRef.current) irá aquí como miniatura,
+// A MENOS QUE sea el currentScreenShareStream (es decir, eres el único compartiendo).
+if (isSharingScreen && screenShareStreamRef.current && currentScreenShareOwnerId !== currentUser?.id) {
+    streamsInGridOrThumbnails.push(screenShareStreamRef.current);
+}
+
+// Pantallas remotas que NO son la 'currentScreenShareStream' principal
+Object.values(participants).forEach(p => {
+    if (p.screenStream && p.id !== currentScreenShareOwnerId) {
+        streamsInGridOrThumbnails.push(p.screenStream);
+    }
+});
+
+const totalVideosInGrid = streamsInGridOrThumbnails.length;
+
+// La variable allActiveStreams podría ser igual a streamsInGridOrThumbnails
+const allActiveStreams = streamsInGridOrThumbnails;
     // Calcular el número de videos para decidir la cuadrícula
     const numVideos = allActiveStreams.length + (currentScreenShareStream ? 0 : 1); // +1 si tu cámara está activa y no hay pantalla compartida
     // La lógica para `numVideos` necesita ser precisa para decidir el layout
@@ -1499,7 +1520,7 @@ return (
                             </div>
                         )}
                         {(() => {
-                            if (currentScreenShareStream) {
+                      if (currentScreenShareStream) {
         return (
             <>
                 {/* Video PRINCIPAL: La pantalla compartida (remota o tuya si es la principal) */}
@@ -1510,122 +1531,120 @@ return (
                         participantName={currentScreenShareOwnerName}
                         videoEnabled={true}
                         micEnabled={currentScreenShareStream.getAudioTracks().length > 0}
-                        isLocal={currentScreenShareOwnerId === currentUser?.id} // Es local si eres el dueño
+                        isLocal={currentScreenShareOwnerId === currentUser?.id}
                         volume={0}
                         isScreenShare={true}
                     />
                 </div>
-                {/* Miniaturas */}
-                <div className="w-full flex gap-2 md:gap-3 flex-shrink-0 overflow-x-auto p-1 md:p-2 scrollbar-hide">
-                    {/* Tu cámara local (siempre visible si localStream existe y videoEnabled) */}
-                    {localStream && videoEnabled && (
-                        <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
-                            <RemoteVideo
-                                stream={localStream}
-                                participantId={currentUser?.id || 'local'}
-                                participantName={`${currentUser?.name || 'Tú'} (Yo)`}
-                                videoEnabled={videoEnabled}
-                                micEnabled={micEnabled}
-                                isLocal={true}
-                                volume={volume}
-                                isScreenShare={false}
-                                className="w-full h-full object-cover"
-                            />
-                        </div>
-                    )}
-                    {/* Tu propia pantalla compartida como miniatura, SOLO SI NO ES LA PRINCIPAL */}
-                    {isSharingScreen && screenShareStreamRef.current && (currentScreenShareOwnerId !== currentUser?.id) && (
-                         <div className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
-                            <RemoteVideo
-                                stream={screenShareStreamRef.current}
-                                participantId={`${currentUser?.id}-my-screen-mini`}
-                                participantName={`${currentUser?.name || 'Tú'} (Mi pantalla)`}
-                                videoEnabled={true}
-                                micEnabled={screenShareStreamRef.current.getAudioTracks().length > 0}
-                                isLocal={true}
-                                volume={0} // No necesitas volumen aquí ya que es tu propia pantalla
-                                isScreenShare={true}
-                                className="w-full h-full object-cover"
-                            />
-                        </div>
-                    )}
-                    {/* Cámaras de participantes remotos */}
-                    {Object.values(participants)
-                        .filter(p => p.cameraStream && p.videoEnabled)
-                        .map(participant => (
-                            <div key={participant.id + '-camera'} className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
-                                <RemoteVideo
-                                    stream={participant.cameraStream!}
-                                    participantId={participant.id}
-                                    participantName={participant.name}
-                                    videoEnabled={participant.videoEnabled}
-                                    micEnabled={participant.micEnabled}
-                                    isLocal={false}
-                                    volume={0}
-                                    isScreenShare={false}
-                                    className="w-full h-full object-cover"
-                                />
-                            </div>
-                        ))}
-                    {/* PANTALLAS COMPARTIDAS REMOTAS (que no son la principal) */}
-                    {Object.values(participants)
-                        .filter(p => p.screenStream && p.id !== currentScreenShareOwnerId) // Excluir la principal
-                        .map(participant => (
-                            <div key={participant.id + '-screen'} className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
-                                <RemoteVideo
-                                    stream={participant.screenStream!}
-                                    participantId={participant.id}
-                                    participantName={`${participant.name} (Pantalla)`}
-                                    videoEnabled={true}
-                                    micEnabled={participant.screenStream?.getAudioTracks().length > 0}
-                                    isLocal={false}
-                                    volume={0}
-                                    isScreenShare={true}
-                                    className="w-full h-full object-cover"
-                                />
-                            </div>
-                        ))}
-                </div>
+                {/* Miniaturas de otros participantes y tu cámara/pantalla si no son la principal */}
+                {totalVideosInGrid > 0 && ( // Solo muestra este div si hay algo que mostrar
+                    <div className="w-full flex gap-2 md:gap-3 flex-shrink-0 overflow-x-auto p-1 md:p-2 scrollbar-hide">
+                        {streamsInGridOrThumbnails.map((stream, index) => {
+                            // Determina si es tu localStream
+                            const isLocalCamera = (stream === localStream);
+                            // Determina si es tu propia pantalla compartida que no es la principal
+                            const isLocalScreenShareThumbnail = (stream === screenShareStreamRef.current && isSharingScreen && currentScreenShareOwnerId !== currentUser?.id);
+                            
+                            // Encuentra el participante si es un stream remoto
+                            const participant = Object.values(participants).find(p => p.cameraStream === stream || p.screenStream === stream);
+
+                            let id, name, isLocalVideo, isScreenShareVideo, videoEnabledStatus, micEnabledStatus;
+
+                            if (isLocalCamera) {
+                                id = currentUser?.id || 'local';
+                                name = `${currentUser?.name || 'Tú'} (Yo)`;
+                                isLocalVideo = true;
+                                isScreenShareVideo = false;
+                                videoEnabledStatus = videoEnabled;
+                                micEnabledStatus = micEnabled;
+                            } else if (isLocalScreenShareThumbnail) {
+                                id = `${currentUser?.id}-my-screen-mini`;
+                                name = `${currentUser?.name || 'Tú'} (Mi pantalla)`;
+                                isLocalVideo = true;
+                                isScreenShareVideo = true;
+                                videoEnabledStatus = true; // La pantalla siempre tiene video habilitado si está activa
+                                micEnabledStatus = screenShareStreamRef.current?.getAudioTracks().length > 0;
+                            } else if (participant) {
+                                id = participant.id;
+                                name = participant.cameraStream === stream ? participant.name : `${participant.name} (Pantalla)`;
+                                isLocalVideo = false;
+                                isScreenShareVideo = participant.screenStream === stream;
+                                videoEnabledStatus = participant.cameraStream === stream ? participant.videoEnabled : true; // Pantalla siempre activa si existe
+                                micEnabledStatus = participant.cameraStream === stream ? participant.micEnabled : (participant.screenStream?.getAudioTracks().length > 0 || false);
+                            } else {
+                                // Esto no debería pasar si la lógica de `streamsInGridOrThumbnails` es correcta
+                                return null; 
+                            }
+
+                            return (
+                                <div key={id} className="flex-none w-36 h-24 sm:w-48 sm:h-32 md:w-56 md:h-36 lg:w-64 lg:h-40">
+                                    <RemoteVideo
+                                        stream={stream}
+                                        participantId={id}
+                                        participantName={name}
+                                        videoEnabled={videoEnabledStatus}
+                                        micEnabled={micEnabledStatus}
+                                        isLocal={isLocalVideo}
+                                        volume={0}
+                                        isScreenShare={isScreenShareVideo}
+                                        className="w-full h-full object-cover"
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </>
         );
     } else {
-                                let gridColsClass = "grid-cols-1";
-                                if (totalVideosInGrid === 2) gridColsClass = "grid-cols-1 sm:grid-cols-2";
-                                else if (totalVideosInGrid === 3) gridColsClass = "grid-cols-1 sm:grid-cols-3 md:grid-cols-3";
-                                else if (totalVideosInGrid === 4) gridColsClass = "grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4";
-                                else if (totalVideosInGrid >= 5) gridColsClass = "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
+        // Lógica actual para la cuadrícula cuando NO hay pantalla compartida principal
+        let gridColsClass = "grid-cols-1";
+        // Aquí usa totalVideosInGrid correctamente
+        if (totalVideosInGrid === 2) gridColsClass = "grid-cols-1 sm:grid-cols-2";
+        else if (totalVideosInGrid === 3) gridColsClass = "grid-cols-1 sm:grid-cols-3 md:grid-cols-3";
+        else if (totalVideosInGrid === 4) gridColsClass = "grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4";
+        else if (totalVideosInGrid >= 5) gridColsClass = "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
 
-                                return (
+        return (
             <div className="flex-1 flex items-center justify-center p-2">
                 <div className={`w-full h-full grid ${gridColsClass} gap-3 md:gap-4 auto-rows-fr`}>
-                    {localStream && videoEnabled && (
-                        <RemoteVideo
-                            stream={localStream}
-                            participantId={currentUser?.id || 'local'}
-                            participantName={`${currentUser?.name || 'Tú'} (Yo)`}
-                            videoEnabled={videoEnabled}
-                            micEnabled={micEnabled}
-                            isLocal={true}
-                            volume={volume}
-                            isScreenShare={false}
-                        />
-                    )}
-                    {/* Resto de participantes */}
-                    {Object.values(participants)
-                        .filter(p => p.cameraStream && p.videoEnabled)
-                        .map(participant => (
+                    {streamsInGridOrThumbnails.map((stream, index) => {
+                         // Similar lógica de identificación de stream que en el bloque de arriba
+                        const isLocalCamera = (stream === localStream);
+                        const participant = Object.values(participants).find(p => p.cameraStream === stream);
+
+                        let id, name, isLocalVideo, videoEnabledStatus, micEnabledStatus;
+
+                        if (isLocalCamera) {
+                            id = currentUser?.id || 'local';
+                            name = `${currentUser?.name || 'Tú'} (Yo)`;
+                            isLocalVideo = true;
+                            videoEnabledStatus = videoEnabled;
+                            micEnabledStatus = micEnabled;
+                        } else if (participant) {
+                            id = participant.id;
+                            name = participant.name;
+                            isLocalVideo = false;
+                            videoEnabledStatus = participant.videoEnabled;
+                            micEnabledStatus = participant.micEnabled;
+                        } else {
+                            return null;
+                        }
+
+                        return (
                             <RemoteVideo
-                                key={participant.id}
-                                stream={participant.cameraStream!}
-                                participantId={participant.id}
-                                participantName={participant.name}
-                                videoEnabled={participant.videoEnabled}
-                                micEnabled={participant.micEnabled}
-                                isLocal={false}
+                                key={id}
+                                stream={stream}
+                                participantId={id}
+                                participantName={name}
+                                videoEnabled={videoEnabledStatus}
+                                micEnabled={micEnabledStatus}
+                                isLocal={isLocalVideo}
                                 volume={0}
-                                isScreenShare={false}
+                                isScreenShare={false} // En este bloque no hay pantallas compartidas
                             />
-                        ))}
+                        );
+                    })}
                 </div>
             </div>
         );
