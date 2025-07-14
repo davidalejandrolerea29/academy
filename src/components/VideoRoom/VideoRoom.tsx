@@ -1507,7 +1507,7 @@ return (
             {!isCallMinimized && (
                 <div className={`flex flex-1 flex-col ${isChatOpenMobile ? 'hidden' : ''} md:flex`}> {/* 'hidden' para móvil si chat overlay está abierto, md:flex para mostrar en desktop */}
                     {/* Contenido de los videos */}
-                    <div className="flex-grow relative p-2 md:p-4 bg-gray-950">
+                    <div className="flex-grow relative p-2 md:p-4 bg-gray-950 flex flex-col"> {/* AÑADIR flex flex-col AQUÍ */}
                         <div className="absolute top-4 left-4 z-10 flex items-center bg-gray-800 bg-opacity-75 px-2 py-1 rounded-full text-sm font-semibold md:px-3 md:py-1">
                             <Dot className="w-5 h-5 text-red-500 mr-0 md:mr-2 animate-pulse-custom" />
                             <span className="hidden md:inline">Grabando</span>
@@ -1526,7 +1526,7 @@ return (
         return (
             <>
                 {/* Contenedor Principal: Pantalla Compartida (la que está activa, sea tuya o de otro) */}
-                <div className="w-full flex-grow flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden mb-2 md:mb-4 max-h-[85vh]"> {/* Aumentado max-h */}
+                <div className="w-full h-full flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden mb-2 md:mb-4">
                     <RemoteVideo
                         stream={currentScreenShareStream}
                         participantId={`${currentScreenShareOwnerId}-screen`}

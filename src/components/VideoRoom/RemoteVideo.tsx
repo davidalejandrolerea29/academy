@@ -145,13 +145,13 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
     // Agrega `className` aquí para permitir estilos desde el padre
     <div className={`relative bg-gray-800 rounded-lg overflow-hidden aspect-video ${className || ''}`}>
       {/* El elemento video solo se muestra si showVideoContent es true */}
-      <video
+       <video
         ref={videoRef}
         autoPlay
-        playsInline // Importante para iOS
-        muted={isLocal || isMuted} // Mutea si es local O si el usuario lo ha muteado manualmente
-        className="w-full h-full object-cover"
-        // La visibilidad se controla con Tailwind, no con style.display
+        playsInline
+        muted={isLocal || isMuted}
+        // MODIFICACIÓN CLAVE AQUÍ: Aplicar object-contain si es isScreenShare, de lo contrario object-cover
+        className={`w-full h-full ${isScreenShare ? 'object-contain' : 'object-cover'}`}
       ></video>
 
       {/* Placeholder con ícono de VideoOff si el video no está habilitado y no es pantalla compartida */}
