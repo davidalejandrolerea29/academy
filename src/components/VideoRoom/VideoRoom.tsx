@@ -1754,64 +1754,6 @@ return (
                         {(() => {
                           if (mainDisplayStream) {
                                 return (
-                                  let mainDisplayStream = null;
-    let thumbnailStreams = [];
-
-    // Prioridad 1: Pantalla compartida local
-    if (isSharingScreen && localScreenShareStream) {
-        console.log("[MainDisplay] Estableciendo pantalla compartida LOCAL como principal.");
-        mainDisplayStream = {
-            type: 'screen',
-            stream: localScreenShareStream,
-            isLocal: true,
-            id: `${currentUser?.id}-screen`,
-            name: `${currentUser?.name || 'Tú'} (Pantalla)`
-        };
-    }
-
-    // Recopilar todos los streams para luego decidir qué va a principal y qué a miniaturas
-    const allStreams = [];
-
-    // Añadir streams de cámara local y remotos, y streams de pantalla remotos
-    if (localStream && videoEnabled && (!isSharingScreen || !localScreenShareStream)) { // Añadir cámara local si no está compartiendo pantalla o la pantalla no es el mainDisplay
-        allStreams.push({ type: 'camera', stream: localStream, isLocal: true, id: currentUser?.id, name: `${currentUser?.name || 'Tú'}` });
-    }
-
-    Object.values(participants).forEach(p => {
-        if (p.isSharingRemoteScreen && p.screenStream) {
-            // Añadir pantalla compartida remota
-            allStreams.push({ type: 'screen', stream: p.screenStream, isLocal: false, id: `${p.id}-screen`, name: `${p.name} (Pantalla)` });
-        }
-        if (p.cameraStream && p.videoEnabled) {
-            // Añadir cámara remota
-            allStreams.push({ type: 'camera', stream: p.cameraStream, isLocal: false, id: p.id, name: p.name });
-        }
-    });
-
-    // Decidir el mainDisplayStream y los thumbnails
-    let hasRemoteScreenShareAsMain = false;
-    if (!mainDisplayStream) { // Si no tenemos mainDisplayStream de nuestra propia pantalla
-        // Prioridad 2: Una pantalla compartida remota (si hay y no está siendo seleccionada otra)
-        const remoteScreenShare = allStreams.find(s => s.type === 'screen' && !s.isLocal);
-        if (remoteScreenShare) {
-            console.log(`[MainDisplay] Estableciendo pantalla compartida REMOTA de ${remoteScreenShare.name} como principal.`);
-            mainDisplayStream = remoteScreenShare;
-            hasRemoteScreenShareAsMain = true;
-        }
-    }
-
-    if (!mainDisplayStream) { // Si aún no hay mainDisplayStream, asigna el primero disponible (cámara local o remota)
-        const firstCameraStream = allStreams.find(s => s.type === 'camera');
-        if (firstCameraStream) {
-            console.log(`[MainDisplay] Estableciendo cámara de ${firstCameraStream.name} como principal.`);
-            mainDisplayStream = firstCameraStream;
-        }
-    }
-
-    // Construir los thumbnails excluyendo el mainDisplayStream
-    thumbnailStreams = allStreams.filter(item =>
-        !(mainDisplayStream && item.id === mainDisplayStream.id && item.type === mainDisplayStream.type)
-    );
                                     <>
                                         <div
                                             className="w-full flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden"
