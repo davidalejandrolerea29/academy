@@ -97,10 +97,10 @@ const [participants, setParticipants] = useState<Record<string, {
     const thumbnailsContainerRef = useRef<HTMLDivElement>(null);
 
    // --- LÓGICA CLAVE: Determinación de streams principales y secundarios (adaptada) ---
-    let mainDisplayStream: { type: 'camera' | 'screen', stream: MediaStream, isLocal: boolean, id: string, name: string } | null = null;
+   let mainDisplayStream: { type: 'camera' | 'screen', stream: MediaStream, isLocal: boolean, id: string, name: string } | null = null;
     let rawThumbnailStreams: { type: 'camera' | 'screen', stream: MediaStream, isLocal: boolean, id: string, name: string }[] = [];
 
-    // Paso 1: Identificar si YO estoy compartiendo mi pantalla.
+    // Prioridad 1: Mi pantalla compartida
     if (isSharingScreen && localScreenShareStream) {
         mainDisplayStream = {
             type: 'screen',
@@ -114,7 +114,8 @@ const [participants, setParticipants] = useState<Record<string, {
             rawThumbnailStreams.push({ type: 'camera', stream: localStream, isLocal: true, id: currentUser?.id, name: `${currentUser?.name || 'Tú'}` });
         }
     } else {
-        // Paso 2: Identificar si UN PARTICIPANTE REMOTO está compartiendo su pantalla.
+        // Prioridad 2: Pantalla compartida de un participante remoto
+        // Buscamos la primera pantalla compartida remota.
         const remoteScreenShareParticipant = Object.values(participants).find(p => p.screenStream);
         if (remoteScreenShareParticipant) {
             mainDisplayStream = {
@@ -124,29 +125,34 @@ const [participants, setParticipants] = useState<Record<string, {
                 id: `${remoteScreenShareParticipant.id}-screen`,
                 name: `${remoteScreenShareParticipant.name} (Pantalla)`
             };
-            // Mi cámara va a miniaturas.
+            // Mi cámara, si está activa, va a miniaturas.
             if (localStream && videoEnabled) {
                 rawThumbnailStreams.push({ type: 'camera', stream: localStream, isLocal: true, id: currentUser?.id, name: `${currentUser?.name || 'Tú'}` });
             }
         } else {
-            // Paso 3: Nadie está compartiendo pantalla. Todos los videos de cámara van a la cuadrícula (tratados como miniaturas inicialmente).
-            // Si mi cámara está activa, la añado.
+            // Prioridad 3: Mi cámara (si nadie comparte pantalla)
             if (localStream && videoEnabled) {
-                rawThumbnailStreams.push({ type: 'camera', stream: localStream, isLocal: true, id: currentUser?.id, name: `${currentUser?.name || 'Tú'}` });
+                mainDisplayStream = {
+                    type: 'camera',
+                    stream: localStream,
+                    isLocal: true,
+                    id: currentUser?.id,
+                    name: `${currentUser?.name || 'Tú'}`
+                };
             }
         }
     }
 
     // AÑADIR TODOS LOS DEMÁS STREAMS (CÁMARAS REMOTAS Y OTRAS PANTALLAS REMOTAS) A rawThumbnailStreams
     Object.values(participants).forEach(p => {
-        // Cámaras remotas
+        // Cámaras remotas: Siempre van a miniaturas.
         if (p.cameraStream && p.videoEnabled) {
             rawThumbnailStreams.push({ type: 'camera', stream: p.cameraStream, isLocal: false, id: p.id, name: p.name });
         }
-        // Otras pantallas remotas (asegurarse de que no sea la mainDisplayStream si es remota)
+        // Otras pantallas remotas: Si ya no es la principal (ya la manejamos en Prioridad 2), va a miniaturas.
         if (p.screenStream) {
             const isThisRemoteScreenMain = mainDisplayStream && mainDisplayStream.type === 'screen' && mainDisplayStream.id === `${p.id}-screen`;
-            if (!isThisRemoteScreenMain) {
+            if (!isThisRemoteScreenMain) { // Solo si no es la pantalla principal actual
                 rawThumbnailStreams.push({ type: 'screen', stream: p.screenStream, isLocal: false, id: `${p.id}-screen`, name: `${p.name} (Pantalla)` });
             }
         }
@@ -154,7 +160,9 @@ const [participants, setParticipants] = useState<Record<string, {
 
     // Filtra duplicados y el mainDisplayStream de rawThumbnailStreams
     const filteredThumbnailStreams = rawThumbnailStreams.filter((item, index, self) => {
+        // Asegurarse de que no haya duplicados basados en ID
         const isDuplicate = self.findIndex((t) => t.id === item.id) !== index;
+        // Asegurarse de que el stream principal no se incluya en las miniaturas
         const isMainDisplay = mainDisplayStream && mainDisplayStream.id === item.id;
         return !isDuplicate && !isMainDisplay;
     });
