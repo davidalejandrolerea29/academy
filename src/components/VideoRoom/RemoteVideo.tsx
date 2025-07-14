@@ -40,6 +40,7 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
     console.log(`[RemoteVideo DEBUG] Prop 'stream' recibida:`, stream ? stream.id : 'null');
     console.log(`[RemoteVideo DEBUG] Prop 'videoEnabled' recibida:`, videoEnabled);
     console.log(`[RemoteVideo DEBUG] Prop 'micEnabled' recibida:`, micEnabled);
+    console.log(`[RemoteVideo DEBUG] Prop 'isScreenShare' recibida:`, isScreenShare); // Añadir log de esta prop
     console.log(`[RemoteVideo DEBUG] Valor de videoRef.current al inicio:`, videoRef.current);
 
     if (!videoRef.current) {
@@ -141,23 +142,36 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
     }
   };
 
+  // --- ¡CAMBIO CRUCIAL AQUÍ! ---
+  // Define la clase de object-fit basada en la prop isScreenShare
+  const videoObjectFitClass = isScreenShare ? 'object-contain' : 'object-cover';
+
   return (
     // Agrega `className` aquí para permitir estilos desde el padre
+    // Asegúrate de que este div padre tiene un `aspect-video` o dimensiones que permitan el escalado.
     <div className={`relative bg-gray-800 rounded-lg overflow-hidden aspect-video ${className || ''}`}>
       {/* El elemento video solo se muestra si showVideoContent es true */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline // Importante para iOS
-        muted={isLocal || isMuted} // Mutea si es local O si el usuario lo ha muteado manualmente
-        className="w-full h-full object-cover"
-        // La visibilidad se controla con Tailwind, no con style.display
-      ></video>
-
-      {/* Placeholder con ícono de VideoOff si el video no está habilitado y no es pantalla compartida */}
-      {!showVideoContent && (
+      {showVideoContent && stream && stream.getVideoTracks().length > 0 ? ( // Solo renderiza <video> si hay contenido de video
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline // Importante para iOS
+          muted={isLocal || isMuted} // Mutea si es local O si el usuario lo ha muteado manualmente
+          // Si es local Y NO es pantalla compartida, aplicar espejo
+          style={{ transform: (isLocal && !isScreenShare) ? 'scaleX(-1)' : 'none' }}
+          // --- ¡APLICA LA CLASE DINÁMICA AQUÍ! ---
+          className={`w-full h-full ${videoObjectFitClass}`}
+        ></video>
+      ) : (
+        // Placeholder con ícono de VideoOff si no hay video o video está deshabilitado
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-          <VideoOff size={48} className="text-gray-500" />
+          {isScreenShare ? (
+            // Si es una pantalla compartida pero no hay video, mostrar un ícono de compartir pantalla
+            <ScreenShare size={48} className="text-gray-500" />
+          ) : (
+            // Si es una cámara y está deshabilitada, mostrar VideoOff
+            <VideoOff size={48} className="text-gray-500" />
+          )}
         </div>
       )}
 
@@ -184,7 +198,7 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
         ) : (
           <MicOff size={16} className="text-red-500" />
         )}
-        {videoEnabled ? (
+        {videoEnabled ? ( // El icono de Video/VideoOff debe reflejar si el track de la cámara está habilitado
           <Video size={16} className="text-green-400" />
         ) : (
           <VideoOff size={16} className="text-red-500" />
@@ -218,8 +232,9 @@ const RemoteVideo = React.memo(RemoteVideoComponent, (prevProps, nextProps) => {
     prevProps.micEnabled === nextProps.micEnabled &&
     prevProps.isLocal === nextProps.isLocal &&
     prevProps.isScreenShare === nextProps.isScreenShare &&
-    prevProps.className === nextProps.className // También compara className
-    // No comparamos `volume` ni `isMuted` porque son manejados internamente o no requieren un re-render del video.
+    prevProps.className === nextProps.className
+    // No comparamos `volume` ni `isMuted` en `React.memo` si sus cambios no requieren un re-render
+    // del DOM del video en sí, lo cual es manejado por el useEffect.
   );
 });
 
