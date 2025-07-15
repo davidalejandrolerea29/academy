@@ -1493,32 +1493,83 @@ useEffect(() => {
     // console.log('🔄 Lista de participantes actualizada (estado):', participants);
   }, [participants]);
 
-  // Funciones de control de medios
-  const toggleVideo = () => {
-    if (!localStream) return;
-    const videoTrack = localStream.getVideoTracks()[0];
-    if (!videoTrack) return;
-    videoTrack.enabled = !videoTrack.enabled;
-    setVideoEnabled(videoTrack.enabled);
+// En VideoRoom.tsx
 
+const toggleVideo = () => {
+  console.log("--- INICIANDO toggleVideo ---");
+  console.log("localStream al inicio:", localStream);
+
+  if (!localStream) {
+    console.warn("toggleVideo: localStream es nulo. No se puede alternar el video.");
+    return;
+  }
+  
+  const videoTracks = localStream.getVideoTracks();
+  console.log("Video tracks encontrados:", videoTracks);
+
+  const videoTrack = videoTracks[0];
+  if (!videoTrack) {
+    console.warn("toggleVideo: No se encontró ningún video track en localStream.");
+    return;
+  }
+
+  const newState = !videoTrack.enabled;
+  videoTrack.enabled = newState;
+  setVideoEnabled(newState); // Actualiza el estado de React
+
+  console.log(`toggleVideo: Video track ID: ${videoTrack.id}, Nuevo estado enabled: ${videoTrack.enabled}`);
+  console.log("Estado de videoEnabled en React:", newState);
+
+  // Asegúrate de que currentUser?.id exista antes de usarlo
+  if (currentUser?.id) {
     channelRef.current?.whisper('toggle-video', {
-      id: currentUser?.id,
-      enabled: videoTrack.enabled,
+      id: currentUser.id,
+      enabled: newState,
     });
-  };
+    console.log(`toggleVideo: Enviando whisper 'toggle-video' para ID: ${currentUser.id}, enabled: ${newState}`);
+  } else {
+    console.warn("toggleVideo: currentUser.id es nulo, no se puede enviar whisper.");
+  }
+  console.log("--- FIN toggleVideo ---");
+};
 
-  const toggleMic = () => {
-    if (!localStream) return;
-    const audioTrack = localStream.getAudioTracks()[0];
-    if (!audioTrack) return;
-    audioTrack.enabled = !audioTrack.enabled;
-    setMicEnabled(audioTrack.enabled);
+const toggleMic = () => {
+  console.log("--- INICIANDO toggleMic ---");
+  console.log("localStream al inicio:", localStream);
 
+  if (!localStream) {
+    console.warn("toggleMic: localStream es nulo. No se puede alternar el micrófono.");
+    return;
+  }
+
+  const audioTracks = localStream.getAudioTracks();
+  console.log("Audio tracks encontrados:", audioTracks);
+
+  const audioTrack = audioTracks[0];
+  if (!audioTrack) {
+    console.warn("toggleMic: No se encontró ningún audio track en localStream.");
+    return;
+  }
+
+  const newState = !audioTrack.enabled;
+  audioTrack.enabled = newState;
+  setMicEnabled(newState); // Actualiza el estado de React
+
+  console.log(`toggleMic: Audio track ID: ${audioTrack.id}, Nuevo estado enabled: ${audioTrack.enabled}`);
+  console.log("Estado de micEnabled en React:", newState);
+
+  // Asegúrate de que currentUser?.id exista antes de usarlo
+  if (currentUser?.id) {
     channelRef.current?.whisper('toggle-mic', {
-      id: currentUser?.id,
-      enabled: audioTrack.enabled,
+      id: currentUser.id,
+      enabled: newState,
     });
-  };
+    console.log(`toggleMic: Enviando whisper 'toggle-mic' para ID: ${currentUser.id}, enabled: ${newState}`);
+  } else {
+    console.warn("toggleMic: currentUser.id es nulo, no se puede enviar whisper.");
+  }
+  console.log("--- FIN toggleMic ---");
+};
 const toggleScreenShare = useCallback(async () => {
     if (!localStream) {
         console.warn("localStream no está disponible. No se puede iniciar/detener la compartición de pantalla.");
