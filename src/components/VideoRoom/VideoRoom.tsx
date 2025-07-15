@@ -242,55 +242,18 @@ const { mainDisplayStream, filteredThumbnailStreams } = useMemo(() => {
 
 
     const totalThumbnails = filteredThumbnailStreams.length;
-
-    // Efecto para calcular la altura del video principal
-//   useEffect(() => {
-//         const calculateMainVideoHeight = () => {
-//             if (mainVideoContainerRef.current && thumbnailsContainerRef.current && mainDisplayStream) {
-//                 const totalHeight = mainVideoContainerRef.current.offsetHeight;
-//                 const thumbnailsHeight = thumbnailsContainerRef.current.offsetHeight;
-//                 const gapHeight = 12; // Asumiendo gap-3 (12px)
-
-//                 const calculatedHeight = totalHeight - thumbnailsHeight - gapHeight;
-//                 setMainVideoHeight(`${calculatedHeight}px`);
-//             } else {
-//                 setMainVideoHeight('auto');
-//             }
-//         };
-
-//         calculateMainVideoHeight();
-//         window.addEventListener('resize', calculateMainVideoHeight);
-//         const resizeObserver = new ResizeObserver(() => calculateMainVideoHeight());
-//         if (mainVideoContainerRef.current) { resizeObserver.observe(mainVideoContainerRef.current); }
-//         // Observar thumbnailsContainerRef.current solo si hay thumbnails visibles o si mainDisplayStream existe
-//         if (thumbnailsContainerRef.current && mainDisplayStream) { resizeObserver.observe(thumbnailsContainerRef.current); }
-
-//         return () => {
-//             window.removeEventListener('resize', calculateMainVideoHeight);
-//             resizeObserver.disconnect();
-//         };
-//     }, [mainDisplayStream, filteredThumbnailStreams.length]);// Añade totalThumbnails si este cambia el diseño de miniaturas
-
-
-
   useEffect(() => {
-    // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.
+    // Este useEffect no necesita hacer nada en su fase de "montaje".
+    // Toda su lógica importante reside en la función de limpieza.
+
     return () => {
-      // Esta es la limpieza al desmontar, pero queremos que `handleEndCall` sea la principal.
-      // Podemos poner una bandera o confiar en que `handleEndCall` se llamará antes del desmontaje.
-      // Para mayor seguridad, si no se ha llamado a `handleEndCall` (ej. el usuario cierra la pestaña),
-      // esta limpieza del useEffect se encargará.
-      // Podrías pasar una bandera `isExplicitlyLeaving` a `cleanupWebRTCAndReverb` si quieres
-      // diferenciar, pero la función ya es bastante robusta.
       console.log("[VideoRoom Effect Cleanup] Componente VideoRoom se desmonta. Asegurando limpieza...");
-      // Reverb por defecto enviará 'leaving'/'left' al cerrar la pestaña.
-      // La limpieza de PeerConnections y streams locales ya está en `cleanupWebRTCAndReverb`.
-      // No llamamos a `onCallEnded` aquí para evitar doble llamada si `handleEndCall` ya lo hizo.
       
-      // Una forma de evitar doble limpieza es verificar si el canal aún existe,
-      // lo que implicaría que no se hizo una `cleanupWebRTCAndReverb` explícita.
+      // Accede a las referencias **actuales** dentro del closure del cleanup
       if (channelRef.current) {
         console.log("[VideoRoom Effect Cleanup] detectado canal activo, realizando limpieza suave.");
+        
+        // Cierra todas las PeerConnections activas
         Object.keys(peerConnectionsRef.current).forEach(peerId => {
           const pc = peerConnectionsRef.current[peerId];
           if (pc && pc.connectionState !== 'closed') {
@@ -298,24 +261,33 @@ const { mainDisplayStream, filteredThumbnailStreams } = useMemo(() => {
             console.log(`[CLEANUP ON UNMOUNT] Cerrada RTCPeerConnection con ${peerId}.`);
           }
         });
-        peerConnectionsRef.current = {};
+        peerConnectionsRef.current = {}; // Limpia el objeto de refs
+
+        // Abandona el canal de señalización
         if (channelRef.current && typeof channelRef.current.leave === 'function') {
             channelRef.current.leave();
         }
-        channelRef.current = null;
-        if (localStream) {
+        channelRef.current = null; // Limpia la referencia al canal
+
+        // Detiene los tracks del stream local (cámara/micrófono)
+        if (localStream) { // localStream aquí es la **referencia estable** que se capturó al crear el closure
+            console.log("🟡 Deteniendo tracks de localStream en cleanup."); // Tu log existente
             localStream.getTracks().forEach(track => track.stop());
+            // No resetees setLocalStream(null) aquí para que el contexto pueda limpiarlo.
         }
+        // Detiene los tracks del stream de pantalla compartida
         if (screenShareStreamRef.current) {
             screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+            screenShareStreamRef.current = null; // Limpia la referencia al stream de pantalla
         }
+        
+        // Reinicia el estado de los participantes
         setParticipants({});
-        // No llamamos onCallEnded aquí para no interferir con la lógica de UI
+        // No llamas onCallEnded aquí para no interferir con la lógica de UI
         // que debería estar manejada por la acción explícita de colgar o por el contexto.
       }
     };
-  }, [localStream, screenShareStreamRef]); // Incluye refs para que el closure funcione correctamente.
-
+  }, []); // <--- ¡CAMBIO CRÍTICO: DEPENDENCIAS VACÍAS!
   const stopDragging = useCallback(() => {
     setIsDragging(false);
   }, []);
@@ -1493,32 +1465,39 @@ useEffect(() => {
     // console.log('🔄 Lista de participantes actualizada (estado):', participants);
   }, [participants]);
 
-  // Funciones de control de medios
-  const toggleVideo = () => {
-    if (!localStream) return;
-    const videoTrack = localStream.getVideoTracks()[0];
-    if (!videoTrack) return;
-    videoTrack.enabled = !videoTrack.enabled;
-    setVideoEnabled(videoTrack.enabled);
+ // Tu función actual para la cámara (¡está bien!)
+const toggleVideo = () => {
+  if (!localStream) return;
+  const videoTrack = localStream.getVideoTracks()[0];
+  if (!videoTrack) return;
 
-    channelRef.current?.whisper('toggle-video', {
-      id: currentUser?.id,
-      enabled: videoTrack.enabled,
-    });
-  };
+  // ESTO ES LO CLAVE: Solo cambia el estado 'enabled' del track.
+  videoTrack.enabled = !videoTrack.enabled;
+  setVideoEnabled(videoTrack.enabled);
 
-  const toggleMic = () => {
-    if (!localStream) return;
-    const audioTrack = localStream.getAudioTracks()[0];
-    if (!audioTrack) return;
-    audioTrack.enabled = !audioTrack.enabled;
-    setMicEnabled(audioTrack.enabled);
+  // Informa a los demás participantes sobre tu estado.
+  channelRef.current?.whisper('toggle-video', {
+    id: currentUser?.id,
+    enabled: videoTrack.enabled,
+  });
+};
 
-    channelRef.current?.whisper('toggle-mic', {
-      id: currentUser?.id,
-      enabled: audioTrack.enabled,
-    });
-  };
+// Tu función actual para el micrófono (¡también está bien!)
+const toggleMic = () => {
+  if (!localStream) return;
+  const audioTrack = localStream.getAudioTracks()[0];
+  if (!audioTrack) return;
+
+  // ESTO ES LO CLAVE: Solo cambia el estado 'enabled' del track.
+  audioTrack.enabled = !audioTrack.enabled;
+  setMicEnabled(audioTrack.enabled);
+
+  // Informa a los demás participantes sobre tu estado.
+  channelRef.current?.whisper('toggle-mic', {
+    id: currentUser?.id,
+    enabled: audioTrack.enabled,
+  });
+};
 const toggleScreenShare = useCallback(async () => {
     if (!localStream) {
         console.warn("localStream no está disponible. No se puede iniciar/detener la compartición de pantalla.");
