@@ -177,7 +177,7 @@ const { mainDisplayStream, filteredThumbnailStreams } = useMemo(() => {
                 currentMainDisplayStream = {
                     type: 'screen',
                     stream: remoteScreenShareParticipant.screenStream!,
-                    isLocal: true,
+                    isLocal: false,
                     id: `${remoteScreenShareParticipant.id}-screen`,
                     name: `${remoteScreenShareParticipant.name} (Pantalla)`
                 };
@@ -191,7 +191,7 @@ const { mainDisplayStream, filteredThumbnailStreams } = useMemo(() => {
             } else {
                 const firstRemoteWithVideo = Object.values(participants).find(p => p.cameraStream && p.videoEnabled);
                 if (firstRemoteWithVideo) {
-                    currentMainDisplayStream = { type: 'camera', stream: firstRemoteWithVideo.cameraStream!, isLocal: true, id: firstRemoteWithVideo.id, name: firstRemoteWithVideo.name };
+                    currentMainDisplayStream = { type: 'camera', stream: firstRemoteWithVideo.cameraStream!, isLocal: false, id: firstRemoteWithVideo.id, name: firstRemoteWithVideo.name };
                 }
             }
         }
@@ -217,13 +217,13 @@ const { mainDisplayStream, filteredThumbnailStreams } = useMemo(() => {
         // Cámara remota
         if (p.cameraStream && p.videoEnabled) {
             if (!currentMainDisplayStream || currentMainDisplayStream.id !== p.id) {
-                rawThumbnails.push({ type: 'camera', stream: p.cameraStream, isLocal: true, id: p.id, name: p.name });
+                rawThumbnails.push({ type: 'camera', stream: p.cameraStream, isLocal: false, id: p.id, name: p.name });
             }
         }
         // Pantalla remota
         if (p.screenStream) {
             if (!currentMainDisplayStream || currentMainDisplayStream.id !== `${p.id}-screen`) {
-                rawThumbnails.push({ type: 'screen', stream: p.screenStream, isLocal: true, id: `${p.id}-screen`, name: `${p.name} (Pantalla)` });
+                rawThumbnails.push({ type: 'screen', stream: p.screenStream, isLocal: false, id: `${p.id}-screen`, name: `${p.name} (Pantalla)` });
             }
         }
     });
