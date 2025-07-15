@@ -273,49 +273,67 @@ const { mainDisplayStream, filteredThumbnailStreams } = useMemo(() => {
 
 
 
-  useEffect(() => {
-    // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.
-    return () => {
-      // Esta es la limpieza al desmontar, pero queremos que `handleEndCall` sea la principal.
-      // Podemos poner una bandera o confiar en que `handleEndCall` se llamará antes del desmontaje.
-      // Para mayor seguridad, si no se ha llamado a `handleEndCall` (ej. el usuario cierra la pestaña),
-      // esta limpieza del useEffect se encargará.
-      // Podrías pasar una bandera `isExplicitlyLeaving` a `cleanupWebRTCAndReverb` si quieres
-      // diferenciar, pero la función ya es bastante robusta.
-      console.log("[VideoRoom Effect Cleanup] Componente VideoRoom se desmonta. Asegurando limpieza...");
-      // Reverb por defecto enviará 'leaving'/'left' al cerrar la pestaña.
-      // La limpieza de PeerConnections y streams locales ya está en `cleanupWebRTCAndReverb`.
-      // No llamamos a `onCallEnded` aquí para evitar doble llamada si `handleEndCall` ya lo hizo.
-      
-      // Una forma de evitar doble limpieza es verificar si el canal aún existe,
-      // lo que implicaría que no se hizo una `cleanupWebRTCAndReverb` explícita.
-      if (channelRef.current) {
-        console.log("[VideoRoom Effect Cleanup] detectado canal activo, realizando limpieza suave.");
-        Object.keys(peerConnectionsRef.current).forEach(peerId => {
-          const pc = peerConnectionsRef.current[peerId];
-          if (pc && pc.connectionState !== 'closed') {
-            pc.close();
-            console.log(`[CLEANUP ON UNMOUNT] Cerrada RTCPeerConnection con ${peerId}.`);
-          }
-        });
-        peerConnectionsRef.current = {};
-        if (channelRef.current && typeof channelRef.current.leave === 'function') {
-            channelRef.current.leave();
-        }
-        channelRef.current = null;
-        if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
-        }
-        if (screenShareStreamRef.current) {
-            screenShareStreamRef.current.getTracks().forEach(track => track.stop());
-        }
-        setParticipants({});
-        // No llamamos onCallEnded aquí para no interferir con la lógica de UI
-        // que debería estar manejada por la acción explícita de colgar o por el contexto.
-      }
-    };
-  }, [localStream, screenShareStreamRef]); // Incluye refs para que el closure funcione correctamente.
+const cleanupWebRTCAndReverb = useCallback(() => {
+    console.log("[CLEANUP] Iniciando limpieza de WebRTC y Reverb.");
 
+    // Cerrar todas las PeerConnections
+    Object.keys(peerConnectionsRef.current).forEach(peerId => {
+        const pc = peerConnectionsRef.current[peerId];
+        if (pc && pc.connectionState !== 'closed') {
+            pc.close();
+            console.log(`[CLEANUP] Cerrada RTCPeerConnection con ${peerId}.`);
+        }
+    });
+    peerConnectionsRef.current = {}; // Reiniciar el objeto de PeerConnections
+
+    // Detener tracks de streams locales
+    if (localStream) {
+        console.log("🟡 Deteniendo tracks de localStream en cleanup.");
+        localStream.getTracks().forEach(track => track.stop());
+        setLocalStream(null); // Resetear el estado del stream local
+    }
+    if (screenShareStreamRef.current) {
+        console.log("🟡 Deteniendo tracks de screenShareStream en cleanup.");
+        screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+        screenShareStreamRef.current = null; // Limpiar la referencia al stream de pantalla
+        setIsSharingScreen(false); // Resetear el estado de compartición de pantalla
+    }
+
+    // Dejar el canal de Reverb
+    if (channelRef.current) {
+        console.log("[CLEANUP] Dejando canal de Reverb.");
+        channelRef.current.leave();
+        channelRef.current = null; // Limpiar la referencia al canal
+        setHasJoinedChannel(false); // Resetear el estado de unión al canal
+    }
+
+    // Resetear participantes y otros estados relevantes
+    setParticipants({});
+    setMicEnabled(true); // O a tu estado por defecto inicial
+    setVideoEnabled(true); // O a tu estado por defecto inicial
+    setManualMainStreamId(null); // Limpiar la selección de stream principal
+    setError(null);
+    setLoading(false);
+
+    // Si `onCallEnded` debe ser llamada aquí, hazlo.
+    // onCallEnded(); // Esto notificará al componente padre que la llamada ha terminado
+}, [localStream, screenShareStreamRef, channelRef, setLocalStream, setParticipants, setMicEnabled, setVideoEnabled, setManualMainStreamId, setError, setLoading, setHasJoinedChannel]);
+// Es crucial que `handleCallCleanup` (la prop) se llame a esta función de limpieza cuando sea necesario.
+// Idealmente, el `handleEndCall` de tu componente `VideoRoom` debería llamar a `cleanupWebRTCAndReverb`.
+// Y si el componente padre detecta que `VideoRoom` debe desaparecer, debería llamar a la prop `handleCallCleanup`.
+
+
+// Ahora, el `useEffect` que se estaba re-ejecutando debe lucir así:
+useEffect(() => {
+    // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.
+    // La función de retorno de este useEffect ahora solo llama a la prop `handleCallCleanup`
+    // proporcionada por el padre, o a tu `cleanupWebRTCAndReverb` si esta es la forma en que lo manejas.
+    // Esto es para cuando el componente se DESMONTA.
+    return () => {
+        console.log("[VideoRoom Effect Cleanup] Componente VideoRoom se desmonta. Llamando a handleCallCleanup...");
+        handleCallCleanup(); // Llama a la función de limpieza del contexto/padre
+    };
+}, [handleCallCleanup]); 
   const stopDragging = useCallback(() => {
     setIsDragging(false);
   }, []);
