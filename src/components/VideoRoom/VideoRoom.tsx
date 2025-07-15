@@ -244,32 +244,32 @@ const { mainDisplayStream, filteredThumbnailStreams } = useMemo(() => {
     const totalThumbnails = filteredThumbnailStreams.length;
 
     // Efecto para calcular la altura del video principal
-  useEffect(() => {
-        const calculateMainVideoHeight = () => {
-            if (mainVideoContainerRef.current && thumbnailsContainerRef.current && mainDisplayStream) {
-                const totalHeight = mainVideoContainerRef.current.offsetHeight;
-                const thumbnailsHeight = thumbnailsContainerRef.current.offsetHeight;
-                const gapHeight = 12; // Asumiendo gap-3 (12px)
+//   useEffect(() => {
+//         const calculateMainVideoHeight = () => {
+//             if (mainVideoContainerRef.current && thumbnailsContainerRef.current && mainDisplayStream) {
+//                 const totalHeight = mainVideoContainerRef.current.offsetHeight;
+//                 const thumbnailsHeight = thumbnailsContainerRef.current.offsetHeight;
+//                 const gapHeight = 12; // Asumiendo gap-3 (12px)
 
-                const calculatedHeight = totalHeight - thumbnailsHeight - gapHeight;
-                setMainVideoHeight(`${calculatedHeight}px`);
-            } else {
-                setMainVideoHeight('auto');
-            }
-        };
+//                 const calculatedHeight = totalHeight - thumbnailsHeight - gapHeight;
+//                 setMainVideoHeight(`${calculatedHeight}px`);
+//             } else {
+//                 setMainVideoHeight('auto');
+//             }
+//         };
 
-        calculateMainVideoHeight();
-        window.addEventListener('resize', calculateMainVideoHeight);
-        const resizeObserver = new ResizeObserver(() => calculateMainVideoHeight());
-        if (mainVideoContainerRef.current) { resizeObserver.observe(mainVideoContainerRef.current); }
-        // Observar thumbnailsContainerRef.current solo si hay thumbnails visibles o si mainDisplayStream existe
-        if (thumbnailsContainerRef.current && mainDisplayStream) { resizeObserver.observe(thumbnailsContainerRef.current); }
+//         calculateMainVideoHeight();
+//         window.addEventListener('resize', calculateMainVideoHeight);
+//         const resizeObserver = new ResizeObserver(() => calculateMainVideoHeight());
+//         if (mainVideoContainerRef.current) { resizeObserver.observe(mainVideoContainerRef.current); }
+//         // Observar thumbnailsContainerRef.current solo si hay thumbnails visibles o si mainDisplayStream existe
+//         if (thumbnailsContainerRef.current && mainDisplayStream) { resizeObserver.observe(thumbnailsContainerRef.current); }
 
-        return () => {
-            window.removeEventListener('resize', calculateMainVideoHeight);
-            resizeObserver.disconnect();
-        };
-    }, [mainDisplayStream, filteredThumbnailStreams.length]);// Añade totalThumbnails si este cambia el diseño de miniaturas
+//         return () => {
+//             window.removeEventListener('resize', calculateMainVideoHeight);
+//             resizeObserver.disconnect();
+//         };
+//     }, [mainDisplayStream, filteredThumbnailStreams.length]);// Añade totalThumbnails si este cambia el diseño de miniaturas
 
 
 
@@ -1776,7 +1776,7 @@ return (
             {!isCallMinimized && (
                 <div className={`flex flex-1 flex-col ${isChatOpenMobile ? 'hidden' : ''} md:flex`}> {/* 'hidden' para móvil si chat overlay está abierto, md:flex para mostrar en desktop */}
                     {/* Contenido de los videos */}
-                    <div className="flex-grow relative p-2 md:p-4 bg-gray-950">
+                    <div className="flex-grow relative p-2 md:p-4 bg-gray-950 flex flex-col">
                         <div className="absolute top-4 left-4 z-10 flex items-center bg-gray-800 bg-opacity-75 px-2 py-1 rounded-full text-sm font-semibold md:px-3 md:py-1">
                             <Dot className="w-5 h-5 text-red-500 mr-0 md:mr-2 animate-pulse-custom" />
                             <span className="hidden md:inline">Grabando</span>
@@ -1786,8 +1786,8 @@ return (
                                 return (
                                     <>
                                         <div
-                                            className="w-full flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden"
-                                            style={{ height: mainVideoHeight, flexShrink: 0 }}
+                                            className="!h-[70vh]  w-full flex items-center justify-center bg-gray-800 rounded-lg overflow-hidden flex-grow" 
+                                        
                                         >
                                             <RemoteVideo
                                                 stream={mainDisplayStream.stream}
@@ -1807,7 +1807,7 @@ return (
                                         </div>
 
                                         {filteredThumbnailStreams.length > 0 && (
-                                            <div ref={thumbnailsContainerRef} className="w-full flex gap-2 md:gap-3 flex-shrink-0 overflow-x-auto p-1 md:p-2 scrollbar-hide">
+                                            <div ref={thumbnailsContainerRef} className="w-full flex gap-2 md:gap-3 flex-shrink-0 overflow-x-auto p-1 md:p-2 scrollbar-hide mt-3">
                                                 {filteredThumbnailStreams.map((item) => {
                                                     const { type, stream, isLocal, id, name } = item;
                                                     const participantData = isLocal ? { videoEnabled, micEnabled } : participants[id.split('-')[0]] || { videoEnabled: true, micEnabled: true };
