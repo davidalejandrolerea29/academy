@@ -659,123 +659,123 @@ const handleEndCall = useCallback(() => {
         console.warn("No se pudo colgar la llamada: currentUser no definido.");
     }
 }, [currentUser, handlePeerDisconnected, onCallEnded]);
-useEffect(() => {
-    // Itera sobre todas las PeerConnections activas
-    Object.values(peerConnectionsRef.current).forEach(pc => {
-      const currentSenders = pc.getSenders();
+// useEffect(() => {
+//     // Itera sobre todas las PeerConnections activas
+//     Object.values(peerConnectionsRef.current).forEach(pc => {
+//       const currentSenders = pc.getSenders();
 
-      // Manejar stream de CÁMARA
-      const cameraVideoTrack = localStream?.getVideoTracks()[0] || null;
-      const cameraAudioTrack = localStream?.getAudioTracks()[0] || null;
+//       // Manejar stream de CÁMARA
+//       const cameraVideoTrack = localStream?.getVideoTracks()[0] || null;
+//       const cameraAudioTrack = localStream?.getAudioTracks()[0] || null;
 
-      const existingCameraVideoSender = currentSenders.find(s => s.track?.kind === 'video' && s.track?.id === cameraVideoTrack?.id);
-      const existingCameraAudioSender = currentSenders.find(s => s.track?.kind === 'audio' && s.track?.id === cameraAudioTrack?.id);
+//       const existingCameraVideoSender = currentSenders.find(s => s.track?.kind === 'video' && s.track?.id === cameraVideoTrack?.id);
+//       const existingCameraAudioSender = currentSenders.find(s => s.track?.kind === 'audio' && s.track?.id === cameraAudioTrack?.id);
 
-      // Si NO estamos compartiendo pantalla, gestiona la cámara
-      if (!isSharingScreen) {
-        if (cameraVideoTrack) {
-          if (!existingCameraVideoSender) {
-            // Remover cualquier otro video sender (ej. de pantalla si no se limpió) antes de añadir la cámara
-            currentSenders.filter(s => s.track?.kind === 'video').forEach(s => pc.removeTrack(s));
-            pc.addTrack(cameraVideoTrack, localStream!); // Asegúrate de que localStream no sea null aquí
-            console.log("[SYNC TRACKS] Añadido track de video de cámara.");
-          } else if (existingCameraVideoSender.track !== cameraVideoTrack) {
-            existingCameraVideoSender.replaceTrack(cameraVideoTrack)
-              .then(() => console.log("[SYNC TRACKS] Reemplazado track de video de cámara."))
-              .catch(e => console.error("Error al reemplazar video track de cámara:", e));
-          }
-        } else { // No hay track de video de cámara, remueve cualquier sender de video
-          currentSenders.filter(s => s.track?.kind === 'video').forEach(s => pc.removeTrack(s));
-          console.log("[SYNC TRACKS] Removido track de video de cámara.");
-        }
+//       // Si NO estamos compartiendo pantalla, gestiona la cámara
+//       if (!isSharingScreen) {
+//         if (cameraVideoTrack) {
+//           if (!existingCameraVideoSender) {
+//             // Remover cualquier otro video sender (ej. de pantalla si no se limpió) antes de añadir la cámara
+//             currentSenders.filter(s => s.track?.kind === 'video').forEach(s => pc.removeTrack(s));
+//             pc.addTrack(cameraVideoTrack, localStream!); // Asegúrate de que localStream no sea null aquí
+//             console.log("[SYNC TRACKS] Añadido track de video de cámara.");
+//           } else if (existingCameraVideoSender.track !== cameraVideoTrack) {
+//             existingCameraVideoSender.replaceTrack(cameraVideoTrack)
+//               .then(() => console.log("[SYNC TRACKS] Reemplazado track de video de cámara."))
+//               .catch(e => console.error("Error al reemplazar video track de cámara:", e));
+//           }
+//         } else { // No hay track de video de cámara, remueve cualquier sender de video
+//           currentSenders.filter(s => s.track?.kind === 'video').forEach(s => pc.removeTrack(s));
+//           console.log("[SYNC TRACKS] Removido track de video de cámara.");
+//         }
 
-        if (cameraAudioTrack) {
-          if (!existingCameraAudioSender) {
-            // Remover cualquier otro audio sender antes de añadir el de cámara
-            currentSenders.filter(s => s.track?.kind === 'audio').forEach(s => pc.removeTrack(s));
-            pc.addTrack(cameraAudioTrack, localStream!);
-            console.log("[SYNC TRACKS] Añadido track de audio de cámara.");
-          } else if (existingCameraAudioSender.track !== cameraAudioTrack) {
-            existingCameraAudioSender.replaceTrack(cameraAudioTrack)
-              .then(() => console.log("[SYNC TRACKS] Reemplazado track de audio de cámara."))
-              .catch(e => console.error("Error al reemplazar audio track de cámara:", e));
-          }
-        } else { // No hay track de audio de cámara, remueve cualquier sender de audio
-          currentSenders.filter(s => s.track?.kind === 'audio').forEach(s => pc.removeTrack(s));
-          console.log("[SYNC TRACKS] Removido track de audio de cámara.");
-        }
-      }
+//         if (cameraAudioTrack) {
+//           if (!existingCameraAudioSender) {
+//             // Remover cualquier otro audio sender antes de añadir el de cámara
+//             currentSenders.filter(s => s.track?.kind === 'audio').forEach(s => pc.removeTrack(s));
+//             pc.addTrack(cameraAudioTrack, localStream!);
+//             console.log("[SYNC TRACKS] Añadido track de audio de cámara.");
+//           } else if (existingCameraAudioSender.track !== cameraAudioTrack) {
+//             existingCameraAudioSender.replaceTrack(cameraAudioTrack)
+//               .then(() => console.log("[SYNC TRACKS] Reemplazado track de audio de cámara."))
+//               .catch(e => console.error("Error al reemplazar audio track de cámara:", e));
+//           }
+//         } else { // No hay track de audio de cámara, remueve cualquier sender de audio
+//           currentSenders.filter(s => s.track?.kind === 'audio').forEach(s => pc.removeTrack(s));
+//           console.log("[SYNC TRACKS] Removido track de audio de cámara.");
+//         }
+//       }
 
-      // Manejar stream de PANTALLA
-      const screenVideoTrack = screenShareStreamRef.current?.getVideoTracks()[0] || null;
-      const screenAudioTrack = screenShareStreamRef.current?.getAudioTracks()[0] || null;
+//       // Manejar stream de PANTALLA
+//       const screenVideoTrack = screenShareStreamRef.current?.getVideoTracks()[0] || null;
+//       const screenAudioTrack = screenShareStreamRef.current?.getAudioTracks()[0] || null;
 
-      const existingScreenVideoSender = currentSenders.find(s => s.track?.kind === 'video' && s.track?.id === screenVideoTrack?.id);
-      const existingScreenAudioSender = currentSenders.find(s => s.track?.kind === 'audio' && s.track?.id === screenAudioTrack?.id);
+//       const existingScreenVideoSender = currentSenders.find(s => s.track?.kind === 'video' && s.track?.id === screenVideoTrack?.id);
+//       const existingScreenAudioSender = currentSenders.find(s => s.track?.kind === 'audio' && s.track?.id === screenAudioTrack?.id);
 
-      // Si estamos compartiendo pantalla, gestiona la pantalla
-      if (isSharingScreen && screenShareStreamRef.current) {
-        // Asegurarse de que solo haya un sender de video (el de la pantalla)
-        currentSenders.filter(s => s.track?.kind === 'video' && s.track?.id !== screenVideoTrack?.id).forEach(s => {
-          pc.removeTrack(s);
-          console.log("[SYNC TRACKS] Removido sender de video no relacionado (cámara vieja) al compartir pantalla.");
-        });
+//       // Si estamos compartiendo pantalla, gestiona la pantalla
+//       if (isSharingScreen && screenShareStreamRef.current) {
+//         // Asegurarse de que solo haya un sender de video (el de la pantalla)
+//         currentSenders.filter(s => s.track?.kind === 'video' && s.track?.id !== screenVideoTrack?.id).forEach(s => {
+//           pc.removeTrack(s);
+//           console.log("[SYNC TRACKS] Removido sender de video no relacionado (cámara vieja) al compartir pantalla.");
+//         });
 
-        if (screenVideoTrack) {
-          if (!existingScreenVideoSender) {
-            pc.addTrack(screenVideoTrack, screenShareStreamRef.current);
-            console.log("[SYNC TRACKS] Añadido track de video de pantalla.");
-          } else if (existingScreenVideoSender.track !== screenVideoTrack) {
-            existingScreenVideoSender.replaceTrack(screenVideoTrack)
-              .then(() => console.log("[SYNC TRACKS] Reemplazado track de video de pantalla."))
-              .catch(e => console.error("Error al reemplazar video track de pantalla:", e));
-          }
-        } else if (existingScreenVideoSender) {
-          pc.removeTrack(existingScreenVideoSender);
-          console.log("[SYNC TRACKS] Removido track de video de pantalla (screenVideoTrack es null).");
-        }
+//         if (screenVideoTrack) {
+//           if (!existingScreenVideoSender) {
+//             pc.addTrack(screenVideoTrack, screenShareStreamRef.current);
+//             console.log("[SYNC TRACKS] Añadido track de video de pantalla.");
+//           } else if (existingScreenVideoSender.track !== screenVideoTrack) {
+//             existingScreenVideoSender.replaceTrack(screenVideoTrack)
+//               .then(() => console.log("[SYNC TRACKS] Reemplazado track de video de pantalla."))
+//               .catch(e => console.error("Error al reemplazar video track de pantalla:", e));
+//           }
+//         } else if (existingScreenVideoSender) {
+//           pc.removeTrack(existingScreenVideoSender);
+//           console.log("[SYNC TRACKS] Removido track de video de pantalla (screenVideoTrack es null).");
+//         }
 
-        // Asegurarse de que solo haya un sender de audio (el de la pantalla si existe, sino el de la cámara)
-        currentSenders.filter(s => s.track?.kind === 'audio' && s.track?.id !== screenAudioTrack?.id).forEach(s => {
-          pc.removeTrack(s);
-          console.log("[SYNC TRACKS] Removido sender de audio no relacionado (cámara vieja) al compartir pantalla.");
-        });
+//         // Asegurarse de que solo haya un sender de audio (el de la pantalla si existe, sino el de la cámara)
+//         currentSenders.filter(s => s.track?.kind === 'audio' && s.track?.id !== screenAudioTrack?.id).forEach(s => {
+//           pc.removeTrack(s);
+//           console.log("[SYNC TRACKS] Removido sender de audio no relacionado (cámara vieja) al compartir pantalla.");
+//         });
 
-        if (screenAudioTrack) {
-          if (!existingScreenAudioSender) {
-            pc.addTrack(screenAudioTrack, screenShareStreamRef.current);
-            console.log("[SYNC TRACKS] Añadido track de audio de pantalla.");
-          } else if (existingScreenAudioSender.track !== screenAudioTrack) {
-            existingScreenAudioSender.replaceTrack(screenAudioTrack)
-              .then(() => console.log("[SYNC TRACKS] Reemplazado track de audio de pantalla."))
-              .catch(e => console.error("Error al reemplazar audio track de pantalla:", e));
-          }
-        } else if (existingScreenAudioSender) {
-          pc.removeTrack(existingScreenAudioSender);
-          console.log("[SYNC TRACKS] Removido track de audio de pantalla (screenAudioTrack es null).");
-        }
+//         if (screenAudioTrack) {
+//           if (!existingScreenAudioSender) {
+//             pc.addTrack(screenAudioTrack, screenShareStreamRef.current);
+//             console.log("[SYNC TRACKS] Añadido track de audio de pantalla.");
+//           } else if (existingScreenAudioSender.track !== screenAudioTrack) {
+//             existingScreenAudioSender.replaceTrack(screenAudioTrack)
+//               .then(() => console.log("[SYNC TRACKS] Reemplazado track de audio de pantalla."))
+//               .catch(e => console.error("Error al reemplazar audio track de pantalla:", e));
+//           }
+//         } else if (existingScreenAudioSender) {
+//           pc.removeTrack(existingScreenAudioSender);
+//           console.log("[SYNC TRACKS] Removido track de audio de pantalla (screenAudioTrack es null).");
+//         }
 
-      } else { // Si NO estamos compartiendo pantalla, asegurar que los senders de pantalla estén limpios
-        if (existingScreenVideoSender) {
-          pc.removeTrack(existingScreenVideoSender);
-          console.log("[SYNC TRACKS] Removido sender de video de pantalla (ya no se comparte).");
-        }
-        if (existingScreenAudioSender) {
-          pc.removeTrack(existingScreenAudioSender);
-          console.log("[SYNC TRACKS] Removido sender de audio de pantalla (ya no se comparte).");
-        }
-      }
+//       } else { // Si NO estamos compartiendo pantalla, asegurar que los senders de pantalla estén limpios
+//         if (existingScreenVideoSender) {
+//           pc.removeTrack(existingScreenVideoSender);
+//           console.log("[SYNC TRACKS] Removido sender de video de pantalla (ya no se comparte).");
+//         }
+//         if (existingScreenAudioSender) {
+//           pc.removeTrack(existingScreenAudioSender);
+//           console.log("[SYNC TRACKS] Removido sender de audio de pantalla (ya no se comparte).");
+//         }
+//       }
 
-      // Si hubo algún cambio, forzar renegociación
-      if (pc.signalingState === 'stable' && (
-        (isSharingScreen && (screenVideoTrack || screenAudioTrack)) ||
-        (!isSharingScreen && (cameraVideoTrack || cameraAudioTrack))
-      )) {
-        //pc.dispatchEvent(new Event('negotiationneeded')); // `onnegotiationneeded` debería dispararse automáticamente
-      }
-    });
+//       // Si hubo algún cambio, forzar renegociación
+//       if (pc.signalingState === 'stable' && (
+//         (isSharingScreen && (screenVideoTrack || screenAudioTrack)) ||
+//         (!isSharingScreen && (cameraVideoTrack || cameraAudioTrack))
+//       )) {
+//         //pc.dispatchEvent(new Event('negotiationneeded')); // `onnegotiationneeded` debería dispararse automáticamente
+//       }
+//     });
 
-  }, [localStream, isSharingScreen, screenShareStreamRef]); // Dependencias: cambios en los streams y si se comparte pantalla
+//   }, [localStream, isSharingScreen, screenShareStreamRef]); // Dependencias: cambios en los streams y si se comparte pantalla
 
 
   // La función `processSignal` ya maneja la lógica de limpiar `screenStream` si `isSharing` es false.
