@@ -191,7 +191,7 @@ const { mainDisplayStream, filteredThumbnailStreams } = useMemo(() => {
             } else {
                 const firstRemoteWithVideo = Object.values(participants).find(p => p.cameraStream && p.videoEnabled);
                 if (firstRemoteWithVideo) {
-                    currentMainDisplayStream = { type: 'camera', stream: firstRemoteWithVideo.cameraStream!, isLocal: false, id: firstRemoteWithVideo.id, name: firstRemoteWithVideo.name };
+                    currentMainDisplayStream = { type: 'camera', stream: firstRemoteWithVideo.cameraStream!, isLocal: true, id: firstRemoteWithVideo.id, name: firstRemoteWithVideo.name };
                 }
             }
         }
