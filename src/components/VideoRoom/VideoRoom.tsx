@@ -273,67 +273,49 @@ const { mainDisplayStream, filteredThumbnailStreams } = useMemo(() => {
 
 
 
-const cleanupWebRTCAndReverb = useCallback(() => {
-    console.log("[CLEANUP] Iniciando limpieza de WebRTC y Reverb.");
-
-    // Cerrar todas las PeerConnections
-    Object.keys(peerConnectionsRef.current).forEach(peerId => {
-        const pc = peerConnectionsRef.current[peerId];
-        if (pc && pc.connectionState !== 'closed') {
-            pc.close();
-            console.log(`[CLEANUP] Cerrada RTCPeerConnection con ${peerId}.`);
-        }
-    });
-    peerConnectionsRef.current = {}; // Reiniciar el objeto de PeerConnections
-
-    // Detener tracks de streams locales
-    if (localStream) {
-        console.log("🟡 Deteniendo tracks de localStream en cleanup.");
-        localStream.getTracks().forEach(track => track.stop());
-        setLocalStream(null); // Resetear el estado del stream local
-    }
-    if (screenShareStreamRef.current) {
-        console.log("🟡 Deteniendo tracks de screenShareStream en cleanup.");
-        screenShareStreamRef.current.getTracks().forEach(track => track.stop());
-        screenShareStreamRef.current = null; // Limpiar la referencia al stream de pantalla
-        setIsSharingScreen(false); // Resetear el estado de compartición de pantalla
-    }
-
-    // Dejar el canal de Reverb
-    if (channelRef.current) {
-        console.log("[CLEANUP] Dejando canal de Reverb.");
-        channelRef.current.leave();
-        channelRef.current = null; // Limpiar la referencia al canal
-        setHasJoinedChannel(false); // Resetear el estado de unión al canal
-    }
-
-    // Resetear participantes y otros estados relevantes
-    setParticipants({});
-    setMicEnabled(true); // O a tu estado por defecto inicial
-    setVideoEnabled(true); // O a tu estado por defecto inicial
-    setManualMainStreamId(null); // Limpiar la selección de stream principal
-    setError(null);
-    setLoading(false);
-
-    // Si `onCallEnded` debe ser llamada aquí, hazlo.
-    // onCallEnded(); // Esto notificará al componente padre que la llamada ha terminado
-}, [localStream, screenShareStreamRef, channelRef, setLocalStream, setParticipants, setMicEnabled, setVideoEnabled, setManualMainStreamId, setError, setLoading, setHasJoinedChannel]);
-// Es crucial que `handleCallCleanup` (la prop) se llame a esta función de limpieza cuando sea necesario.
-// Idealmente, el `handleEndCall` de tu componente `VideoRoom` debería llamar a `cleanupWebRTCAndReverb`.
-// Y si el componente padre detecta que `VideoRoom` debe desaparecer, debería llamar a la prop `handleCallCleanup`.
-
-
-// Ahora, el `useEffect` que se estaba re-ejecutando debe lucir así:
-useEffect(() => {
+  useEffect(() => {
     // Al montar, no hacemos nada especial aquí, la conexión la maneja el otro useEffect.
-    // La función de retorno de este useEffect ahora solo llama a la prop `handleCallCleanup`
-    // proporcionada por el padre, o a tu `cleanupWebRTCAndReverb` si esta es la forma en que lo manejas.
-    // Esto es para cuando el componente se DESMONTA.
     return () => {
-        console.log("[VideoRoom Effect Cleanup] Componente VideoRoom se desmonta. Llamando a handleCallCleanup...");
-        handleCallCleanup(); // Llama a la función de limpieza del contexto/padre
+      // Esta es la limpieza al desmontar, pero queremos que `handleEndCall` sea la principal.
+      // Podemos poner una bandera o confiar en que `handleEndCall` se llamará antes del desmontaje.
+      // Para mayor seguridad, si no se ha llamado a `handleEndCall` (ej. el usuario cierra la pestaña),
+      // esta limpieza del useEffect se encargará.
+      // Podrías pasar una bandera `isExplicitlyLeaving` a `cleanupWebRTCAndReverb` si quieres
+      // diferenciar, pero la función ya es bastante robusta.
+      console.log("[VideoRoom Effect Cleanup] Componente VideoRoom se desmonta. Asegurando limpieza...");
+      // Reverb por defecto enviará 'leaving'/'left' al cerrar la pestaña.
+      // La limpieza de PeerConnections y streams locales ya está en `cleanupWebRTCAndReverb`.
+      // No llamamos a `onCallEnded` aquí para evitar doble llamada si `handleEndCall` ya lo hizo.
+      
+      // Una forma de evitar doble limpieza es verificar si el canal aún existe,
+      // lo que implicaría que no se hizo una `cleanupWebRTCAndReverb` explícita.
+      if (channelRef.current) {
+        console.log("[VideoRoom Effect Cleanup] detectado canal activo, realizando limpieza suave.");
+        Object.keys(peerConnectionsRef.current).forEach(peerId => {
+          const pc = peerConnectionsRef.current[peerId];
+          if (pc && pc.connectionState !== 'closed') {
+            pc.close();
+            console.log(`[CLEANUP ON UNMOUNT] Cerrada RTCPeerConnection con ${peerId}.`);
+          }
+        });
+        peerConnectionsRef.current = {};
+        if (channelRef.current && typeof channelRef.current.leave === 'function') {
+            channelRef.current.leave();
+        }
+        channelRef.current = null;
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+        }
+        if (screenShareStreamRef.current) {
+            screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+        }
+        setParticipants({});
+        // No llamamos onCallEnded aquí para no interferir con la lógica de UI
+        // que debería estar manejada por la acción explícita de colgar o por el contexto.
+      }
     };
-}, [handleCallCleanup]); 
+  }, [localStream, screenShareStreamRef]); // Incluye refs para que el closure funcione correctamente.
+
   const stopDragging = useCallback(() => {
     setIsDragging(false);
   }, []);
@@ -1511,83 +1493,32 @@ useEffect(() => {
     // console.log('🔄 Lista de participantes actualizada (estado):', participants);
   }, [participants]);
 
-// En VideoRoom.tsx
+  // Funciones de control de medios
+  const toggleVideo = () => {
+    if (!localStream) return;
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (!videoTrack) return;
+    videoTrack.enabled = !videoTrack.enabled;
+    setVideoEnabled(videoTrack.enabled);
 
-const toggleVideo = () => {
-  console.log("--- INICIANDO toggleVideo ---");
-  console.log("localStream al inicio:", localStream);
-
-  if (!localStream) {
-    console.warn("toggleVideo: localStream es nulo. No se puede alternar el video.");
-    return;
-  }
-  
-  const videoTracks = localStream.getVideoTracks();
-  console.log("Video tracks encontrados:", videoTracks);
-
-  const videoTrack = videoTracks[0];
-  if (!videoTrack) {
-    console.warn("toggleVideo: No se encontró ningún video track en localStream.");
-    return;
-  }
-
-  const newState = !videoTrack.enabled;
-  videoTrack.enabled = newState;
-  setVideoEnabled(newState); // Actualiza el estado de React
-
-  console.log(`toggleVideo: Video track ID: ${videoTrack.id}, Nuevo estado enabled: ${videoTrack.enabled}`);
-  console.log("Estado de videoEnabled en React:", newState);
-
-  // Asegúrate de que currentUser?.id exista antes de usarlo
-  if (currentUser?.id) {
     channelRef.current?.whisper('toggle-video', {
-      id: currentUser.id,
-      enabled: newState,
+      id: currentUser?.id,
+      enabled: videoTrack.enabled,
     });
-    console.log(`toggleVideo: Enviando whisper 'toggle-video' para ID: ${currentUser.id}, enabled: ${newState}`);
-  } else {
-    console.warn("toggleVideo: currentUser.id es nulo, no se puede enviar whisper.");
-  }
-  console.log("--- FIN toggleVideo ---");
-};
+  };
 
-const toggleMic = () => {
-  console.log("--- INICIANDO toggleMic ---");
-  console.log("localStream al inicio:", localStream);
+  const toggleMic = () => {
+    if (!localStream) return;
+    const audioTrack = localStream.getAudioTracks()[0];
+    if (!audioTrack) return;
+    audioTrack.enabled = !audioTrack.enabled;
+    setMicEnabled(audioTrack.enabled);
 
-  if (!localStream) {
-    console.warn("toggleMic: localStream es nulo. No se puede alternar el micrófono.");
-    return;
-  }
-
-  const audioTracks = localStream.getAudioTracks();
-  console.log("Audio tracks encontrados:", audioTracks);
-
-  const audioTrack = audioTracks[0];
-  if (!audioTrack) {
-    console.warn("toggleMic: No se encontró ningún audio track en localStream.");
-    return;
-  }
-
-  const newState = !audioTrack.enabled;
-  audioTrack.enabled = newState;
-  setMicEnabled(newState); // Actualiza el estado de React
-
-  console.log(`toggleMic: Audio track ID: ${audioTrack.id}, Nuevo estado enabled: ${audioTrack.enabled}`);
-  console.log("Estado de micEnabled en React:", newState);
-
-  // Asegúrate de que currentUser?.id exista antes de usarlo
-  if (currentUser?.id) {
     channelRef.current?.whisper('toggle-mic', {
-      id: currentUser.id,
-      enabled: newState,
+      id: currentUser?.id,
+      enabled: audioTrack.enabled,
     });
-    console.log(`toggleMic: Enviando whisper 'toggle-mic' para ID: ${currentUser.id}, enabled: ${newState}`);
-  } else {
-    console.warn("toggleMic: currentUser.id es nulo, no se puede enviar whisper.");
-  }
-  console.log("--- FIN toggleMic ---");
-};
+  };
 const toggleScreenShare = useCallback(async () => {
     if (!localStream) {
         console.warn("localStream no está disponible. No se puede iniciar/detener la compartición de pantalla.");
