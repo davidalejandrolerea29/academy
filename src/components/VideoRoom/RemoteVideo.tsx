@@ -1,7 +1,7 @@
 // src/components/RemoteVideo.tsx
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Video, VideoOff, Mic, MicOff, ScreenShare } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, ScreenShare, Maximize } from 'lucide-react';
 
 // Define las props que RemoteVideo espera recibir
 interface RemoteVideoProps {
@@ -14,6 +14,9 @@ interface RemoteVideoProps {
   volume: number;
   isScreenShare: boolean;
   className?: string; // Permitir clases CSS adicionales para el contenedor
+  onSelectMain?: (streamId: string | null) => void; // Callback para seleccionar este stream como principal
+  isSelectedMain?: boolean; // Indica si este stream es actualmente el principal seleccionado
+  showSelectButton?: boolean;
 }
 
 const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
@@ -25,7 +28,10 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
   isLocal,
   volume,
   isScreenShare,
-  className, // Aceptar className
+  className, 
+  onSelectMain, // Desestructura la nueva prop
+  isSelectedMain, // Desestructura la nueva prop
+  showSelectButton, // Desestructura la nueva prop
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   // showVideoContent ahora solo depende de videoEnabled (para cámara) o si es pantalla compartida
@@ -122,6 +128,7 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
         console.log(`[RemoteVideo DEBUG] Autoplay bloqueado para ${participantName}.`);
       }
     });
+    
 
     const currentVideoRef = videoRef.current;
     return () => {
@@ -145,7 +152,13 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
       }
     }
   };
-
+const handleSelectClick = () => {
+    if (onSelectMain) {
+        // Si ya está seleccionado como principal, deselecciona.
+        // Si no está seleccionado, selecciona este stream.
+        onSelectMain(isSelectedMain ? null : participantId);
+    }
+  };
   // Clases CSS para el borde de la pantalla compartida
   const screenShareBorderClass = isScreenShare ? 'border-4 border-blue-500' : '';
   const videoObjectFitClass = isScreenShare ? 'object-contain' : 'object-cover'; // Usar object-contain para pantalla compartida
@@ -181,6 +194,19 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
             className="absolute top-2 left-2 bg-gray-800 bg-opacity-70 text-white p-1 rounded-full text-xs z-10"
         >
             {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
+        </button>
+      )}
+
+      {showSelectButton && onSelectMain && (
+        <button
+            onClick={handleSelectClick}
+            className={`
+                absolute top-2 right-2 bg-gray-800 bg-opacity-70 text-white p-1 rounded-full text-xs z-10
+                ${isSelectedMain ? 'bg-yellow-600' : 'hover:bg-gray-600'}
+            `}
+            title={isSelectedMain ? 'Quitar de la pantalla principal' : 'Ver en pantalla principal'}
+        >
+            <Maximize size={16} />
         </button>
       )}
 
