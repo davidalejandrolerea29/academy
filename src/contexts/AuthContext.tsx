@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
-// import { createEcho } from '../config-reverb/echo';
+
 interface AuthContextType {
   currentUser: User | null;
   loading: boolean;
@@ -8,9 +8,11 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   error: string | null;
+  clearError: () => void; // ✅ NUEVO
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -25,6 +27,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const clearError = () => setError(null); // ✅ FUNCIÓN PARA LIMPIAR ERROR
 
   const register = async (email: string, password: string, displayName: string, role: UserRole) => {
     setLoading(true);
@@ -53,20 +57,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { access_token, user } = data;
       localStorage.setItem('token', access_token);
 
-  setCurrentUser({
-  token: access_token,
-  id: user.id,
-  email: user.email,
-  name: user.name ?? '',
-  role_id: user.role_id,
-  role: {
-    id: user.role_id,
-    description: user.role_description as UserRole,
-    created_at: user.role_created_at ?? '',
-    updated_at: user.role_updated_at ?? ''
-  },
-  role_description: user.role_description,
-});
+      setCurrentUser({
+        token: access_token,
+        id: user.id,
+        email: user.email,
+        name: user.name ?? '',
+        role_id: user.role_id,
+        role: {
+          id: user.role_id,
+          description: user.role_description as UserRole,
+          created_at: user.role_created_at ?? '',
+          updated_at: user.role_updated_at ?? ''
+        },
+        role_description: user.role_description,
+      });
 
     } catch (err: any) {
       setError(err.message || 'Error al registrarse');
@@ -75,57 +79,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = async (email: string, password: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-    
-      const data = await response.json();
+const login = async (email: string, password: string) => {
+  setLoading(true);
+  setError(null);
+  try {
+    const response = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    });
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Error al iniciar sesión');
+    const data = await response.json();
+
+    if (!response.ok) {
+      let message = 'Error al iniciar sesión';
+      if (data && typeof data === 'object') {
+        if ('message' in data && data.message) {
+          message = data.message;
+        } else if ('error' in data && data.error) {
+          message = data.error; // ✅ Captura mensaje de error
+        } else if ('errors' in data && data.errors) {
+          message = Object.values(data.errors).flat().join(' ');
+        }
+      } else if (typeof data === 'string' && data.length > 0) {
+        message = data;
       }
-
-      const { access_token, user } = data;
-      localStorage.setItem('token', access_token);
-
-
-      // const echo = createEcho(access_token);
-
-     setCurrentUser({
-  token: access_token,
-  id: user.id,
-  email: user.email,
-  name: user.name ?? '',
-  role_id: user.role_id,
-  role: {
-    id: user.role_id,
-    description: user.role_description,
-    created_at: '',
-    updated_at: '',
-  },
-  role_description: user.role_description,
-  must_change_password: user.must_change_password, // ✅ AÑADIR ESTA LÍNEA
-});
-
-console.log('el currente', setCurrentUser);
-
-console.log('respuesta de la api', data)
-    } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión');
-      setCurrentUser(null);
-    } finally {
-      setLoading(false);
+      throw new Error(message);
     }
-  };
+
+    const { access_token, user } = data;
+    localStorage.setItem('token', access_token);
+
+    setCurrentUser({
+      token: access_token,
+      id: user.id,
+      email: user.email,
+      name: user.name ?? '',
+      role_id: user.role_id,
+      role: {
+        id: user.role_id,
+        description: user.role_description,
+        created_at: '',
+        updated_at: '',
+      },
+      role_description: user.role_description,
+      must_change_password: user.must_change_password,
+    });
+
+  } catch (err: any) {
+    setError(err.message || 'Error al iniciar sesión');
+    setCurrentUser(null);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const logout = async () => {
     const token = localStorage.getItem('token');
@@ -165,41 +176,24 @@ console.log('respuesta de la api', data)
         throw new Error(data.message || 'Sesión inválida');
       }
 
-setCurrentUser({
-  token, // ✅ Esto es lo que te falta
-  id: data.id,
-  email: data.email,
-  name: data.name ?? '',
-  role_id: data.role_id,
-  role: {
-    id: data.role_id,
-    description: data.role_description as UserRole,
-    created_at: data.role_created_at ?? '',
-    updated_at: data.role_updated_at ?? ''
-  },
-  role_description: data.role_description,
-});
+      setCurrentUser({
+        token,
+        id: data.id,
+        email: data.email,
+        name: data.name ?? '',
+        role_id: data.role_id,
+        role: {
+          id: data.role_id,
+          description: data.role_description as UserRole,
+          created_at: data.role_created_at ?? '',
+          updated_at: data.role_updated_at ?? ''
+        },
+        role_description: data.role_description,
+      });
 
-
-     setCurrentUser({
-    token, // ← obligatorio para que se reconozca el usuario
-    id: data.id,
-    email: data.email,
-    name: data.name ?? '',
-    role_id: data.role_id,
-    role: {
-      id: data.role_id,
-      description: data.role_description,
-      created_at: data.role_created_at ?? '',
-      updated_at: data.role_updated_at ?? ''
-    },
-    role_description: data.role_description,
-  });
-
-} catch (e) {
-  console.error('Error al obtener el usuario actual:', e);
-  // no borres el token si no estás seguro de que es inválido
-} finally {
+    } catch (e) {
+      console.error('Error al obtener el usuario actual:', e);
+    } finally {
       setLoading(false);
     }
   };
@@ -210,7 +204,7 @@ setCurrentUser({
 
   return (
     <AuthContext.Provider
-      value={{ currentUser, loading, register, login, logout, error }}
+      value={{ currentUser, loading, register, login, logout, error, clearError }}
     >
       {children}
     </AuthContext.Provider>
