@@ -22,12 +22,12 @@ const LoginPage: React.FC = () => {
   // Redirige según el rol una vez logueado
   useEffect(() => {
     if (!currentUser || !currentUser.role) return;
-
+/*
     if (currentUser.must_change_password) {
       navigate('/cambiar-password');
       return;
     }
-
+*/
     const role = currentUser.role.description;
     switch (role) {
       case 'Admin':
