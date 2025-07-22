@@ -36,6 +36,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
    handleCallCleanup // Destructure
  }) => {
   const API_URL = import.meta.env.VITE_API_URL;
+  const TWILIO_ACCOUNT_SID = process.env.REACT_APP_TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.REACT_APP_TWILIO_AUTH_TOKEN;
   // const navigate = useNavigate();
   const iceCandidatesQueueRef = useRef<Record<string, RTCIceCandidate[]>>({});
   // const { isCallMinimized, toggleMinimizeCall } = useCall(); 
@@ -840,35 +842,35 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
 
     const pc = new RTCPeerConnection({
         iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
-            // Tu servidor TURN local
+            // Servidor STUN de Twilio (global)
+            { urls: 'stun:global.stun.twilio.com:3478' },
+            
+            // Servidor TURN de Twilio sobre UDP
             {
-                urls: 'turn:31.97.162.116:3478?transport=udp', // Asegúrate de que el puerto 3478 sea el que usa CoTURN
-                username: 'miusuario', // El usuario que configuraste en turnserver.conf
-                credential: 'micontrasena', // La contraseña que configuraste
-                realm: 'mi_servidor_turn_local'
+                urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+               username: TWILIO_ACCOUNT_SID,
+            credential: TWILIO_AUTH_TOKEN   // <-- ¡Pega aquí tu Auth Token!
             },
+            
+            // Servidor TURN de Twilio sobre TCP (muy importante para firewalls)
             {
-                urls: 'turn:31.97.162.116:3478?transport=tcp', // TURN sobre TCP, muy importante para compatibilidad
-                username: 'miusuario',
-                credential: 'micontrasena',
-                realm: 'mi_servidor_turn_local'
+                urls: 'turn:global.turn.twilio.com:3478?transport=tcp',
+               username: TWILIO_ACCOUNT_SID,
+            credential: TWILIO_AUTH_TOKEN  // <-- ¡Pega aquí tu Auth Token!
             },
-            // Si hubieras configurado TURNs (TLS) en un puerto como 5349 con certificados (no recomendado para inicio)
-            // {
-            //   urls: 'turns:127.0.0.1:5349?transport=tcp',
-            //   username: 'miusuario',
-            //   credential: 'micontrasena',
-            // },
+            
+            // Opcional: Servidor TURN de Twilio sobre TLS (recomendado para la mayor compatibilidad)
+            // Usa el puerto 443 o 5349, el 443 es más probable que esté abierto en firewalls corporativos.
+            {
+                urls: 'turns:global.turn.twilio.com:443?transport=tcp',
+                username: TWILIO_ACCOUNT_SID,
+            credential: TWILIO_AUTH_TOKEN
+            },
         ],
-        iceTransportPolicy: 'all', // Permite todos los tipos de candidatos ICE (host, srflx, relay)
-        bundlePolicy: 'balanced', // Optimiza el bundling de medios
-        rtcpMuxPolicy: 'require', // Requiere multiplexación de RTCP
-        iceCandidatePoolSize: 0, // Un pool de 0 está bien para la mayoría de los casos
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'balanced',
+        rtcpMuxPolicy: 'require',
+        iceCandidatePoolSize: 0,
     });
 
     // --- **CRÍTICO:** Añadir los tracks locales INMEDIATAMENTE al crear la PC ---
