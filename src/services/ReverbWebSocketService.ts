@@ -130,7 +130,7 @@ constructor(options: WebSocketServiceOptions) {
               // En el cliente, no necesitamos hacer nada más que saber que el servidor está vivo.
               // La lógica de `isAlive` está en el servidor Node.js.
               // console.log('ReverbWebSocketService: Received global pong from server.');
-            } **else if (message.event === 'pusher:ping') { // <-- ¡ESTE ES EL NUEVO BLOQUE!**
+            } else if (message.event === 'pusher:ping') { // <-- ¡ESTE ES EL NUEVO BLOQUE!**
                 // ¡El servidor nos envió un ping! Debemos responder con un pong.
                 if (this.globalWs && this.globalWs.readyState === WebSocket.OPEN) {
                     console.log('ReverbWebSocketService: Received global ping from server. Sending pong.');
