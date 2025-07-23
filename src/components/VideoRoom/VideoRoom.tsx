@@ -838,37 +838,61 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
 
     console.log(`[PC] Creando NUEVA RTCPeerConnection para peer: ${peerId}`);
 
-    const pc = new RTCPeerConnection({
+   const pc = new RTCPeerConnection({
         iceServers: [
+            // Servidores STUN de Google (siempre buenos como fallback y para STUN)
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
             { urls: 'stun:stun3.l.google.com:19302' },
             { urls: 'stun:stun4.l.google.com:19302' },
-            // Tu servidor TURN local
+
+            // --- TU SERVIDOR TURN EN SÃO PAULO (con su IP pública REAL) ---
             {
-                urls: 'turn:31.97.162.116:3478?transport=udp', // Asegúrate de que el puerto 3478 sea el que usa CoTURN
-                username: 'miusuario', // El usuario que configuraste en turnserver.conf
-                credential: 'micontrasena', // La contraseña que configuraste
-                realm: 'mi_servidor_turn_local'
-            },
-            {
-                urls: 'turn:31.97.162.116:3478?transport=tcp', // TURN sobre TCP, muy importante para compatibilidad
+                urls: 'turn:31.97.162.116:3478?transport=udp',
                 username: 'miusuario',
                 credential: 'micontrasena',
                 realm: 'mi_servidor_turn_local'
             },
-            // Si hubieras configurado TURNs (TLS) en un puerto como 5349 con certificados (no recomendado para inicio)
+            {
+                urls: 'turn:31.97.162.116:3478?transport=tcp',
+                username: 'miusuario',
+                credential: 'micontrasena',
+                realm: 'mi_servidor_turn_local'
+            },
+
+            // --- TU NUEVO SERVIDOR TURN EN INDONESIA (con su IP pública REAL) ---
+            {
+                urls: 'turn:147.93.81.189:3478?transport=udp', // <--- ¡Nueva IP de Indonesia!
+                username: 'miusuario',
+                credential: 'micontrasena',
+                realm: 'mi_servidor_turn_local'
+            },
+            {
+                urls: 'turn:147.93.81.189:3478?transport=tcp', // <--- ¡Nueva IP de Indonesia!
+                username: 'miusuario',
+                credential: 'micontrasena',
+                realm: 'mi_servidor_turn_local'
+            },
+
+            // Opcional: Si en algún momento configuras TURNs (TLS)
             // {
-            //   urls: 'turns:127.0.0.1:5349?transport=tcp',
+            //   urls: 'turns:31.97.162.116:5349?transport=tcp', // São Paulo TURNs
             //   username: 'miusuario',
             //   credential: 'micontrasena',
+            //   realm: 'mi_servidor_turn_local'
+            // },
+            // {
+            //   urls: 'turns:147.93.81.189:5349?transport=tcp', // Indonesia TURNs
+            //   username: 'miusuario',
+            //   credential: 'micontrasena',
+            //   realm: 'mi_servidor_turn_local'
             // },
         ],
-        iceTransportPolicy: 'all', // Permite todos los tipos de candidatos ICE (host, srflx, relay)
-        bundlePolicy: 'balanced', // Optimiza el bundling de medios
-        rtcpMuxPolicy: 'require', // Requiere multiplexación de RTCP
-        iceCandidatePoolSize: 0, // Un pool de 0 está bien para la mayoría de los casos
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'balanced',
+        rtcpMuxPolicy: 'require',
+        iceCandidatePoolSize: 0,
     });
 
     // --- **CRÍTICO:** Añadir los tracks locales INMEDIATAMENTE al crear la PC ---
