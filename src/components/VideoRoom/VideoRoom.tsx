@@ -847,13 +847,13 @@ const getOrCreatePeerConnection = useCallback((peerId: string) => {
             { urls: 'stun:stun4.l.google.com:19302' },
             // Tu servidor TURN local
             {
-                urls: 'turn:127.0.0.1:3478?transport=udp', // Asegúrate de que el puerto 3478 sea el que usa CoTURN
+                urls: 'turn:31.97.162.116:3478?transport=udp', // Asegúrate de que el puerto 3478 sea el que usa CoTURN
                 username: 'miusuario', // El usuario que configuraste en turnserver.conf
                 credential: 'micontrasena', // La contraseña que configuraste
                 realm: 'mi_servidor_turn_local'
             },
             {
-                urls: 'turn:127.0.0.1:3478?transport=tcp', // TURN sobre TCP, muy importante para compatibilidad
+                urls: 'turn:31.97.162.116:3478?transport=tcp', // TURN sobre TCP, muy importante para compatibilidad
                 username: 'miusuario',
                 credential: 'micontrasena',
                 realm: 'mi_servidor_turn_local'
