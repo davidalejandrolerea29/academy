@@ -36,8 +36,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
    handleCallCleanup // Destructure
  }) => {
   const API_URL = import.meta.env.VITE_API_URL;
-  const TWILIO_ACCOUNT_SID = import.meta.VITE_TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = import.meta.VITE_TWILIO_AUTH_TOKEN;
+  const TWILIO_ACCOUNT_SID = import.meta.env.VITE_TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = import.meta.env.VITE_TWILIO_AUTH_TOKEN;
   // const navigate = useNavigate();
   const iceCandidatesQueueRef = useRef<Record<string, RTCIceCandidate[]>>({});
   // const { isCallMinimized, toggleMinimizeCall } = useCall(); 
