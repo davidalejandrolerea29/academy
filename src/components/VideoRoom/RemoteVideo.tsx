@@ -152,7 +152,7 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
     }
   };
   const screenShareBorderClass = isScreenShare ? 'border-4 border-blue-500' : '';
-  const videoObjectFitClass = isScreenShare ? 'object-contain' : 'object-cover';
+  const videoObjectFitClass = isScreenShare ? 'object-contain' : 'object-contain';
 
   return (
     <div className={`relative bg-gray-800 rounded-lg overflow-hidden aspect-video ${className || ''} ${screenShareBorderClass}`}>
