@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCall } from '../../contexts/CallContext';
+import ConnectionTest from "../ConnectionTest";
+import ConnectionWidget from '../ConnectionWidget';
 import VideoRoom from '../VideoRoom/VideoRoom';
 import {
   Video,
@@ -27,6 +29,7 @@ const Layout: React.FC = () => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { activeRoomId, endCall, isCallMinimized, toggleMinimizeCall } = useCall();
+  const [connectionStatus, setConnectionStatus] = useState<"good" | "warning" | "error">("good");
 
   // --- NUEVOS ESTADOS PARA EL INDICADOR DE CONEXIÓN ---
   const [isWebSocketConnected, setIsWebSocketConnected] = useState<boolean>(false);
@@ -155,6 +158,7 @@ const Layout: React.FC = () => {
   };
 
   return (
+    
     <div className="flex h-screen bg-gray-50">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
@@ -163,6 +167,7 @@ const Layout: React.FC = () => {
           onClick={closeSidebar}
         ></div>
       )}
+
 
       {/* Sidebar */}
       <aside
@@ -188,8 +193,9 @@ const Layout: React.FC = () => {
             >
               <X className="w-6 h-6" />
             </button>
+            
           </div>
-
+ 
           {currentUser && (
             <>
               <div className="p-4 border-b">
@@ -209,6 +215,8 @@ const Layout: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              
 
               <nav className="flex-1 p-4 space-y-1">
                 <NavLink
@@ -254,8 +262,15 @@ const Layout: React.FC = () => {
                     Gestión de Usuarios
                   </NavLink>
                 )}
+                
               </nav>
-
+    <div className="mt-2 px-4">
+    <ConnectionWidget
+      webSocketConnected={isWebSocketConnected}
+      isConnecting={isConnecting}
+      onStatusChange={(status) => setConnectionStatus(status)}
+    />
+  </div>
               <div className="p-4 border-t mt-auto">
                 <button
                   onClick={handleLogout}
@@ -288,10 +303,11 @@ const Layout: React.FC = () => {
 
             {/* --- INDICADOR DE CONEXIÓN AÑADIDO AQUÍ --- */}
             <div className="ml-auto mr-4"> {/* Alinea a la derecha y añade margen */}
-              {getConnectionStatus()}
+             
+            
             </div>
             {/* ------------------------------------------- */}
-
+ 
           </div>
         </header>
 
@@ -313,14 +329,15 @@ const Layout: React.FC = () => {
           }
         `}>
           <VideoRoom
-            roomId={activeRoomId}
-            onCallEnded={endCall}
-            isTeacher={currentUser?.role_description === 'Teacher'}
-            isCallMinimized={isCallMinimized}
-            toggleMinimizeCall={toggleMinimizeCall}
-            handleCallCleanup={endCall}
-            reverbService={webSocketService}
-          />
+  roomId={activeRoomId}
+  onCallEnded={endCall}
+  isTeacher={currentUser?.role_description === 'Teacher'}
+  isCallMinimized={isCallMinimized}
+  toggleMinimizeCall={toggleMinimizeCall}
+  reverbService={webSocketService}
+  disableVideo={connectionStatus !== "good"} // baja la calidad si la conexión es mala
+/>
+
         </div>
       )}
     </div>
