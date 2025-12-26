@@ -17,7 +17,7 @@ interface UseWebRTCProps {
   currentUser: { id: string; name: string } | null;
   localStream: MediaStream | null;
   channelRef: React.MutableRefObject<EchoChannel | null>;
-  localScreenStream: MediaStream | null; 
+  localScreenStream: MediaStream | null;
   reverbService: any; // Ajusta este tipo si tienes una interfaz para tu servicio Reverb
   onCallEnded: () => void;
   // Añadir un callback para notificar al componente padre sobre cambios de estado de participantes
@@ -125,7 +125,9 @@ export const useWebRTC = ({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          // ... (mantén tus otros STUN/TURN servers aquí) ...
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' },
           {
             urls: 'turn:127.0.0.1:3478?transport=udp',
             username: 'miusuario',
@@ -142,7 +144,7 @@ export const useWebRTC = ({
         iceTransportPolicy: 'all',
         bundlePolicy: 'balanced',
         rtcpMuxPolicy: 'require',
-        iceCandidatePoolSize: 0,
+        iceCandidatePoolSize: 10, // ✅ FIX #2: Pre-genera candidatos para conexiones más rápidas
       });
 
       // Añadir los tracks locales INMEDIATAMENTE al crear la PC
@@ -154,11 +156,11 @@ export const useWebRTC = ({
 
       // --- Configuración de Eventos para la NUEVA PC ---
       pc.ontrack = (event) => {
-    const incomingStream = event.streams[0];
-    const track = event.track;
+        const incomingStream = event.streams[0];
+        const track = event.track;
 
-    updateParticipantsState(prev => {
-        const existingParticipant = prev[peerId] || {
+        updateParticipantsState(prev => {
+          const existingParticipant = prev[peerId] || {
             id: peerId,
             name: `Usuario ${peerId}`,
             videoEnabled: false,
@@ -166,75 +168,75 @@ export const useWebRTC = ({
             cameraStream: null,
             screenStream: null,
             isSharingRemoteScreen: false,
-        };
-        const updatedParticipant = { ...existingParticipant };
+          };
+          const updatedParticipant = { ...existingParticipant };
 
-        // Determine if this is a screen share track based on multiple hints
-        // We'll also rely heavily on the `isSharingRemoteScreen` signal
-        const isPotentiallyScreenShareTrack = track.kind === 'video' &&
+          // Determine if this is a screen share track based on multiple hints
+          // We'll also rely heavily on the `isSharingRemoteScreen` signal
+          const isPotentiallyScreenShareTrack = track.kind === 'video' &&
             (updatedParticipant.isSharingRemoteScreen || // The signal from the sender is paramount
-            track.label.includes('screen') ||
-            track.label.includes('display') ||
-            track.contentHint === 'detail' ||
-            (incomingStream.getVideoTracks().length > 1 && track === incomingStream.getVideoTracks()[1]) ||
-            incomingStream.id.includes('screen')); // Check stream ID too
+              track.label.includes('screen') ||
+              track.label.includes('display') ||
+              track.contentHint === 'detail' ||
+              (incomingStream.getVideoTracks().length > 1 && track === incomingStream.getVideoTracks()[1]) ||
+              incomingStream.id.includes('screen')); // Check stream ID too
 
-        if (track.kind === 'video') {
+          if (track.kind === 'video') {
             if (isPotentiallyScreenShareTrack) {
-                // If a new screen stream or the existing one is different
-                if (!updatedParticipant.screenStream || updatedParticipant.screenStream.id !== incomingStream.id) {
-                    // Stop tracks of any old screen stream to avoid memory leaks
-                    updatedParticipant.screenStream?.getTracks().forEach(t => t.stop());
-                    updatedParticipant.screenStream = incomingStream;
-                    console.log(`[ontrack] Recibiendo NUEVO stream de PANTALLA de ${peerId}`);
-                    // If camera stream was the same, clear it to avoid duplication
-                    if (updatedParticipant.cameraStream && updatedParticipant.cameraStream.id === incomingStream.id) {
-                        updatedParticipant.cameraStream = null;
-                    }
+              // If a new screen stream or the existing one is different
+              if (!updatedParticipant.screenStream || updatedParticipant.screenStream.id !== incomingStream.id) {
+                // Stop tracks of any old screen stream to avoid memory leaks
+                updatedParticipant.screenStream?.getTracks().forEach(t => t.stop());
+                updatedParticipant.screenStream = incomingStream;
+                console.log(`[ontrack] Recibiendo NUEVO stream de PANTALLA de ${peerId}`);
+                // If camera stream was the same, clear it to avoid duplication
+                if (updatedParticipant.cameraStream && updatedParticipant.cameraStream.id === incomingStream.id) {
+                  updatedParticipant.cameraStream = null;
                 }
-                updatedParticipant.isSharingRemoteScreen = true; // Confirm this participant is sharing screen
+              }
+              updatedParticipant.isSharingRemoteScreen = true; // Confirm this participant is sharing screen
             } else { // This is likely a camera video track
-                // If a new camera stream or the existing one is different
-                if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
-                    // Stop tracks of any old camera stream
-                    updatedParticipant.cameraStream?.getTracks().forEach(t => t.stop());
-                    updatedParticipant.cameraStream = incomingStream;
-                    console.log(`[ontrack] Recibiendo NUEVO stream de CÁMARA de ${peerId}`);
-                    // If screen stream was the same, clear it
-                    if (updatedParticipant.screenStream && updatedParticipant.screenStream.id === incomingStream.id) {
-                        updatedParticipant.screenStream = null;
-                        updatedParticipant.isSharingRemoteScreen = false; // They stopped sharing screen
-                    }
+              // If a new camera stream or the existing one is different
+              if (!updatedParticipant.cameraStream || updatedParticipant.cameraStream.id !== incomingStream.id) {
+                // Stop tracks of any old camera stream
+                updatedParticipant.cameraStream?.getTracks().forEach(t => t.stop());
+                updatedParticipant.cameraStream = incomingStream;
+                console.log(`[ontrack] Recibiendo NUEVO stream de CÁMARA de ${peerId}`);
+                // If screen stream was the same, clear it
+                if (updatedParticipant.screenStream && updatedParticipant.screenStream.id === incomingStream.id) {
+                  updatedParticipant.screenStream = null;
+                  updatedParticipant.isSharingRemoteScreen = false; // They stopped sharing screen
                 }
-                updatedParticipant.videoEnabled = true;
+              }
+              updatedParticipant.videoEnabled = true;
             }
-        } else if (track.kind === 'audio') {
+          } else if (track.kind === 'audio') {
             // Audio logic: try to attach audio to the currently active video stream
             // Or create a new stream if only audio
             if (updatedParticipant.isSharingRemoteScreen && updatedParticipant.screenStream) {
-                if (!updatedParticipant.screenStream.getAudioTracks().some(t => t.id === track.id)) {
-                    updatedParticipant.screenStream.addTrack(track);
-                    console.log(`[ontrack] Añadido track de audio a screenStream de ${peerId}`);
-                }
+              if (!updatedParticipant.screenStream.getAudioTracks().some(t => t.id === track.id)) {
+                updatedParticipant.screenStream.addTrack(track);
+                console.log(`[ontrack] Añadido track de audio a screenStream de ${peerId}`);
+              }
             } else if (updatedParticipant.cameraStream) {
-                if (!updatedParticipant.cameraStream.getAudioTracks().some(t => t.id === track.id)) {
-                    updatedParticipant.cameraStream.addTrack(track);
-                    console.log(`[ontrack] Añadido track de audio a cameraStream de ${peerId}`);
-                }
+              if (!updatedParticipant.cameraStream.getAudioTracks().some(t => t.id === track.id)) {
+                updatedParticipant.cameraStream.addTrack(track);
+                console.log(`[ontrack] Añadido track de audio a cameraStream de ${peerId}`);
+              }
             } else {
-                // Fallback: create a new camera stream with just audio if no video stream yet
-                updatedParticipant.cameraStream = new MediaStream([track]);
-                console.log(`[ontrack] Creado nuevo cameraStream solo con audio para ${peerId}`);
+              // Fallback: create a new camera stream with just audio if no video stream yet
+              updatedParticipant.cameraStream = new MediaStream([track]);
+              console.log(`[ontrack] Creado nuevo cameraStream solo con audio para ${peerId}`);
             }
             updatedParticipant.micEnabled = true;
-        }
+          }
 
-        return {
+          return {
             ...prev,
             [peerId]: updatedParticipant
-        };
-    });
-};
+          };
+        });
+      };
 
 
       pc.onicecandidate = (event) => {
@@ -245,8 +247,35 @@ export const useWebRTC = ({
       };
 
       pc.onnegotiationneeded = async () => {
-        if (pc.signalingState !== 'stable') {
-          console.warn(`[onnegotiationneeded] signalingState no es 'stable' (${pc.signalingState}). Retrasando oferta para ${peerId}.`);
+        // ✅ FIX #7: Esperar a que el estado sea stable antes de negociar
+        const waitForStable = () => new Promise<boolean>(resolve => {
+          if (pc.signalingState === 'stable') {
+            resolve(true);
+            return;
+          }
+
+          console.warn(`[onnegotiationneeded] Esperando signaling state stable (actual: ${pc.signalingState})`);
+
+          const checkState = () => {
+            if (pc.signalingState === 'stable') {
+              pc.removeEventListener('signalingstatechange', checkState);
+              resolve(true);
+            }
+          };
+
+          pc.addEventListener('signalingstatechange', checkState);
+
+          // Timeout de seguridad de 5 segundos
+          setTimeout(() => {
+            pc.removeEventListener('signalingstatechange', checkState);
+            console.error(`[onnegotiationneeded] Timeout esperando stable state para ${peerId}`);
+            resolve(false);
+          }, 5000);
+        });
+
+        const isStable = await waitForStable();
+        if (!isStable) {
+          console.error(`[onnegotiationneeded] No se pudo negociar con ${peerId} - signaling state no stable`);
           return;
         }
 
@@ -271,14 +300,54 @@ export const useWebRTC = ({
         }
       };
 
-      pc.onconnectionstatechange = () => {
-        console.log(`[PC State] PeerConnection con ${peerId} estado: ${pc.connectionState}`);
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          console.log(`[PC State] RTC PeerConnection for ${peerId} disconnected/failed/closed. Cleaning up.`);
+      pc.onconnectionstatechange = async () => {
+        const currentState = pc.connectionState;
+        console.log(`[PC State] PeerConnection con ${peerId} estado: ${currentState}`);
+
+        // ✅ FIX #4: Intentar reconexión automática antes de cerrar
+        if (currentState === 'failed') {
+          console.warn(`[PC State] Conexión fallida con ${peerId}. Intentando ICE restart...`);
+
+          try {
+            // Intentar ICE restart primero
+            if (pc.restartIce) {
+              pc.restartIce();
+              console.log(`[PC State] ICE restart iniciado para ${peerId}`);
+            }
+
+            // Esperar 2 segundos para ver si ICE restart funciona
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Si aún está en failed, crear nueva oferta con iceRestart
+            if (pc.connectionState === 'failed') {
+              console.log(`[PC State] ICE restart no funcionó. Creando nueva oferta para ${peerId}...`);
+
+              const localUserId = parseInt(currentUser?.id.toString() || '0');
+              const remoteMemberId = parseInt(peerId);
+              const isInitiator = localUserId < remoteMemberId;
+
+              if (isInitiator && pc.signalingState === 'stable') {
+                const offer = await pc.createOffer({ iceRestart: true });
+                await pc.setLocalDescription(offer);
+                sendSignal(peerId, {
+                  type: 'offer',
+                  sdp: offer.sdp,
+                  sdpType: offer.type
+                });
+                console.log(`[PC State] Nueva oferta con ICE restart enviada a ${peerId}`);
+              }
+            }
+          } catch (error) {
+            console.error(`[PC State] Error en reconexión automática para ${peerId}:`, error);
+          }
+        }
+
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
+          console.log(`[PC State] RTC PeerConnection for ${peerId} ${currentState}. Cleaning up.`);
           if (pc.connectionState !== 'closed') {
             pc.close();
           }
-          handlePeerDisconnected(peerId); // Usar la función de limpieza centralizada
+          handlePeerDisconnected(peerId);
         }
       };
       pc.oniceconnectionstatechange = () => { console.log(`[PC State - ICE] PeerConnection con ${peerId} ICE: ${pc.iceConnectionState}`); };
@@ -291,9 +360,9 @@ export const useWebRTC = ({
     return pc;
   }, [currentUser, localStream, sendSignal, addLocalTracksToPeerConnection, updateParticipantsState]);
 
-const localScreenShareSendersRef = useRef<Record<string, { video?: RTCRtpSender, audio?: RTCRtpSender }>>({});
+  const localScreenShareSendersRef = useRef<Record<string, { video?: RTCRtpSender, audio?: RTCRtpSender }>>({});
 
-useEffect(() => {
+  useEffect(() => {
     // Si no hay localStream ni localScreenStream, no hay nada que enviar
     if (!localStream && !localScreenStream) {
       // Opcional: Remover todos los tracks si ambos streams se vuelven nulos
@@ -339,8 +408,8 @@ useEffect(() => {
           } else {
             // No hay sender de pantalla, añadirlo. Primero, remover cualquier sender de cámara si existe.
             pc.getSenders().filter(s => s.track?.kind === 'video' && s.track?.id !== screenVideoTrack.id).forEach(s => {
-                pc.removeTrack(s);
-                console.log(`[Screen Share] Removed old camera video track before adding screen track.`);
+              pc.removeTrack(s);
+              console.log(`[Screen Share] Removed old camera video track before adding screen track.`);
             });
             const sender = pc.addTrack(screenVideoTrack, localScreenStream);
             localScreenShareSendersRef.current[peerId].video = sender;
@@ -348,9 +417,9 @@ useEffect(() => {
             console.log(`[Screen Share] Added new screen video track on PC.`);
           }
         } else if (currentVideoScreenSender) { // Si no hay track de pantalla pero había un sender activo
-            pc.removeTrack(currentVideoScreenSender);
-           delete localScreenShareSendersRef.current[peerId].video;
-            console.log(`[Screen Share] Removed screen video track from PC.`);
+          pc.removeTrack(currentVideoScreenSender);
+          delete localScreenShareSendersRef.current[peerId].video;
+          console.log(`[Screen Share] Removed screen video track from PC.`);
         }
 
         // Añadir/Reemplazar track de audio de pantalla (si existe)
@@ -364,17 +433,17 @@ useEffect(() => {
           } else {
             // No hay sender de audio de pantalla, añadirlo. Remover cualquier sender de audio de cámara si existe.
             pc.getSenders().filter(s => s.track?.kind === 'audio' && s.track?.id !== screenAudioTrack.id).forEach(s => {
-                pc.removeTrack(s);
-                console.log(`[Screen Share] Removed old camera audio track before adding screen audio track.`);
+              pc.removeTrack(s);
+              console.log(`[Screen Share] Removed old camera audio track before adding screen audio track.`);
             });
             const sender = pc.addTrack(screenAudioTrack, localScreenStream);
             localScreenShareSendersRef.current[peerId].audio = sender;
             console.log(`[Screen Share] Added new screen audio track on PC.`);
           }
         } else if (currentAudioScreenSender) { // Si no hay track de audio de pantalla pero había un sender activo
-            pc.removeTrack(currentAudioScreenSender);
-             delete localScreenShareSendersRef.current[peerId].audio;
-            console.log(`[Screen Share] Removed screen audio track from PC.`);
+          pc.removeTrack(currentAudioScreenSender);
+          delete localScreenShareSendersRef.current[peerId].audio;
+          console.log(`[Screen Share] Removed screen audio track from PC.`);
         }
 
         // Si se añadió o reemplazó un track de pantalla, forzar negociación
@@ -399,7 +468,7 @@ useEffect(() => {
         if (localStream) {
           const cameraVideoTrack = localStream.getVideoTracks()[0];
           const cameraAudioTrack = localStream.getAudioTracks()[0];
-          
+
           const currentCameraVideoSender = pc.getSenders().find(s => s.track?.kind === 'video' && s.track?.id === cameraVideoTrack?.id);
           const currentCameraAudioSender = pc.getSenders().find(s => s.track?.kind === 'audio' && s.track?.id === cameraAudioTrack?.id);
 
@@ -408,53 +477,53 @@ useEffect(() => {
             if (!currentCameraVideoSender) { // Si no hay sender de video de cámara
               // Primero, asegurar que no haya otros tracks de video que no sean de cámara o pantalla
               pc.getSenders().filter(s => s.track?.kind === 'video').forEach(s => {
-                  pc.removeTrack(s); // Remover cualquier track de video anterior (ej. pantalla que no se limpió)
-                  console.log(`[Camera Stream] Removed old video track before adding camera track.`);
+                pc.removeTrack(s); // Remover cualquier track de video anterior (ej. pantalla que no se limpió)
+                console.log(`[Camera Stream] Removed old video track before adding camera track.`);
               });
               pc.addTrack(cameraVideoTrack, localStream);
               console.log(`[Camera Stream] Added new camera video track on PC.`);
               pc.dispatchEvent(new Event('negotiationneeded'));
             } else if (currentCameraVideoSender.track !== cameraVideoTrack) {
-                // Si el track existente es diferente, reemplazarlo
-                currentCameraVideoSender.replaceTrack(cameraVideoTrack)
-                    .then(() => console.log(`[Camera Stream] Replaced existing camera video track on PC.`))
-                    .catch(e => console.error(`[Camera Stream Error] Failed to replace camera video track:`, e));
+              // Si el track existente es diferente, reemplazarlo
+              currentCameraVideoSender.replaceTrack(cameraVideoTrack)
+                .then(() => console.log(`[Camera Stream] Replaced existing camera video track on PC.`))
+                .catch(e => console.error(`[Camera Stream Error] Failed to replace camera video track:`, e));
             }
           } else { // Si no hay track de video de cámara en localStream
-              pc.getSenders().filter(s => s.track?.kind === 'video').forEach(s => {
-                  pc.removeTrack(s);
-                  console.log(`[Camera Stream] Removed camera video track.`);
-                  pc.dispatchEvent(new Event('negotiationneeded'));
-              });
+            pc.getSenders().filter(s => s.track?.kind === 'video').forEach(s => {
+              pc.removeTrack(s);
+              console.log(`[Camera Stream] Removed camera video track.`);
+              pc.dispatchEvent(new Event('negotiationneeded'));
+            });
           }
 
           // Añadir/Reemplazar track de audio de cámara
           if (cameraAudioTrack) {
             if (!currentCameraAudioSender) { // Si no hay sender de audio de cámara
               pc.getSenders().filter(s => s.track?.kind === 'audio').forEach(s => {
-                  pc.removeTrack(s); // Remover cualquier track de audio anterior
-                  console.log(`[Camera Stream] Removed old audio track before adding camera audio track.`);
+                pc.removeTrack(s); // Remover cualquier track de audio anterior
+                console.log(`[Camera Stream] Removed old audio track before adding camera audio track.`);
               });
               pc.addTrack(cameraAudioTrack, localStream);
               console.log(`[Camera Stream] Added new camera audio track on PC.`);
               pc.dispatchEvent(new Event('negotiationneeded'));
             } else if (currentCameraAudioSender.track !== cameraAudioTrack) {
-                currentCameraAudioSender.replaceTrack(cameraAudioTrack)
-                    .then(() => console.log(`[Camera Stream] Replaced existing camera audio track on PC.`))
-                    .catch(e => console.error(`[Camera Stream Error] Failed to replace camera audio track:`, e));
+              currentCameraAudioSender.replaceTrack(cameraAudioTrack)
+                .then(() => console.log(`[Camera Stream] Replaced existing camera audio track on PC.`))
+                .catch(e => console.error(`[Camera Stream Error] Failed to replace camera audio track:`, e));
             }
           } else { // Si no hay track de audio de cámara en localStream
-              pc.getSenders().filter(s => s.track?.kind === 'audio').forEach(s => {
-                  pc.removeTrack(s);
-                  console.log(`[Camera Stream] Removed camera audio track.`);
-                  pc.dispatchEvent(new Event('negotiationneeded'));
-              });
+            pc.getSenders().filter(s => s.track?.kind === 'audio').forEach(s => {
+              pc.removeTrack(s);
+              console.log(`[Camera Stream] Removed camera audio track.`);
+              pc.dispatchEvent(new Event('negotiationneeded'));
+            });
           }
         }
       }
     });
 
-}, [localStream, localScreenStream, peerConnectionsRef, replaceLocalTrackInPeerConnection, removeLocalTrackFromPeerConnection]); // Dependencias: ambos streams locales y las refs/callbacks.
+  }, [localStream, localScreenStream, peerConnectionsRef, replaceLocalTrackInPeerConnection, removeLocalTrackFromPeerConnection]); // Dependencias: ambos streams locales y las refs/callbacks.
   // Función para procesar señales (ofertas, respuestas, candidatos)
   const processSignal = useCallback(async (peerId: string, type: string, data: any) => {
     const pc = getOrCreatePeerConnection(peerId);
@@ -466,7 +535,7 @@ useEffect(() => {
         if (localStream) {
           addLocalTracksToPeerConnection(pc, localStream);
         } else {
-            console.warn(`[SIGNAL IN] localStream es NULO al recibir oferta de ${peerId}. No se pueden añadir tracks locales.`);
+          console.warn(`[SIGNAL IN] localStream es NULO al recibir oferta de ${peerId}. No se pueden añadir tracks locales.`);
         }
         await pc.setRemoteDescription(new RTCSessionDescription(data));
         const answer = await pc.createAnswer();
@@ -474,8 +543,12 @@ useEffect(() => {
         sendSignal(peerId, { type: 'answer', sdp: answer.sdp, sdpType: answer.type });
         console.log(`[SIGNAL OUT] Enviando RESPUESTA a ${peerId}.`);
         // Procesa candidatos ICE que puedan haber llegado antes que la oferta
-        if (iceCandidatesQueueRef.current[peerId]) {
-          for (const candidate of iceCandidatesQueueRef.current[peerId]) {
+        // ✅ FIX #5: Procesar candidatos en cola sin eliminar el array
+        if (iceCandidatesQueueRef.current[peerId]?.length > 0) {
+          const queuedCandidates = [...iceCandidatesQueueRef.current[peerId]];
+          iceCandidatesQueueRef.current[peerId] = []; // Limpiar pero mantener el array
+
+          for (const candidate of queuedCandidates) {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(candidate));
               console.log(`[ICE Candidate] Añadido candidato en cola para ${peerId}.`);
@@ -483,15 +556,18 @@ useEffect(() => {
               console.error(`[ICE Candidate ERROR] Error al añadir candidato en cola para ${peerId}:`, e);
             }
           }
-          delete iceCandidatesQueueRef.current[peerId];
         }
 
       } else if (type === 'answer') {
         console.log(`[SIGNAL IN] Recibida RESPUESTA de ${peerId}.`);
         await pc.setRemoteDescription(new RTCSessionDescription(data));
         // Procesa candidatos ICE que puedan haber llegado antes que la respuesta
-        if (iceCandidatesQueueRef.current[peerId]) {
-          for (const candidate of iceCandidatesQueueRef.current[peerId]) {
+        // ✅ FIX #5: Procesar candidatos en cola sin eliminar el array
+        if (iceCandidatesQueueRef.current[peerId]?.length > 0) {
+          const queuedCandidates = [...iceCandidatesQueueRef.current[peerId]];
+          iceCandidatesQueueRef.current[peerId] = []; // Limpiar pero mantener el array
+
+          for (const candidate of queuedCandidates) {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(candidate));
               console.log(`[ICE Candidate] Añadido candidato en cola para ${peerId}.`);
@@ -499,7 +575,6 @@ useEffect(() => {
               console.error(`[ICE Candidate ERROR] Error al añadir candidato en cola para ${peerId}:`, e);
             }
           }
-          delete iceCandidatesQueueRef.current[peerId];
         }
 
       } else if (type === 'candidate') {
@@ -564,8 +639,8 @@ useEffect(() => {
     // Si ya tenemos un canal, no intentamos crear otro.
     // Esto es importante para evitar múltiples suscripciones en re-renders.
     if (channelRef.current) {
-        console.log("[REVERB] Canal ya existente, saltando nueva suscripción.");
-        return;
+      console.log("[REVERB] Canal ya existente, saltando nueva suscripción.");
+      return;
     }
 
     let cleanupPerformed = false; // Flag para asegurar la limpieza una sola vez
@@ -577,14 +652,14 @@ useEffect(() => {
     reverbService.presence(`presence-video-room.${roomId}`)
       .then((joinedChannel: EchoChannel) => {
         if (cleanupPerformed) { // Evitar procesar si el componente ya se desmontó
-            // Usar .leave() aquí también si es la forma correcta de desuscribirse
-            // aunque el componente se esté desmontando, para no dejar conexiones abiertas.
-            if (typeof joinedChannel.leave === 'function') {
-                joinedChannel.leave();
-            } else {
-                console.warn("[REVERB] joinedChannel no tiene un método leave().");
-            }
-            return;
+          // Usar .leave() aquí también si es la forma correcta de desuscribirse
+          // aunque el componente se esté desmontando, para no dejar conexiones abiertas.
+          if (typeof joinedChannel.leave === 'function') {
+            joinedChannel.leave();
+          } else {
+            console.warn("[REVERB] joinedChannel no tiene un método leave().");
+          }
+          return;
         }
         activeChannel = joinedChannel; // Asigna a la variable local
         channelRef.current = joinedChannel; // Asigna también a la ref
@@ -671,9 +746,9 @@ useEffect(() => {
         console.log(`[REVERB] Abandonando el canal presence-video-room.${roomId}`);
         // *** CAMBIO CLAVE AQUÍ: Usar .leave() en lugar de .unsubscribe() ***
         if (typeof activeChannel.leave === 'function') { // Asegúrate de que el método leave exista
-            activeChannel.leave();
+          activeChannel.leave();
         } else {
-            console.warn("[REVERB] activeChannel no tiene un método leave(). Verifique la API de Reverb/Echo.");
+          console.warn("[REVERB] activeChannel no tiene un método leave(). Verifique la API de Reverb/Echo.");
         }
         channelRef.current = null; // Limpiar la referencia
       }
