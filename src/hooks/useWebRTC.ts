@@ -33,6 +33,7 @@ interface UseWebRTCResult {
   addLocalTracksToPeerConnection: (pc: RTCPeerConnection, stream: MediaStream) => void;
   replaceLocalTrackInPeerConnection: (pc: RTCPeerConnection, oldTrack: MediaStreamTrack, newTrack: MediaStreamTrack, stream: MediaStream) => void;
   removeLocalTrackFromPeerConnection: (pc: RTCPeerConnection, track: MediaStreamTrack) => void;
+  forceReconnect: (peerId: string) => Promise<void>;
 }
 
 export const useWebRTC = ({
@@ -611,6 +612,46 @@ export const useWebRTC = ({
     }
   }, [getOrCreatePeerConnection, sendSignal, localStream, addLocalTracksToPeerConnection, updateParticipantsState]);
 
+  // Forzar reconexión con un peer específico
+  const forceReconnect = useCallback(async (peerId: string) => {
+    console.log(`[Force Reconnect] 🔄 Iniciando reconexión forzada con ${peerId}`);
+
+    // 1. Cerrar y limpiar la PeerConnection existente
+    const existingPc = peerConnectionsRef.current[peerId];
+    if (existingPc) {
+      if (existingPc.connectionState !== 'closed') {
+        existingPc.close();
+      }
+      delete peerConnectionsRef.current[peerId];
+      console.log(`[Force Reconnect] Cerrada PeerConnection existente con ${peerId}`);
+    }
+
+    // 2. Limpiar candidatos ICE en cola
+    if (iceCandidatesQueueRef.current[peerId]) {
+      iceCandidatesQueueRef.current[peerId] = [];
+    }
+
+    // 3. Esperar un momento para que se limpie todo
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // 4. Crear nueva PeerConnection
+    const newPc = getOrCreatePeerConnection(peerId);
+    console.log(`[Force Reconnect] Nueva PeerConnection creada con ${peerId}`);
+
+    // 5. Forzar negociación si somos el iniciador
+    const localUserId = parseInt(currentUser?.id.toString() || '0');
+    const remoteMemberId = parseInt(peerId);
+    const isInitiator = localUserId < remoteMemberId;
+
+    if (isInitiator) {
+      console.log(`[Force Reconnect] Iniciando nueva negociación con ${peerId}`);
+      // Disparar evento de negociación
+      newPc.dispatchEvent(new Event('negotiationneeded'));
+    } else {
+      console.log(`[Force Reconnect] Esperando oferta de ${peerId}`);
+    }
+  }, [currentUser, getOrCreatePeerConnection]);
+
   // Manejar desconexión de un peer
   const handlePeerDisconnected = useCallback((peerId: string) => {
     const pc = peerConnectionsRef.current[peerId];
@@ -842,6 +883,7 @@ export const useWebRTC = ({
     handlePeerDisconnected,
     addLocalTracksToPeerConnection,
     replaceLocalTrackInPeerConnection,
-    removeLocalTrackFromPeerConnection
+    removeLocalTrackFromPeerConnection,
+    forceReconnect
   };
 };

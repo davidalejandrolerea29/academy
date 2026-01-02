@@ -26,6 +26,8 @@ interface VideoRoomProps {
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
 import RemoteVideo from './RemoteVideo'; // Ajusta la ruta si RemoteVideo.tsx está en otro lugar
 import ChatBox from './ChatBox';
+import ConnectionAlert from './ConnectionAlert';
+import { ConnectionIssue } from '../../types/webrtc';
 
 const VideoRoom: React.FC<VideoRoomProps> = ({
     roomId,
@@ -64,6 +66,13 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isChatOpenMobile, setIsChatOpenMobile] = useState(false);
     const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
     const channelRef = useRef<EchoChannel | null>(null);
+
+    // Connection monitoring states
+    const [connectionIssues, setConnectionIssues] = useState<ConnectionIssue[]>([]);
+    const [dismissedIssues, setDismissedIssues] = useState<Set<string>>(new Set());
+    const lastHeartbeatsRef = useRef<Record<string, number>>({});
+    const HEARTBEAT_INTERVAL = 5000; // 5 segundos
+    const HEARTBEAT_TIMEOUT = 15000; // 15 segundos
     const reverbServiceRef = useRef(createReverbWebSocketService(currentUser?.token || '')); // Instancia del servicio
     const [isChatOpenDesktop, setIsChatOpenDesktop] = useState(true);
     // Estado para streams remotos y participantes
@@ -1595,6 +1604,35 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         // console.log('🔄 Lista de participantes actualizada (estado):', participants);
     }, [participants]);
 
+    // Enviar heartbeats periódicamente
+    useEffect(() => {
+        const interval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+        sendHeartbeat(); // Enviar inmediatamente
+
+        return () => clearInterval(interval);
+    }, [sendHeartbeat, HEARTBEAT_INTERVAL]);
+
+    // Detectar problemas periódicamente
+    useEffect(() => {
+        const interval = setInterval(detectConnectionIssues, 3000);
+        detectConnectionIssues(); // Detectar inmediatamente
+
+        return () => clearInterval(interval);
+    }, [detectConnectionIssues]);
+
+    // Listener para heartbeats
+    useEffect(() => {
+        const currentChannel = channelRef.current;
+        if (!currentChannel || !currentUser) return;
+
+        currentChannel.listenForWhisper('Heartbeat', ({ to, from, data }: any) => {
+            if (to !== currentUser.id) return;
+            lastHeartbeatsRef.current[from] = data.timestamp;
+            console.log(`[Heartbeat] ✅ Recibido de ${from}`);
+        });
+    }, [channelRef, currentUser]);
+
+
     // Funciones de control de medios
     const toggleVideo = () => {
         if (!localStream) return;
@@ -1621,6 +1659,109 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             enabled: audioTrack.enabled,
         });
     };
+
+    // Sistema de Heartbeat
+    const sendHeartbeat = useCallback(() => {
+        if (!channelRef.current || !currentUser) return;
+
+        Object.keys(participants).forEach(peerId => {
+            if (peerId === currentUser.id) return;
+
+            channelRef.current?.whisper('Heartbeat', {
+                to: peerId,
+                from: currentUser.id,
+                data: {
+                    type: 'heartbeat',
+                    timestamp: Date.now(),
+                    hasVideo: videoEnabled,
+                    hasAudio: micEnabled,
+                },
+            });
+        });
+    }, [channelRef, currentUser, participants, videoEnabled, micEnabled]);
+
+    // Detectar problemas de conexión
+    const detectConnectionIssues = useCallback(() => {
+        const now = Date.now();
+        const detectedIssues: ConnectionIssue[] = [];
+
+        Object.keys(participants).forEach(peerId => {
+            if (peerId === currentUser?.id) return;
+            if (dismissedIssues.has(peerId)) return;
+
+            const pc = peerConnectionsRef.current[peerId];
+            const participant = participants[peerId];
+            const lastHeartbeat = lastHeartbeatsRef.current[peerId] || 0;
+
+            // Problema 1: En canal pero sin PeerConnection
+            if (participant && !pc) {
+                detectedIssues.push({
+                    peerId,
+                    peerName: participant.name,
+                    issue: 'no_peer_connection',
+                    detectedAt: now,
+                });
+            }
+
+            // Problema 2: PeerConnection pero sin stream
+            if (pc && pc.connectionState === 'connected' && !participant.cameraStream && !participant.screenStream) {
+                detectedIssues.push({
+                    peerId,
+                    peerName: participant.name,
+                    issue: 'no_stream',
+                    detectedAt: now,
+                });
+            }
+
+            // Problema 3: Timeout de heartbeat
+            if (participant && lastHeartbeat > 0 && (now - lastHeartbeat > HEARTBEAT_TIMEOUT)) {
+                detectedIssues.push({
+                    peerId,
+                    peerName: participant.name,
+                    issue: 'heartbeat_timeout',
+                    detectedAt: now,
+                });
+            }
+        });
+
+        setConnectionIssues(detectedIssues);
+    }, [participants, currentUser, dismissedIssues, HEARTBEAT_TIMEOUT]);
+
+    // Forzar reconexión
+    const handleForceReconnect = useCallback(async (peerId: string) => {
+        console.log(`[Force Reconnect] 🔄 Iniciando reconexión con ${peerId}`);
+
+        // Cerrar PeerConnection existente
+        const existingPc = peerConnectionsRef.current[peerId];
+        if (existingPc) {
+            if (existingPc.connectionState !== 'closed') {
+                existingPc.close();
+            }
+            delete peerConnectionsRef.current[peerId];
+        }
+
+        // Limpiar candidatos ICE
+        if (iceCandidatesQueueRef.current[peerId]) {
+            iceCandidatesQueueRef.current[peerId] = [];
+        }
+
+        // Esperar un momento
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Crear nueva PeerConnection
+        await setupPeerConnectionForPeer(peerId);
+
+        // Limpiar issue
+        setDismissedIssues(prev => new Set(prev).add(peerId));
+        setConnectionIssues(prev => prev.filter(issue => issue.peerId !== peerId));
+    }, [setupPeerConnectionForPeer]);
+
+    // Descartar alerta
+    const handleDismissIssue = useCallback((peerId: string) => {
+        setDismissedIssues(prev => new Set(prev).add(peerId));
+        setConnectionIssues(prev => prev.filter(issue => issue.peerId !== peerId));
+    }, []);
+
     const toggleScreenShare = useCallback(async () => {
         if (!localStream) {
             console.warn("localStream no está disponible. No se puede iniciar/detener la compartición de pantalla.");
@@ -1869,6 +2010,13 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 }}
                 videoEnabled={videoEnabled} // Necesario para la lógica de replaceTrack
                 micEnabled={micEnabled}     // Necesario para la lógica de replaceTrack
+            />
+
+            {/* Connection Monitoring Alert */}
+            <ConnectionAlert
+                issues={connectionIssues}
+                onReconnect={handleForceReconnect}
+                onDismiss={handleDismissIssue}
             />
 
 
