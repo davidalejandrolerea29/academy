@@ -1099,7 +1099,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     participant.reconnectionTimeoutId = null;
                 }
 
-                if (currentState === 'connected' || currentState === 'stable') {
+                if (currentState === 'connected') {
                     if (participant.isDisconnectedByNetwork) {
                         console.log(`[PC] Peer ${peerId} se ha reconectado (estado: ${currentState}). Limpiando flag de desconexión.`);
                         participant.isDisconnectedByNetwork = false;
@@ -1659,35 +1659,6 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         // console.log('🔄 Lista de participantes actualizada (estado):', participants);
     }, [participants]);
 
-    // Enviar heartbeats periódicamente
-    useEffect(() => {
-        const interval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
-        sendHeartbeat(); // Enviar inmediatamente
-
-        return () => clearInterval(interval);
-    }, [sendHeartbeat, HEARTBEAT_INTERVAL]);
-
-    // Detectar problemas periódicamente
-    useEffect(() => {
-        const interval = setInterval(detectConnectionIssues, 3000);
-        detectConnectionIssues(); // Detectar inmediatamente
-
-        return () => clearInterval(interval);
-    }, [detectConnectionIssues]);
-
-    // Listener para heartbeats
-    useEffect(() => {
-        const currentChannel = channelRef.current;
-        if (!currentChannel || !currentUser) return;
-
-        currentChannel.listenForWhisper('Heartbeat', ({ to, from, data }: any) => {
-            if (to !== currentUser.id) return;
-            lastHeartbeatsRef.current[from] = data.timestamp;
-            console.log(`[Heartbeat] ✅ Recibido de ${from}`);
-        });
-    }, [channelRef, currentUser]);
-
-
     // Funciones de control de medios
     const toggleVideo = () => {
         if (!localStream) return;
@@ -1816,6 +1787,34 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         setDismissedIssues(prev => new Set(prev).add(peerId));
         setConnectionIssues(prev => prev.filter(issue => issue.peerId !== peerId));
     }, []);
+
+    // Enviar heartbeats periódicamente
+    useEffect(() => {
+        const interval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+        sendHeartbeat(); // Enviar inmediatamente
+
+        return () => clearInterval(interval);
+    }, [sendHeartbeat, HEARTBEAT_INTERVAL]);
+
+    // Detectar problemas periódicamente
+    useEffect(() => {
+        const interval = setInterval(detectConnectionIssues, 3000);
+        detectConnectionIssues(); // Detectar inmediatamente
+
+        return () => clearInterval(interval);
+    }, [detectConnectionIssues]);
+
+    // Listener para heartbeats
+    useEffect(() => {
+        const currentChannel = channelRef.current;
+        if (!currentChannel || !currentUser) return;
+
+        currentChannel.listenForWhisper('Heartbeat', ({ to, from, data }: any) => {
+            if (to !== currentUser.id) return;
+            lastHeartbeatsRef.current[from] = data.timestamp;
+            console.log(`[Heartbeat] ✅ Recibido de ${from}`);
+        });
+    }, [channelRef, currentUser]);
 
     const toggleScreenShare = useCallback(async () => {
         if (!localStream) {
