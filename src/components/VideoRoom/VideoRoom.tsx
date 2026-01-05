@@ -907,18 +907,37 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         // --- **CRÍTICO:** Añadir los tracks locales INMEDIATAMENTE al crear la PC ---
         // Esto asegura que pc.onnegotiationneeded se dispare si es necesario
         // o que la oferta inicial contenga los tracks.
-        if (localStream) {
-            localStream.getTracks().forEach(track => {
-                // Solo añade el track si no hay un sender para él ya (previene duplicados si se llama varias veces)
-                if (!pc.getSenders().some(sender => sender.track === track)) {
-                    pc.addTrack(track, localStream);
-                    console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
-                } else {
-                    console.log(`[PC Creation] Track ${track.kind} ya EXISTE para ${peerId}. No se añade de nuevo.`);
-                }
-            });
+        if (localStream && localStream.active) {
+            const tracks = localStream.getTracks();
+
+            // Verificar que hay tracks disponibles
+            if (tracks.length === 0) {
+                console.warn(`[PC Creation] localStream no tiene tracks disponibles para ${peerId}.`);
+            } else {
+                tracks.forEach(track => {
+                    // Verificar que el track está en estado 'live' antes de agregarlo
+                    if (track.readyState !== 'live') {
+                        console.warn(`[PC Creation] Track ${track.kind} no está en estado 'live' (estado: ${track.readyState}). Saltando.`);
+                        return;
+                    }
+
+                    // Solo añade el track si no hay un sender para él ya (previene duplicados si se llama varias veces)
+                    if (!pc.getSenders().some(sender => sender.track === track)) {
+                        try {
+                            pc.addTrack(track, localStream);
+                            console.log(`[PC Creation] ✅ Añadido track local ${track.kind} a PC de ${peerId}`);
+                        } catch (error) {
+                            console.error(`[PC Creation] ❌ Error al añadir track ${track.kind} a PC de ${peerId}:`, error);
+                            // Continuar con otros tracks incluso si uno falla
+                        }
+                    } else {
+                        console.log(`[PC Creation] Track ${track.kind} ya EXISTE para ${peerId}. No se añade de nuevo.`);
+                    }
+                });
+            }
         } else {
-            console.warn(`[PC Creation] localStream es NULO al crear PC para ${peerId}. No se pueden añadir tracks locales iniciales.`);
+            const reason = !localStream ? 'localStream es NULO' : 'localStream no está activo';
+            console.warn(`[PC Creation] ${reason} al crear PC para ${peerId}. No se pueden añadir tracks locales iniciales.`);
         }
 
         // Guardar la referencia a la PeerConnection
@@ -1195,16 +1214,33 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         const pc = getOrCreatePeerConnection(peerId);
 
         // Añadir tracks locales si no están ya añadidos
-        if (localStream) {
-            localStream.getTracks().forEach(track => {
-                const hasSender = pc.getSenders().some(sender => sender.track === track);
-                if (!hasSender) {
-                    pc.addTrack(track, localStream);
-                    console.log(`[PC] Añadido track ${track.kind} de localStream a PC para ${peerId}`);
-                }
-            });
+        if (localStream && localStream.active) {
+            const tracks = localStream.getTracks();
+
+            if (tracks.length === 0) {
+                console.warn(`[PC] localStream no tiene tracks disponibles para ${peerId}.`);
+            } else {
+                tracks.forEach(track => {
+                    // Verificar que el track está en estado 'live'
+                    if (track.readyState !== 'live') {
+                        console.warn(`[PC] Track ${track.kind} no está en estado 'live' (estado: ${track.readyState}). Saltando.`);
+                        return;
+                    }
+
+                    const hasSender = pc.getSenders().some(sender => sender.track === track);
+                    if (!hasSender) {
+                        try {
+                            pc.addTrack(track, localStream);
+                            console.log(`[PC] ✅ Añadido track ${track.kind} de localStream a PC para ${peerId}`);
+                        } catch (error) {
+                            console.error(`[PC] ❌ Error al añadir track ${track.kind} a PC para ${peerId}:`, error);
+                        }
+                    }
+                });
+            }
         } else {
-            console.warn(`[PC] localStream es NULO al configurar PC para ${peerId}. Los tracks no se añadirán.`);
+            const reason = !localStream ? 'localStream es NULO' : 'localStream no está activo';
+            console.warn(`[PC] ${reason} al configurar PC para ${peerId}. Los tracks no se añadirán.`);
             // Considera si debes forzar una reconexión o un error aquí si el stream es vital.
         }
 
@@ -1243,6 +1279,25 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             //console.log("Faltan roomId, currentUser o localStream para unirse al canal. Reintentando...");
             return;
         }
+
+        // Verificar que el localStream está activo y tiene tracks en estado 'live'
+        if (!localStream.active) {
+            console.warn("[Main Effect] localStream no está activo. Esperando...");
+            return;
+        }
+
+        const tracks = localStream.getTracks();
+        if (tracks.length === 0) {
+            console.warn("[Main Effect] localStream no tiene tracks. Esperando...");
+            return;
+        }
+
+        const allTracksLive = tracks.every(track => track.readyState === 'live');
+        if (!allTracksLive) {
+            console.warn("[Main Effect] No todos los tracks están en estado 'live'. Esperando...");
+            return;
+        }
+
         if (channelRef.current) {
             //console.log("Ya existe un canal (en el ref), no se unirá de nuevo.");
             return;
