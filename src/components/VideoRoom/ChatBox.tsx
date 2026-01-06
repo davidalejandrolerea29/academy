@@ -3,14 +3,21 @@ import React, { useEffect, useState, useRef } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useAuth } from '../../contexts/AuthContext';
 
-interface ChatBoxProps {
-  roomId: string;
+export interface Message {
+  sender: string;
+  text: string;
 }
 
-const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
+interface ChatBoxProps {
+  roomId: string;
+  messages: Message[];
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+}
+
+const ChatBox: React.FC<ChatBoxProps> = ({ roomId, messages, setMessages }) => {
   const API_URL = import.meta.env.VITE_API_URL;
   const { currentUser } = useAuth();
-  const [messages, setMessages] = useState<{ sender: string; text: string }[]>([]);
+  // messages and setMessages are now props
   const [chatInput, setChatInput] = useState('');
   const [roomParticipantId, setRoomParticipantId] = useState<number | null>(null);
   // Nuevo estado para el mensaje de advertencia al usuario
@@ -66,8 +73,8 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
       return;
     }
     if (chatChannelRef.current) {
-        console.log("[ChatBox Init] Canal de chat ya suscrito. No se suscribirá de nuevo.");
-        return;
+      console.log("[ChatBox Init] Canal de chat ya suscrito. No se suscribirá de nuevo.");
+      return;
     }
 
     const reverbService = reverbServiceRef.current;
@@ -94,7 +101,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
         });
 
         joinedChatChannel.error((error: any) => {
-            console.error('❌ [ChatBox] Error en el canal de chat:', error);
+          console.error('❌ [ChatBox] Error en el canal de chat:', error);
         });
 
       })
@@ -104,12 +111,15 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
       });
 
     return () => {
+      // Importante: Al dejar el componente, DEJAMOS el canal.
+      // Si el componente se desmonta y remonta, perderíamos la conexión si no gestionamos bien el estado.
+      // Como el estado ahora viene de props, la reconexión es aceptable siempre que los mensajes persistan.
       if (currentChatChannelInstance) {
         console.log(`🔌 [ChatBox Cleanup] Desuscribiendo del canal de chat: ${chatChannelName}`);
         currentChatChannelInstance.leave();
       }
     };
-  }, [roomId, currentUser, roomParticipantId]);
+  }, [roomId, currentUser, roomParticipantId, setMessages]); // added setMessages dependency
 
   // --- Función handleSendMessage ---
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -157,10 +167,10 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
         // setMessages(prevMessages => [...prevMessages, messageToAdd]);
 
       } else if (response.status === 403 && data.code === 'BANNED_CONTENT_DETECTED') {
-          console.warn('🚫 ChatBox: Mensaje bloqueado por el backend:', data.message);
-          setWarningMessage(data.message); // Mostrar el mensaje de advertencia del backend
-          setTimeout(() => setWarningMessage(null), 8000);
-          // NO limpiar chatInput aquí para que el usuario pueda corregir el mensaje
+        console.warn('🚫 ChatBox: Mensaje bloqueado por el backend:', data.message);
+        setWarningMessage(data.message); // Mostrar el mensaje de advertencia del backend
+        setTimeout(() => setWarningMessage(null), 8000);
+        // NO limpiar chatInput aquí para que el usuario pueda corregir el mensaje
       } else {
         console.error('❌ ChatBox: Error del backend al enviar mensaje:', data);
         setWarningMessage(data.message || 'Error al enviar el mensaje. Por favor, inténtalo de nuevo.');
@@ -172,7 +182,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
   };
 
   if (roomParticipantId === null) {
-      return <div className="chat-loading p-4 text-center text-gray-500">Cargando chat...</div>;
+    return <div className="chat-loading p-4 text-center text-gray-500">Cargando chat...</div>;
   }
 
   return (
@@ -193,15 +203,15 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId }) => {
           </div>
         )}
         <div className="flex gap-2">
-            <input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              className="flex-1 p-2 rounded bg-gray-800 text-white"
-              placeholder="Escribe un mensaje..."
-            />
-            <button type="submit" className="bg-orange-600 px-4 py-2 rounded hover:bg-orange-700">
-              Enviar
-            </button>
+          <input
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            className="flex-1 p-2 rounded bg-gray-800 text-white"
+            placeholder="Escribe un mensaje..."
+          />
+          <button type="submit" className="bg-orange-600 px-4 py-2 rounded hover:bg-orange-700">
+            Enviar
+          </button>
         </div>
       </form>
     </div>

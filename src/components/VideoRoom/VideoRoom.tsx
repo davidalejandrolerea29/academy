@@ -25,7 +25,7 @@ interface VideoRoomProps {
 
 // ¡IMPORTA EL COMPONENTE REMOTEVIDEO AQUÍ!
 import RemoteVideo from './RemoteVideo'; // Ajusta la ruta si RemoteVideo.tsx está en otro lugar
-import ChatBox from './ChatBox';
+import ChatBox, { Message } from './ChatBox';
 import ConnectionAlert from './ConnectionAlert';
 import { ConnectionIssue } from '../../types/webrtc';
 
@@ -75,6 +75,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const HEARTBEAT_TIMEOUT = 15000; // 15 segundos
     const reverbServiceRef = useRef(createReverbWebSocketService(currentUser?.token || '')); // Instancia del servicio
     const [isChatOpenDesktop, setIsChatOpenDesktop] = useState(true);
+    // Added chat messages state
+    const [chatMessages, setChatMessages] = useState<Message[]>([]);
     // Estado para streams remotos y participantes
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     // participants ahora incluye toda la info necesaria para renderizar y gestionar el estado del usuario
@@ -2355,7 +2357,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     {/* Chat lateral (solo renderizado si isChatOpenDesktop es true para evitar render innecesario) */}
                     {isChatOpenDesktop && (
                         <div className="flex-grow flex flex-col py-2 md:py-8 justify-end overflow-hidden">
-                            {roomId && <ChatBox roomId={roomId} />}
+                            {roomId && <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />}
                         </div>
                     )}
                 </div>
