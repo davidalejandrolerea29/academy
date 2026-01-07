@@ -25,6 +25,8 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId, messages, setMessages }) => {
 
   const reverbServiceRef = useRef<any>(null);
   const chatChannelRef = useRef<EchoChannel | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   // Inicializa o actualiza el servicio Reverb con el token
   useEffect(() => {
@@ -34,6 +36,19 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId, messages, setMessages }) => {
       reverbServiceRef.current.setToken(currentUser.token);
     }
   }, [currentUser]);
+
+  // Auto-scroll hacia abajo cuando llegan nuevos mensajes
+  useEffect(() => {
+    // Usar setTimeout para asegurar que el DOM se haya actualizado
+    const timer = setTimeout(() => {
+      if (messagesContainerRef.current) {
+        // Usar scrollTop para hacer scroll al final del contenedor
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [messages]);
 
   // --- useEffect para OBTENER roomParticipantId (específico del chat) ---
   useEffect(() => {
@@ -186,13 +201,14 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId, messages, setMessages }) => {
   }
 
   return (
-    <div className="chat-section border-l border-gray-700 bg-gray-900 flex flex-col w-4/4">
-      <div className="chat-messages flex-1 overflow-y-auto p-4">
+    <div className="chat-section border-l border-gray-700 bg-gray-900 flex flex-col w-4/4 h-full">
+      <div ref={messagesContainerRef} className="chat-messages flex-1 overflow-y-auto p-4">
         {messages.map((msg, index) => (
           <div key={index} className="mb-2">
             <strong className="text-blue-400">{msg.sender}:</strong> {msg.text}
           </div>
         ))}
+        <div ref={messagesEndRef} />
       </div>
       <form onSubmit={handleSendMessage} className="p-2 border-t border-gray-700 flex flex-col gap-2">
         {/* Mensaje de advertencia */}

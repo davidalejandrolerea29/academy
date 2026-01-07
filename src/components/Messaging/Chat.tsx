@@ -37,6 +37,7 @@ const Chat: React.FC<ChatProps> = ({
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isObservationMode) return;
@@ -154,8 +155,17 @@ const Chat: React.FC<ChatProps> = ({
     }
   }, [currentUser, recipientId, roomId, handleNewMessage, isObservationMode, observationMessages, observationLoading]);
 
+  // Auto-scroll hacia abajo cuando llegan nuevos mensajes
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Usar setTimeout para asegurar que el DOM se haya actualizado
+    const timer = setTimeout(() => {
+      if (messagesContainerRef.current) {
+        // Usar scrollTop para hacer scroll al final del contenedor
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
   }, [messages]);
 
   const handleEmojiSelect = (emoji: any) => {
@@ -178,10 +188,10 @@ const Chat: React.FC<ChatProps> = ({
     ];
 
     const phoneRegex = [
-        /\b\d{2}\s?\d{4}[-\s]?\d{4}\b/,
-        /\b\d{3}[-\s]?\d{3}[-\s]?\d{4}\b/,
-        /\b(?:\+?54)?(?:\s*\d{2,4}){2,3}\s*\d{6,8}\b/,
-        /\b\d{7,10}\b/
+      /\b\d{2}\s?\d{4}[-\s]?\d{4}\b/,
+      /\b\d{3}[-\s]?\d{3}[-\s]?\d{4}\b/,
+      /\b(?:\+?54)?(?:\s*\d{2,4}){2,3}\s*\d{6,8}\b/,
+      /\b\d{7,10}\b/
     ];
 
     for (const keyword of bannedKeywords) {
@@ -258,12 +268,12 @@ const Chat: React.FC<ChatProps> = ({
 
       // --- MANEJO DE LA RESPUESTA DEL BACKEND PARA MENSAJES BANEADOS ---
       if (response.status === 403 && data.code === 'BANNED_CONTENT_DETECTED') {
-          console.warn('🚫 Mensaje bloqueado por el backend (chat privado):', data.message);
-          setWarningMessage(data.message); // Muestra el mensaje de advertencia del backend
-          setTimeout(() => setWarningMessage(null), 8000);
-          // Eliminar el mensaje provisional del UI porque fue baneado
-          setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
-          return; // Detener el flujo de envío exitoso
+        console.warn('🚫 Mensaje bloqueado por el backend (chat privado):', data.message);
+        setWarningMessage(data.message); // Muestra el mensaje de advertencia del backend
+        setTimeout(() => setWarningMessage(null), 8000);
+        // Eliminar el mensaje provisional del UI porque fue baneado
+        setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
+        return; // Detener el flujo de envío exitoso
       }
       // --- FIN DEL MANEJO DE MENSAJES BANEADOS ---
 
@@ -313,14 +323,14 @@ const Chat: React.FC<ChatProps> = ({
         <h2 className="text-lg font-semibold text-gray-800 flex-1">
           {recipientData.name}
           {isObservationMode && (
-             <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
-               Observando
-             </span>
+            <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
+              Observando
+            </span>
           )}
         </h2>
       </div>
 
-      <div className="flex-1 p-4 overflow-y-auto bg-gray-100">
+      <div ref={messagesContainerRef} className="flex-1 p-4 overflow-y-auto bg-gray-100">
         {displayError ? (
           <div className="flex items-center justify-center h-full text-red-500 text-center">
             Error al cargar el chat: {displayError}
