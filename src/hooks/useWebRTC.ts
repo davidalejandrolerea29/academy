@@ -721,6 +721,15 @@ export const useWebRTC = ({
                 isSharingRemoteScreen: false,
               };
               getOrCreatePeerConnection(member.id);
+              
+              // ✅ FIX: Forzar negociación con miembros existentes
+              setTimeout(() => {
+                const pc = peerConnectionsRef.current[member.id];
+                if (pc && pc.connectionState !== 'closed') {
+                  console.log(`[REVERB] Forzando negociación con miembro existente: ${member.id}`);
+                  pc.dispatchEvent(new Event('negotiationneeded'));
+                }
+              }, 100);
             }
           });
           updateParticipantsState(prev => ({ ...prev, ...initialParticipants }));
@@ -746,7 +755,15 @@ export const useWebRTC = ({
               isSharingRemoteScreen: false,
             }
           }));
-          getOrCreatePeerConnection(member.id);
+          const pc = getOrCreatePeerConnection(member.id);
+          
+          // ✅ FIX: Forzar negociación cuando un usuario se une/reúne
+          setTimeout(() => {
+            if (pc && pc.connectionState !== 'closed') {
+              console.log(`[REVERB] Forzando negociación con nuevo miembro: ${member.id}`);
+              pc.dispatchEvent(new Event('negotiationneeded'));
+            }
+          }, 100);
         });
 
         joinedChannel.subscribed(() => {

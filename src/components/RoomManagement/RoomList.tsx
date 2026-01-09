@@ -98,6 +98,19 @@ const RoomList: React.FC = () => {
     fetchRooms();
   }, [fetchRooms]);
 
+  // 🔄 Auto-refresh: Poll for room updates every 30 seconds
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      console.log('🔄 Auto-refreshing room list...');
+      fetchRooms();
+    }, 30000); // 30 seconds
+
+    return () => {
+      clearInterval(intervalId);
+      console.log('🛑 Stopped auto-refresh for room list');
+    };
+  }, [fetchRooms]);
+
   const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {
     if (!currentUser || (currentUser.role?.description !== 'Admin' && currentUser.role?.description !== 'Teacher')) {
       console.warn('No tienes permisos para cambiar el estado de la sala.');
@@ -106,8 +119,8 @@ const RoomList: React.FC = () => {
 
     const token = localStorage.getItem('token');
     if (!token) {
-        console.error('Token de autenticación no encontrado.');
-        return;
+      console.error('Token de autenticación no encontrado.');
+      return;
     }
 
     try {
@@ -189,31 +202,28 @@ const RoomList: React.FC = () => {
         <div className="flex flex-wrap justify-center sm:justify-start gap-2 w-full sm:w-auto">
           <button
             onClick={() => setFilter('upcoming')}
-            className={`px-3 py-1 rounded-md text-sm ${
-              filter === 'upcoming'
-                ? 'bg-orange-500 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
+            className={`px-3 py-1 rounded-md text-sm ${filter === 'upcoming'
+              ? 'bg-orange-500 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
           >
             Próximas
           </button>
           <button
             onClick={() => setFilter('past')}
-            className={`px-3 py-1 rounded-md text-sm ${
-              filter === 'past'
-                ? 'bg-orange-500 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
+            className={`px-3 py-1 rounded-md text-sm ${filter === 'past'
+              ? 'bg-orange-500 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
           >
             Pasadas
           </button>
           <button
             onClick={() => setFilter('all')}
-            className={`px-3 py-1 rounded-md text-sm ${
-              filter === 'all'
-                ? 'bg-orange-500 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
+            className={`px-3 py-1 rounded-md text-sm ${filter === 'all'
+              ? 'bg-orange-500 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
           >
             Todas
           </button>
@@ -228,8 +238,8 @@ const RoomList: React.FC = () => {
             {filter === 'upcoming'
               ? 'No hay salas programadas próximamente.'
               : filter === 'past'
-              ? 'No hay salas pasadas.'
-              : 'No hay salas creadas.'}
+                ? 'No hay salas pasadas.'
+                : 'No hay salas creadas.'}
           </p>
         </div>
       ) : (
@@ -238,21 +248,27 @@ const RoomList: React.FC = () => {
             const status = getRoomStatus(room);
             const StatusIcon = status.icon;
             const now = new Date();
-            const isLive = room.start_time <= now && room.end_time >= now && room.is_active;
+
+            // 🔄 CAMBIO: La sala está "en vivo" si está en su horario programado O si está manualmente activa
+            // Esto permite que las salas se activen automáticamente cuando llega su hora
+            const isInScheduledTime = room.start_time <= now && room.end_time >= now;
+            const isLive = isInScheduledTime || (room.is_active && isInScheduledTime);
+            // Simplificado: si está en el horario programado, está disponible
+            const isLiveSimplified = isInScheduledTime;
 
             const uniqueParticipants = new Set(room.participants.map(p => p.user_id)).size;
 
             // *** LÓGICA CLAVE REVISADA AQUÍ: Determinar si el botón "Unirse" debe mostrarse ***
             let canJoinRoom = false;
             if (currentUser?.role?.description === 'Admin') {
-                // Admin puede unirse si la sala está en vivo Y (es el creador O es un participante)
-                canJoinRoom = isLive && (room.teacher_id === currentUser.id || room.participants.some(p => p.user_id === currentUser.id));
+              // Admin puede unirse si la sala está en vivo Y (es el creador O es un participante)
+              canJoinRoom = isLiveSimplified && (room.teacher_id === currentUser.id || room.participants.some(p => p.user_id === currentUser.id));
             } else if (currentUser?.role?.description === 'Teacher') {
-                // Profesor solo puede unirse si es el creador de la sala
-                canJoinRoom = isLive && room.teacher_id === currentUser.id;
+              // Profesor solo puede unirse si es el creador de la sala
+              canJoinRoom = isLiveSimplified && room.teacher_id === currentUser.id;
             } else if (currentUser?.role?.description === 'Student') {
-                // Alumno puede unirse si la sala está en vivo y él es un participante
-                canJoinRoom = isLive && room.participants.some(p => p.user_id === currentUser.id);
+              // Alumno puede unirse si la sala está en vivo y él es un participante
+              canJoinRoom = isLiveSimplified && room.participants.some(p => p.user_id === currentUser.id);
             }
 
 
@@ -320,11 +336,10 @@ const RoomList: React.FC = () => {
                     {(currentUser?.role?.description === 'Admin' || (currentUser?.role?.description === 'Teacher' && room.teacher_id === currentUser.id)) && (
                       <button
                         onClick={() => toggleRoomActive(room.id, room.is_active)}
-                        className={`px-3 py-2 rounded-md text-sm w-full flex-grow ${
-                          room.is_active
-                            ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                            : 'bg-green-100 text-green-700 hover:bg-green-200'
-                        }`}
+                        className={`px-3 py-2 rounded-md text-sm w-full flex-grow ${room.is_active
+                          ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                          : 'bg-green-100 text-green-700 hover:bg-green-200'
+                          }`}
                         disabled={room.end_time < now}
                       >
                         {room.is_active ? 'Desactivar' : 'Activar'}
