@@ -124,23 +124,37 @@ export const useWebRTC = ({
       console.log(`[PC] Creando NUEVA RTCPeerConnection para peer: ${peerId}`);
       pc = new RTCPeerConnection({
         iceServers: [
+          // STUN servers (para descubrir IP pública)
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
           { urls: 'stun:stun3.l.google.com:19302' },
           { urls: 'stun:stun4.l.google.com:19302' },
+
+          // TURN servers públicos (para NAT restrictivo)
+          // OpenRelay - Servidor TURN público gratuito
           {
-            urls: 'turn:127.0.0.1:3478?transport=udp',
-            username: 'miusuario',
-            credential: 'micontrasena',
-            realm: 'mi_servidor_turn_local'
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
           },
           {
-            urls: 'turn:127.0.0.1:3478?transport=tcp',
-            username: 'miusuario',
-            credential: 'micontrasena',
-            realm: 'mi_servidor_turn_local'
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
           },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+
+          // Backup TURN server
+          {
+            urls: 'turn:relay1.expressturn.com:3478',
+            username: 'efKFLD0K6U3VVMVDVF',
+            credential: 'Lqy8puY8Ew8xhIjx'
+          }
         ],
         iceTransportPolicy: 'all',
         bundlePolicy: 'balanced',
