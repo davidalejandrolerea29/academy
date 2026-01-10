@@ -22,6 +22,9 @@ interface UseWebRTCProps {
   onCallEnded: () => void;
   // Añadir un callback para notificar al componente padre sobre cambios de estado de participantes
   onParticipantsChange: (participants: Record<string, ParticipantState>) => void;
+  // Callbacks para notificaciones de join/leave
+  onParticipantJoined?: (name: string) => void;
+  onParticipantLeft?: (name: string) => void;
 }
 
 interface UseWebRTCResult {
@@ -45,6 +48,8 @@ export const useWebRTC = ({
   reverbService,
   onCallEnded,
   onParticipantsChange,
+  onParticipantJoined,
+  onParticipantLeft,
 }: UseWebRTCProps): UseWebRTCResult => {
   const [participants, setParticipants] = useState<Record<string, ParticipantState>>({});
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
@@ -762,6 +767,11 @@ export const useWebRTC = ({
             return;
           }
 
+          // ✅ Notificar que un participante se unió
+          if (onParticipantJoined) {
+            onParticipantJoined(member.name);
+          }
+
           updateParticipantsState(prev => ({
             ...prev,
             [member.id]: {
@@ -799,6 +809,14 @@ export const useWebRTC = ({
 
         joinedChannel.leaving((member: any) => {
           console.log(`[REVERB] LEAVING event: User ${member.id} has left the room.`);
+
+          // ✅ Notificar que un participante se fue
+          if (onParticipantLeft) {
+            // Obtener el nombre antes de eliminar el participante
+            const participantName = participants[member.id]?.name || `Usuario ${member.id}`;
+            onParticipantLeft(participantName);
+          }
+
           handlePeerDisconnected(member.id);
         });
 

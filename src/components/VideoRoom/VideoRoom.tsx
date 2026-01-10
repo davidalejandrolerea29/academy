@@ -28,6 +28,7 @@ import RemoteVideo from './RemoteVideo'; // Ajusta la ruta si RemoteVideo.tsx es
 import ChatBox, { Message } from './ChatBox';
 import ConnectionAlert from './ConnectionAlert';
 import { ConnectionIssue } from '../../types/webrtc';
+import Toast from './Toast'; // Importar componente de notificaciones
 
 const VideoRoom: React.FC<VideoRoomProps> = ({
     roomId,
@@ -2104,7 +2105,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                 isLocal={mainDisplayStream.isLocal}
                                                 volume={0}
                                                 isScreenShare={mainDisplayStream.type === 'screen'}
-                                                className="w-full h-full object-cover"
+                                                className="w-full h-full object-contain bg-black"
                                                 // AÑADE ESTAS NUEVAS PROPS:
                                                 onSelectMain={handleSelectMainStream}
                                                 isSelectedMain={mainDisplayStream.id === manualMainStreamId}
@@ -2129,7 +2130,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                                 isLocal={isLocal}
                                                                 volume={0}
                                                                 isScreenShare={type === 'screen'}
-                                                                className="w-full h-full object-cover"
+                                                                className="w-full h-full object-contain bg-black"
                                                                 // AÑADE ESTAS NUEVAS PROPS:
                                                                 onSelectMain={handleSelectMainStream}
                                                                 isSelectedMain={id === manualMainStreamId}
@@ -2181,7 +2182,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                         isLocal={isLocal}
                                                         volume={0}
                                                         isScreenShare={type === 'screen'}
-                                                        className="w-full h-full object-cover"
+                                                        className="w-full h-full object-contain bg-black"
                                                         // AÑADE ESTAS NUEVAS PROPS:
                                                         onSelectMain={handleSelectMainStream}
                                                         isSelectedMain={id === manualMainStreamId}
@@ -2431,7 +2432,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                     isLocal={true}
                                     volume={volume}
                                     isScreenShare={false}
-                                    className="w-full h-full object-cover rounded-sm"
+                                    className="w-full h-full object-contain bg-black rounded-sm"
                                 />
                             )}
 
@@ -2448,7 +2449,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                             isLocal={false}
                                             volume={0}
                                             isScreenShare={false}
-                                            className="w-full h-full object-cover rounded-sm"
+                                            className="w-full h-full object-contain bg-black rounded-sm"
                                         />
                                     )}
                                     {participant.screenStream && participant.id !== currentScreenShareOwnerId && (
@@ -2462,7 +2463,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                             isLocal={false}
                                             volume={0}
                                             isScreenShare={true}
-                                            className="w-full h-full object-cover rounded-sm"
+                                            className="w-full h-full object-contain bg-black rounded-sm"
                                         />
                                     )}
                                 </React.Fragment>
