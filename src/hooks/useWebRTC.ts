@@ -532,12 +532,15 @@ export const useWebRTC = ({
     try {
       if (type === 'offer') {
         console.log(`[SIGNAL IN] Recibida OFERTA de ${peerId}.`);
-        // Asegurarse de que los tracks locales estén presentes ANTES de setRemoteDescription
-        if (localStream) {
-          addLocalTracksToPeerConnection(pc, localStream);
-        } else {
-          console.warn(`[SIGNAL IN] localStream es NULO al recibir oferta de ${peerId}. No se pueden añadir tracks locales.`);
+
+        // ✅ FIX: Verificar que localStream existe antes de procesar la oferta
+        if (!localStream) {
+          console.error(`[SIGNAL IN] localStream es NULO al recibir oferta de ${peerId}. Rechazando oferta.`);
+          return;
         }
+
+        // Asegurarse de que los tracks locales estén presentes ANTES de setRemoteDescription
+        addLocalTracksToPeerConnection(pc, localStream);
         await pc.setRemoteDescription(new RTCSessionDescription(data));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -721,15 +724,17 @@ export const useWebRTC = ({
                 isSharingRemoteScreen: false,
               };
               getOrCreatePeerConnection(member.id);
-              
+
               // ✅ FIX: Forzar negociación con miembros existentes
               setTimeout(() => {
                 const pc = peerConnectionsRef.current[member.id];
-                if (pc && pc.connectionState !== 'closed') {
+                if (pc && pc.connectionState !== 'closed' && pc.signalingState === 'stable') {
                   console.log(`[REVERB] Forzando negociación con miembro existente: ${member.id}`);
                   pc.dispatchEvent(new Event('negotiationneeded'));
+                } else {
+                  console.warn(`[REVERB] No se puede negociar con miembro existente ${member.id}: connectionState=${pc?.connectionState}, signalingState=${pc?.signalingState}`);
                 }
-              }, 100);
+              }, 500);
             }
           });
           updateParticipantsState(prev => ({ ...prev, ...initialParticipants }));
@@ -756,14 +761,16 @@ export const useWebRTC = ({
             }
           }));
           const pc = getOrCreatePeerConnection(member.id);
-          
+
           // ✅ FIX: Forzar negociación cuando un usuario se une/reúne
           setTimeout(() => {
-            if (pc && pc.connectionState !== 'closed') {
+            if (pc && pc.connectionState !== 'closed' && pc.signalingState === 'stable') {
               console.log(`[REVERB] Forzando negociación con nuevo miembro: ${member.id}`);
               pc.dispatchEvent(new Event('negotiationneeded'));
+            } else {
+              console.warn(`[REVERB] No se puede negociar con nuevo miembro ${member.id}: connectionState=${pc?.connectionState}, signalingState=${pc?.signalingState}`);
             }
-          }, 100);
+          }, 500);
         });
 
         joinedChannel.subscribed(() => {
