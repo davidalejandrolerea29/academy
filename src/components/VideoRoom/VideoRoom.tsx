@@ -257,39 +257,11 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
                             startWithVideoMuted: false,
                             prejoinPageEnabled: false,
                             disableDeepLinking: true,
-                            enableWelcomePage: false,
-                            enableClosePage: false,
                         }}
                         interfaceConfigOverwrite={{
                             SHOW_JITSI_WATERMARK: false,
                             SHOW_WATERMARK_FOR_GUESTS: false,
                             DISABLE_JOIN_LEAVE_NOTIFICATIONS: false,
-                            TOOLBAR_BUTTONS: [
-                                'microphone',
-                                'camera',
-                                'closedcaptions',
-                                'desktop',
-                                'fullscreen',
-                                'fodeviceselection',
-                                'hangup',
-                                'profile',
-                                'chat',
-                                'recording',
-                                'livestreaming',
-                                'etherpad',
-                                'sharedvideo',
-                                'settings',
-                                'raisehand',
-                                'videoquality',
-                                'filmstrip',
-                                'feedback',
-                                'stats',
-                                'shortcuts',
-                                'tileview',
-                                'download',
-                                'help',
-                                'mute-everyone',
-                            ],
                         }}
                         userInfo={{
                             displayName: currentUser?.name || 'Usuario',
@@ -300,6 +272,7 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
                             if (iframeRef) {
                                 iframeRef.style.height = '100%';
                                 iframeRef.style.width = '100%';
+                                iframeRef.style.border = 'none';
                             }
                         }}
                     />
