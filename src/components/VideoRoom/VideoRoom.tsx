@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { JitsiMeeting } from '@jitsi/react-sdk';
 import { useAuth } from '../../contexts/AuthContext';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
@@ -7,7 +6,14 @@ import {
     PhoneOff, Minimize2, Maximize2, MessageSquare, X, Move
 } from 'lucide-react';
 
-interface VideoRoomJitsiProps {
+// Declarar el tipo global de JitsiMeetExternalAPI
+declare global {
+    interface Window {
+        JitsiMeetExternalAPI: any;
+    }
+}
+
+interface VideoRoomProps {
     roomId: string;
     onCallEnded: () => void;
     isTeacher: boolean;
@@ -16,7 +22,7 @@ interface VideoRoomJitsiProps {
     handleCallCleanup: () => void;
 }
 
-const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
+const VideoRoom: React.FC<VideoRoomProps> = ({
     roomId,
     onCallEnded,
     isTeacher,
@@ -29,7 +35,7 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-    const [participantCount, setParticipantCount] = useState(1);
+    const jitsiContainerRef = useRef<HTMLDivElement>(null);
 
     // Widget dragging state
     const [widgetPosition, setWidgetPosition] = useState({ x: 0, y: 0 });
@@ -37,7 +43,7 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const widgetRef = useRef<HTMLDivElement>(null);
 
-    const JITSI_DOMAIN = import.meta.env.VITE_JITSI_DOMAIN || 'meet.jit.si';
+    const JITSI_DOMAIN = 'meet.jit.si';
 
     // Initialize widget position when minimized
     useEffect(() => {
@@ -104,29 +110,53 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
                 document.removeEventListener('touchend', stopDragging);
             };
         }
-    }, [isDragging, handlePointerMove]);
+    }, [isDragging]);
 
-    // Jitsi API ready handler
-    const handleApiReady = (api: any) => {
+    // Initialize Jitsi External API
+    useEffect(() => {
+        if (!jitsiContainerRef.current || !window.JitsiMeetExternalAPI) {
+            console.error('[Jitsi] External API not loaded');
+            return;
+        }
+
+        const options = {
+            roomName: `academy-room-${roomId}`,
+            width: '100%',
+            height: '100%',
+            parentNode: jitsiContainerRef.current,
+            configOverwrite: {
+                startWithAudioMuted: false,
+                startWithVideoMuted: false,
+                prejoinPageEnabled: false,
+                disableDeepLinking: true,
+            },
+            interfaceConfigOverwrite: {
+                SHOW_JITSI_WATERMARK: false,
+                SHOW_WATERMARK_FOR_GUESTS: false,
+            },
+            userInfo: {
+                displayName: currentUser?.name || 'Usuario',
+                email: currentUser?.email || '',
+            },
+        };
+
+        const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, options);
         setJitsiApi(api);
-        console.log('[Jitsi] API ready');
 
-        // Listen to participant events
+        // Event listeners
+        api.addEventListener('videoConferenceJoined', () => {
+            console.log('[Jitsi] Conference joined');
+            setToast({ message: 'Conectado a la sala', type: 'success' });
+        });
+
         api.addEventListener('participantJoined', (event: any) => {
             console.log('[Jitsi] Participant joined:', event);
-            setToast({ message: `${event.displayName} se unió a la llamada`, type: 'info' });
-            setParticipantCount((prev) => prev + 1);
+            setToast({ message: `${event.displayName} se unió`, type: 'info' });
         });
 
         api.addEventListener('participantLeft', (event: any) => {
             console.log('[Jitsi] Participant left:', event);
-            setToast({ message: `${event.displayName} salió de la llamada`, type: 'info' });
-            setParticipantCount((prev) => Math.max(1, prev - 1));
-        });
-
-        api.addEventListener('videoConferenceJoined', (event: any) => {
-            console.log('[Jitsi] Conference joined:', event);
-            setToast({ message: 'Conectado a la sala', type: 'success' });
+            setToast({ message: `${event.displayName} salió`, type: 'info' });
         });
 
         api.addEventListener('videoConferenceLeft', () => {
@@ -138,7 +168,13 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
             console.log('[Jitsi] Ready to close');
             handleEndCall();
         });
-    };
+
+        return () => {
+            if (api) {
+                api.dispose();
+            }
+        };
+    }, [roomId, currentUser]);
 
     const handleEndCall = () => {
         console.log('[Jitsi] Ending call');
@@ -154,19 +190,6 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
         handleCallCleanup();
         onCallEnded();
     };
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            if (jitsiApi) {
-                try {
-                    jitsiApi.dispose();
-                } catch (error) {
-                    console.error('[Jitsi] Error disposing on unmount:', error);
-                }
-            }
-        };
-    }, [jitsiApi]);
 
     // Minimized widget view
     if (isCallMinimized) {
@@ -209,35 +232,8 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
                     </div>
                 </div>
 
-                {/* Jitsi iframe (minimized) */}
-                <div className="w-full h-[calc(100%-40px)]">
-                    <JitsiMeeting
-                        domain={JITSI_DOMAIN}
-                        roomName={`academy-room-${roomId}`}
-                        configOverwrite={{
-                            startWithAudioMuted: false,
-                            startWithVideoMuted: false,
-                            prejoinPageEnabled: false,
-                            disableDeepLinking: true,
-                        }}
-                        interfaceConfigOverwrite={{
-                            SHOW_JITSI_WATERMARK: false,
-                            SHOW_WATERMARK_FOR_GUESTS: false,
-                            DISABLE_JOIN_LEAVE_NOTIFICATIONS: false,
-                        }}
-                        userInfo={{
-                            displayName: currentUser?.name || 'Usuario',
-                            email: currentUser?.email,
-                        }}
-                        onApiReady={handleApiReady}
-                        getIFrameRef={(iframeRef) => {
-                            if (iframeRef) {
-                                iframeRef.style.height = '100%';
-                                iframeRef.style.width = '100%';
-                            }
-                        }}
-                    />
-                </div>
+                {/* Jitsi container (minimized) */}
+                <div ref={jitsiContainerRef} className="w-full h-[calc(100%-40px)]" />
             </div>
         );
     }
@@ -247,35 +243,9 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
         <div className="flex h-screen bg-gray-900">
             {/* Main video area */}
             <div className="flex-1 flex flex-col">
-                {/* Jitsi Meeting */}
+                {/* Jitsi Meeting Container */}
                 <div className="flex-1 relative">
-                    <JitsiMeeting
-                        domain={JITSI_DOMAIN}
-                        roomName={`academy-room-${roomId}`}
-                        configOverwrite={{
-                            startWithAudioMuted: false,
-                            startWithVideoMuted: false,
-                            prejoinPageEnabled: false,
-                            disableDeepLinking: true,
-                        }}
-                        interfaceConfigOverwrite={{
-                            SHOW_JITSI_WATERMARK: false,
-                            SHOW_WATERMARK_FOR_GUESTS: false,
-                            DISABLE_JOIN_LEAVE_NOTIFICATIONS: false,
-                        }}
-                        userInfo={{
-                            displayName: currentUser?.name || 'Usuario',
-                            email: currentUser?.email,
-                        }}
-                        onApiReady={handleApiReady}
-                        getIFrameRef={(iframeRef) => {
-                            if (iframeRef) {
-                                iframeRef.style.height = '100%';
-                                iframeRef.style.width = '100%';
-                                iframeRef.style.border = 'none';
-                            }
-                        }}
-                    />
+                    <div ref={jitsiContainerRef} className="w-full h-full" />
 
                     {/* Custom controls overlay */}
                     <div className="absolute top-4 right-4 flex gap-2 z-10">
@@ -331,4 +301,4 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
     );
 };
 
-export default VideoRoomJitsi;
+export default VideoRoom;
