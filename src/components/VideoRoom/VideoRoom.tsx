@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyIframe from '@daily-co/daily-js';
-import { MessageSquare, X, PhoneOff, Monitor, MonitorOff } from 'lucide-react';
+import { MessageSquare, X, PhoneOff, Monitor, MonitorOff, Minimize2 } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -19,6 +19,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     roomId,
     onCallEnded,
     handleCallCleanup,
+    toggleMinimizeCall,
 }) => {
     const { currentUser } = useAuth();
     const navigate = useNavigate();
@@ -256,13 +257,22 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     </div>
                 </div>
 
+                {/* Room info - Top Left */}
+                <div className="absolute top-4 left-4 bg-black bg-opacity-60 px-4 py-2 rounded-lg z-50">
+                    <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="text-white font-medium">Sala: {roomId}</span>
+                        <span className="text-gray-300 text-sm">({participants.length} participante{participants.length !== 1 ? 's' : ''})</span>
+                    </div>
+                </div>
+
                 {/* Floating controls overlay - Top Right */}
                 <div className="absolute top-4 right-4 flex gap-2 z-50">
                     <button
                         onClick={() => setIsChatOpen(!isChatOpen)}
                         className={`p-3 rounded-full transition-all shadow-lg ${isChatOpen
-                                ? 'bg-orange-600 hover:bg-orange-700'
-                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            ? 'bg-orange-600 hover:bg-orange-700'
+                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
                             }`}
                         title="Chat"
                     >
@@ -272,8 +282,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     <button
                         onClick={toggleScreenShare}
                         className={`p-3 rounded-full transition-all shadow-lg ${isScreenSharing
-                                ? 'bg-blue-600 hover:bg-blue-700'
-                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            ? 'bg-blue-600 hover:bg-blue-700'
+                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
                             }`}
                         title={isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}
                     >
@@ -285,21 +295,20 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     </button>
 
                     <button
+                        onClick={toggleMinimizeCall}
+                        className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all shadow-lg"
+                        title="Minimizar"
+                    >
+                        <Minimize2 className="w-5 h-5 text-white" />
+                    </button>
+
+                    <button
                         onClick={handleEndCall}
                         className="p-3 bg-red-600 hover:bg-red-700 rounded-full transition-all shadow-lg"
                         title="Colgar"
                     >
                         <PhoneOff className="w-5 h-5 text-white" />
                     </button>
-                </div>
-
-                {/* Room info - Bottom Left */}
-                <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-4 py-2 rounded-lg z-50">
-                    <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="text-white font-medium">Sala: {roomId}</span>
-                        <span className="text-gray-300 text-sm">({participants.length} participante{participants.length !== 1 ? 's' : ''})</span>
-                    </div>
                 </div>
             </div>
 
