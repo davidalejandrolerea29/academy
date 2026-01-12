@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import DailyIframe from '@daily-co/daily-js';
-import { MessageSquare, X, PhoneOff } from 'lucide-react';
+import { MessageSquare, X, PhoneOff, Monitor, MonitorOff } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -27,6 +27,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const [participants, setParticipants] = useState<any[]>([]);
+    const [isScreenSharing, setIsScreenSharing] = useState(false);
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -155,6 +156,25 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         });
     }, [participants, callObject]);
 
+    const toggleScreenShare = async () => {
+        if (!callObject) return;
+
+        try {
+            if (isScreenSharing) {
+                await callObject.stopScreenShare();
+                setIsScreenSharing(false);
+                setToast({ message: 'Compartir pantalla detenido', type: 'info' });
+            } else {
+                await callObject.startScreenShare();
+                setIsScreenSharing(true);
+                setToast({ message: 'Compartiendo pantalla', type: 'success' });
+            }
+        } catch (error) {
+            console.error('[Daily] Screen share error:', error);
+            setToast({ message: 'Error al compartir pantalla', type: 'error' });
+        }
+    };
+
     const handleEndCall = () => {
         console.log('[Daily] Ending call');
         if (callObject) {
@@ -162,6 +182,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         }
         handleCallCleanup();
         onCallEnded();
+
+        // Navigate back to rooms list
+        window.location.href = '/rooms';
     };
 
     if (isCreatingRoom) {
@@ -234,12 +257,27 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             <button
                                 onClick={() => setIsChatOpen(!isChatOpen)}
                                 className={`p-3 rounded-lg transition-all ${isChatOpen
-                                        ? 'bg-orange-600 hover:bg-orange-700'
-                                        : 'bg-gray-700 hover:bg-gray-600'
+                                    ? 'bg-orange-600 hover:bg-orange-700'
+                                    : 'bg-gray-700 hover:bg-gray-600'
                                     }`}
                                 title="Chat"
                             >
                                 <MessageSquare className="w-5 h-5 text-white" />
+                            </button>
+
+                            <button
+                                onClick={toggleScreenShare}
+                                className={`p-3 rounded-lg transition-all ${isScreenSharing
+                                    ? 'bg-blue-600 hover:bg-blue-700'
+                                    : 'bg-gray-700 hover:bg-gray-600'
+                                    }`}
+                                title={isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}
+                            >
+                                {isScreenSharing ? (
+                                    <MonitorOff className="w-5 h-5 text-white" />
+                                ) : (
+                                    <Monitor className="w-5 h-5 text-white" />
+                                )}
                             </button>
 
                             <button
