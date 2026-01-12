@@ -265,9 +265,9 @@ const VideoRoom: React.FC<VideoRoomProps> = (props) => {
                     throw new Error('No authentication token found');
                 }
 
-                // VITE_API_URL = https://portalnewpath.com/api
-                // Final URL = https://portalnewpath.com/api/v1/auth/daily/room
-                const url = `${API_URL}/v1/auth/daily/room`;
+                // Backend endpoint: /api/v1/auth/daily/room
+                // VITE_API_URL already has /api/v1, so we only add /auth/daily/room
+                const url = `${API_URL}/auth/daily/room`;
                 console.log('[Daily] Calling URL:', url);
                 console.log('[Daily] Room ID:', roomId);
 
