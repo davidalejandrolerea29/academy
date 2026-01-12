@@ -156,17 +156,40 @@ const DailyVideoRoom: React.FC<Omit<VideoRoomProps, 'isTeacher'>> = ({
                 {/* Video Grid */}
                 <div className="flex-1 relative bg-gray-950 p-4">
                     <div className="grid grid-cols-2 gap-4 h-full">
-                        {participantIds.map((id) => (
-                            <div key={id} className="relative bg-gray-800 rounded-lg overflow-hidden">
-                                <video
-                                    id={`video-${id}`}
-                                    autoPlay
-                                    muted={id === localParticipant?.session_id}
-                                    playsInline
-                                    className="w-full h-full object-cover"
-                                />
-                            </div>
-                        ))}
+                        {participantIds.map((id) => {
+                            const participant = callObject?.participants()[id];
+                            const isLocal = id === localParticipant?.session_id;
+
+                            return (
+                                <div key={id} className="relative bg-gray-800 rounded-lg overflow-hidden">
+                                    <video
+                                        ref={(videoEl) => {
+                                            if (videoEl && participant) {
+                                                if (participant.video) {
+                                                    videoEl.srcObject = new MediaStream([participant.videoTrack]);
+                                                }
+                                                if (participant.audio && !isLocal) {
+                                                    videoEl.srcObject = new MediaStream([
+                                                        ...(videoEl.srcObject?.getTracks() || []),
+                                                        participant.audioTrack
+                                                    ]);
+                                                }
+                                            }
+                                        }}
+                                        autoPlay
+                                        muted={isLocal}
+                                        playsInline
+                                        className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded">
+                                        <span className="text-white text-sm">
+                                            {participant?.user_name || 'Usuario'}
+                                            {isLocal && ' (Tú)'}
+                                        </span>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
 
                     {/* Controls overlay */}
