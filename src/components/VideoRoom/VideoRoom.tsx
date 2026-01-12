@@ -1,17 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
-import {
-    PhoneOff, Minimize2, Maximize2, MessageSquare, X, Move
-} from 'lucide-react';
-
-// Declarar el tipo global de JitsiMeetExternalAPI
-declare global {
-    interface Window {
-        JitsiMeetExternalAPI: any;
-    }
-}
+import { MessageSquare, X, ExternalLink } from 'lucide-react';
 
 interface VideoRoomProps {
     roomId: string;
@@ -25,257 +16,120 @@ interface VideoRoomProps {
 const VideoRoom: React.FC<VideoRoomProps> = ({
     roomId,
     onCallEnded,
-    isTeacher,
-    isCallMinimized,
-    toggleMinimizeCall,
-    handleCallCleanup,
 }) => {
     const { currentUser } = useAuth();
-    const [jitsiApi, setJitsiApi] = useState<any>(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
-    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-    const jitsiContainerRef = useRef<HTMLDivElement>(null);
+    const [jitsiWindow, setJitsiWindow] = useState<Window | null>(null);
 
-    // Widget dragging state
-    const [widgetPosition, setWidgetPosition] = useState({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-    const widgetRef = useRef<HTMLDivElement>(null);
+    const openJitsiInNewWindow = () => {
+        const jitsiUrl = `https://meet.jit.si/academy-room-${roomId}#userInfo.displayName="${encodeURIComponent(currentUser?.name || 'Usuario')}"`;
 
-    const JITSI_DOMAIN = 'meet.jit.si';
+        const width = 1200;
+        const height = 800;
+        const left = (window.screen.width - width) / 2;
+        const top = (window.screen.height - height) / 2;
 
-    // Initialize widget position when minimized
-    useEffect(() => {
-        if (isCallMinimized && widgetPosition.x === 0 && widgetPosition.y === 0) {
-            const widgetWidth = 320;
-            const widgetHeight = 240;
-            setWidgetPosition({
-                x: window.innerWidth - widgetWidth - 20,
-                y: window.innerHeight - widgetHeight - 20,
-            });
-        }
-    }, [isCallMinimized, widgetPosition]);
-
-    // Dragging handlers
-    const startDragging = (clientX: number, clientY: number) => {
-        if (!widgetRef.current) return;
-        const rect = widgetRef.current.getBoundingClientRect();
-        setDragOffset({
-            x: clientX - rect.left,
-            y: clientY - rect.top,
-        });
-        setIsDragging(true);
-    };
-
-    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
-        if (!isDragging) return;
-        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
-        const newX = clientX - dragOffset.x;
-        const newY = clientY - dragOffset.y;
-
-        const widgetWidth = widgetRef.current?.offsetWidth || 320;
-        const widgetHeight = widgetRef.current?.offsetHeight || 240;
-
-        const maxX = window.innerWidth - widgetWidth;
-        const maxY = window.innerHeight - widgetHeight;
-
-        setWidgetPosition({
-            x: Math.max(0, Math.min(newX, maxX)),
-            y: Math.max(0, Math.min(newY, maxY)),
-        });
-
-        if ('touches' in e) {
-            e.preventDefault();
-        }
-    };
-
-    const stopDragging = () => {
-        setIsDragging(false);
-    };
-
-    useEffect(() => {
-        if (isDragging) {
-            document.addEventListener('mousemove', handlePointerMove);
-            document.addEventListener('mouseup', stopDragging);
-            document.addEventListener('touchmove', handlePointerMove, { passive: false });
-            document.addEventListener('touchend', stopDragging);
-
-            return () => {
-                document.removeEventListener('mousemove', handlePointerMove);
-                document.removeEventListener('mouseup', stopDragging);
-                document.removeEventListener('touchmove', handlePointerMove);
-                document.removeEventListener('touchend', stopDragging);
-            };
-        }
-    }, [isDragging]);
-
-    // Initialize Jitsi External API
-    useEffect(() => {
-        if (!jitsiContainerRef.current || !window.JitsiMeetExternalAPI) {
-            console.error('[Jitsi] External API not loaded');
-            return;
-        }
-
-        const options = {
-            roomName: `academy-room-${roomId}`,
-            width: '100%',
-            height: '100%',
-            parentNode: jitsiContainerRef.current,
-            configOverwrite: {
-                startWithAudioMuted: false,
-                startWithVideoMuted: false,
-                prejoinPageEnabled: false,
-                disableDeepLinking: true,
-            },
-            interfaceConfigOverwrite: {
-                SHOW_JITSI_WATERMARK: false,
-                SHOW_WATERMARK_FOR_GUESTS: false,
-            },
-            userInfo: {
-                displayName: currentUser?.name || 'Usuario',
-                email: currentUser?.email || '',
-            },
-        };
-
-        const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, options);
-        setJitsiApi(api);
-
-        // Event listeners
-        api.addEventListener('videoConferenceJoined', () => {
-            console.log('[Jitsi] Conference joined');
-            setToast({ message: 'Conectado a la sala', type: 'success' });
-        });
-
-        api.addEventListener('participantJoined', (event: any) => {
-            console.log('[Jitsi] Participant joined:', event);
-            setToast({ message: `${event.displayName} se unió`, type: 'info' });
-        });
-
-        api.addEventListener('participantLeft', (event: any) => {
-            console.log('[Jitsi] Participant left:', event);
-            setToast({ message: `${event.displayName} salió`, type: 'info' });
-        });
-
-        api.addEventListener('videoConferenceLeft', () => {
-            console.log('[Jitsi] Conference left');
-            handleEndCall();
-        });
-
-        api.addEventListener('readyToClose', () => {
-            console.log('[Jitsi] Ready to close');
-            handleEndCall();
-        });
-
-        return () => {
-            if (api) {
-                api.dispose();
-            }
-        };
-    }, [roomId, currentUser]);
-
-    const handleEndCall = () => {
-        console.log('[Jitsi] Ending call');
-
-        if (jitsiApi) {
-            try {
-                jitsiApi.dispose();
-            } catch (error) {
-                console.error('[Jitsi] Error disposing API:', error);
-            }
-        }
-
-        handleCallCleanup();
-        onCallEnded();
-    };
-
-    // Minimized widget view
-    if (isCallMinimized) {
-        return (
-            <div
-                ref={widgetRef}
-                className="fixed z-50 bg-gray-900 rounded-lg shadow-2xl overflow-hidden"
-                style={{
-                    left: `${widgetPosition.x}px`,
-                    top: `${widgetPosition.y}px`,
-                    width: '320px',
-                    height: '240px',
-                }}
-            >
-                {/* Drag handle */}
-                <div
-                    className="bg-gray-800 p-2 flex items-center justify-between cursor-move"
-                    onMouseDown={(e) => startDragging(e.clientX, e.clientY)}
-                    onTouchStart={(e) => startDragging(e.touches[0].clientX, e.touches[0].clientY)}
-                >
-                    <div className="flex items-center gap-2">
-                        <Move className="w-4 h-4 text-gray-400" />
-                        <span className="text-white text-sm font-medium">Llamada en curso</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={toggleMinimizeCall}
-                            className="p-1 hover:bg-gray-700 rounded"
-                            title="Maximizar"
-                        >
-                            <Maximize2 className="w-4 h-4 text-white" />
-                        </button>
-                        <button
-                            onClick={handleEndCall}
-                            className="p-1 hover:bg-red-600 rounded"
-                            title="Colgar"
-                        >
-                            <PhoneOff className="w-4 h-4 text-white" />
-                        </button>
-                    </div>
-                </div>
-
-                {/* Jitsi container (minimized) */}
-                <div ref={jitsiContainerRef} className="w-full h-[calc(100%-40px)]" />
-            </div>
+        const newWindow = window.open(
+            jitsiUrl,
+            'JitsiMeet',
+            `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
         );
-    }
 
-    // Full screen view
+        setJitsiWindow(newWindow);
+
+        // Check if window was closed
+        const checkClosed = setInterval(() => {
+            if (newWindow && newWindow.closed) {
+                clearInterval(checkClosed);
+                setJitsiWindow(null);
+                onCallEnded();
+            }
+        }, 1000);
+    };
+
     return (
         <div className="flex h-screen bg-gray-900">
-            {/* Main video area */}
-            <div className="flex-1 flex flex-col">
-                {/* Jitsi Meeting Container */}
-                <div className="flex-1 relative">
-                    <div ref={jitsiContainerRef} className="w-full h-full" />
+            {/* Main area */}
+            <div className="flex-1 flex flex-col items-center justify-center p-8">
+                <div className="max-w-2xl w-full bg-gray-800 rounded-lg shadow-2xl p-8">
+                    <div className="text-center mb-8">
+                        <h1 className="text-3xl font-bold text-white mb-4">
+                            Sala de Videollamada
+                        </h1>
+                        <p className="text-gray-400 mb-2">
+                            Sala: <span className="text-orange-500 font-mono">academy-room-{roomId}</span>
+                        </p>
+                        <p className="text-gray-400">
+                            Usuario: <span className="text-blue-400">{currentUser?.name}</span>
+                        </p>
+                    </div>
 
-                    {/* Custom controls overlay */}
-                    <div className="absolute top-4 right-4 flex gap-2 z-10">
+                    <div className="space-y-4">
+                        {!jitsiWindow ? (
+                            <>
+                                <button
+                                    onClick={openJitsiInNewWindow}
+                                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 px-6 rounded-lg flex items-center justify-center gap-3 transition-all transform hover:scale-105"
+                                >
+                                    <ExternalLink className="w-6 h-6" />
+                                    Unirse a la Videollamada
+                                </button>
+
+                                <div className="bg-blue-900 bg-opacity-30 border border-blue-500 rounded-lg p-4">
+                                    <p className="text-blue-300 text-sm">
+                                        💡 <strong>Nota:</strong> La videollamada se abrirá en una nueva ventana usando Jitsi Meet.
+                                        Esto evita problemas de bloqueo de recursos.
+                                    </p>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="bg-green-900 bg-opacity-30 border border-green-500 rounded-lg p-6 text-center">
+                                <p className="text-green-300 text-lg mb-4">
+                                    ✅ Videollamada activa en otra ventana
+                                </p>
+                                <p className="text-gray-400 text-sm mb-4">
+                                    Si no ves la ventana, búscala en tu barra de tareas o minimizada.
+                                </p>
+                                <button
+                                    onClick={() => jitsiWindow?.focus()}
+                                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg"
+                                >
+                                    Enfocar Ventana
+                                </button>
+                            </div>
+                        )}
+
                         <button
                             onClick={() => setIsChatOpen(!isChatOpen)}
-                            className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all"
-                            title="Chat"
+                            className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg flex items-center justify-center gap-3 transition-all"
                         >
-                            <MessageSquare className="w-5 h-5 text-white" />
+                            <MessageSquare className="w-5 h-5" />
+                            {isChatOpen ? 'Ocultar Chat' : 'Abrir Chat'}
                         </button>
-                        <button
-                            onClick={toggleMinimizeCall}
-                            className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all"
-                            title="Minimizar"
-                        >
-                            <Minimize2 className="w-5 h-5 text-white" />
-                        </button>
+                    </div>
+
+                    <div className="mt-8 bg-yellow-900 bg-opacity-30 border border-yellow-500 rounded-lg p-4">
+                        <p className="text-yellow-300 text-sm">
+                            ⚠️ <strong>Solución Temporal:</strong> Debido a problemas de bloqueo de recursos (AdBlock, extensiones),
+                            la videollamada se abre en una ventana separada. Esto garantiza que Jitsi funcione correctamente.
+                        </p>
                     </div>
                 </div>
             </div>
 
-            {/* Chat sidebar using existing ChatBox */}
+            {/* Chat sidebar */}
             {isChatOpen && (
-                <div className="w-80 bg-gray-800 border-l border-gray-700">
+                <div className="w-96 bg-gray-800 border-l border-gray-700 shadow-2xl">
                     <div className="h-full flex flex-col">
                         <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between">
-                            <h3 className="text-white font-semibold">Chat</h3>
+                            <h3 className="text-white font-semibold flex items-center gap-2">
+                                <MessageSquare className="w-5 h-5" />
+                                Chat de la Sala
+                            </h3>
                             <button
                                 onClick={() => setIsChatOpen(false)}
-                                className="p-1 hover:bg-gray-700 rounded"
+                                className="p-1 hover:bg-gray-700 rounded transition-all"
                             >
                                 <X className="w-5 h-5 text-gray-400" />
                             </button>
@@ -287,15 +141,6 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                         />
                     </div>
                 </div>
-            )}
-
-            {/* Toast notifications */}
-            {toast && (
-                <Toast
-                    message={toast.message}
-                    type={toast.type}
-                    onClose={() => setToast(null)}
-                />
             )}
         </div>
     );
