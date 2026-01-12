@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { DailyProvider, useDaily, useParticipantIds, useScreenShare, useLocalParticipant } from '@daily-co/daily-react';
 import DailyIframe from '@daily-co/daily-js';
 import { useAuth } from '../../contexts/AuthContext';
