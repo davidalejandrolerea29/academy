@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DailyIframe from '@daily-co/daily-js';
 import { MessageSquare, X, PhoneOff, Monitor, MonitorOff } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
@@ -20,6 +21,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     handleCallCleanup,
 }) => {
     const { currentUser } = useAuth();
+    const navigate = useNavigate();
     const [callObject, setCallObject] = useState<any>(null);
     const [isCreatingRoom, setIsCreatingRoom] = useState(false);
     const [roomError, setRoomError] = useState<string | null>(null);
@@ -146,12 +148,24 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
         participants.forEach((participant: any) => {
             const videoEl = document.getElementById(`video-${participant.session_id}`) as HTMLVideoElement;
-            if (videoEl && participant.tracks?.video?.persistentTrack) {
-                const stream = new MediaStream([participant.tracks.video.persistentTrack]);
-                if (participant.tracks?.audio?.persistentTrack && !participant.local) {
-                    stream.addTrack(participant.tracks.audio.persistentTrack);
+            if (videoEl) {
+                const tracks = [];
+
+                // Check for screen share first (priority)
+                if (participant.tracks?.screenVideo?.persistentTrack) {
+                    tracks.push(participant.tracks.screenVideo.persistentTrack);
+                } else if (participant.tracks?.video?.persistentTrack) {
+                    tracks.push(participant.tracks.video.persistentTrack);
                 }
-                videoEl.srcObject = stream;
+
+                // Add audio if not local
+                if (participant.tracks?.audio?.persistentTrack && !participant.local) {
+                    tracks.push(participant.tracks.audio.persistentTrack);
+                }
+
+                if (tracks.length > 0) {
+                    videoEl.srcObject = new MediaStream(tracks);
+                }
             }
         });
     }, [participants, callObject]);
@@ -183,8 +197,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         handleCallCleanup();
         onCallEnded();
 
-        // Navigate back to rooms list
-        window.location.href = '/rooms';
+        // Navigate back to rooms list using React Router
+        navigate('/rooms');
     };
 
     if (isCreatingRoom) {
@@ -218,7 +232,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     return (
         <div className="flex h-screen bg-gray-900 overflow-hidden">
             {/* Main video area */}
-            <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 flex flex-col min-w-0 relative">
                 {/* Video grid */}
                 <div className="flex-1 relative bg-black p-4" ref={videoContainerRef}>
                     <div className={`grid gap-4 h-full ${participants.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -242,57 +256,49 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     </div>
                 </div>
 
-                {/* Bottom control bar */}
-                <div className="bg-gray-800 border-t border-gray-700 p-4 flex-shrink-0">
-                    <div className="flex items-center justify-between max-w-4xl mx-auto">
-                        {/* Left side - Room info */}
-                        <div className="flex items-center gap-3">
-                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                            <span className="text-white font-medium">Sala: {roomId}</span>
-                            <span className="text-gray-400 text-sm">({participants.length} participante{participants.length !== 1 ? 's' : ''})</span>
-                        </div>
+                {/* Floating controls overlay - Top Right */}
+                <div className="absolute top-4 right-4 flex gap-2 z-50">
+                    <button
+                        onClick={() => setIsChatOpen(!isChatOpen)}
+                        className={`p-3 rounded-full transition-all shadow-lg ${isChatOpen
+                                ? 'bg-orange-600 hover:bg-orange-700'
+                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            }`}
+                        title="Chat"
+                    >
+                        <MessageSquare className="w-5 h-5 text-white" />
+                    </button>
 
-                        {/* Center - Main controls */}
-                        <div className="flex items-center gap-3">
-                            <button
-                                onClick={() => setIsChatOpen(!isChatOpen)}
-                                className={`p-3 rounded-lg transition-all ${isChatOpen
-                                    ? 'bg-orange-600 hover:bg-orange-700'
-                                    : 'bg-gray-700 hover:bg-gray-600'
-                                    }`}
-                                title="Chat"
-                            >
-                                <MessageSquare className="w-5 h-5 text-white" />
-                            </button>
+                    <button
+                        onClick={toggleScreenShare}
+                        className={`p-3 rounded-full transition-all shadow-lg ${isScreenSharing
+                                ? 'bg-blue-600 hover:bg-blue-700'
+                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            }`}
+                        title={isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}
+                    >
+                        {isScreenSharing ? (
+                            <MonitorOff className="w-5 h-5 text-white" />
+                        ) : (
+                            <Monitor className="w-5 h-5 text-white" />
+                        )}
+                    </button>
 
-                            <button
-                                onClick={toggleScreenShare}
-                                className={`p-3 rounded-lg transition-all ${isScreenSharing
-                                    ? 'bg-blue-600 hover:bg-blue-700'
-                                    : 'bg-gray-700 hover:bg-gray-600'
-                                    }`}
-                                title={isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}
-                            >
-                                {isScreenSharing ? (
-                                    <MonitorOff className="w-5 h-5 text-white" />
-                                ) : (
-                                    <Monitor className="w-5 h-5 text-white" />
-                                )}
-                            </button>
+                    <button
+                        onClick={handleEndCall}
+                        className="p-3 bg-red-600 hover:bg-red-700 rounded-full transition-all shadow-lg"
+                        title="Colgar"
+                    >
+                        <PhoneOff className="w-5 h-5 text-white" />
+                    </button>
+                </div>
 
-                            <button
-                                onClick={handleEndCall}
-                                className="p-3 bg-red-600 hover:bg-red-700 rounded-lg transition-all"
-                                title="Colgar"
-                            >
-                                <PhoneOff className="w-5 h-5 text-white" />
-                            </button>
-                        </div>
-
-                        {/* Right side - User info */}
-                        <div className="text-gray-400 text-sm">
-                            {currentUser?.name || 'Usuario'}
-                        </div>
+                {/* Room info - Bottom Left */}
+                <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-4 py-2 rounded-lg z-50">
+                    <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="text-white font-medium">Sala: {roomId}</span>
+                        <span className="text-gray-300 text-sm">({participants.length} participante{participants.length !== 1 ? 's' : ''})</span>
                     </div>
                 </div>
             </div>
@@ -317,7 +323,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
             {/* Toast notifications */}
             {toast && (
-                <div className="fixed top-4 right-4 z-50">
+                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
                     <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
                 </div>
             )}

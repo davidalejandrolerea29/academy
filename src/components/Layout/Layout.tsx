@@ -158,7 +158,7 @@ const Layout: React.FC = () => {
   };
 
   return (
-    
+
     <div className="flex h-screen bg-gray-50">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
@@ -193,9 +193,9 @@ const Layout: React.FC = () => {
             >
               <X className="w-6 h-6" />
             </button>
-            
+
           </div>
- 
+
           {currentUser && (
             <>
               <div className="p-4 border-b">
@@ -216,7 +216,7 @@ const Layout: React.FC = () => {
                 </div>
               </div>
 
-              
+
 
               <nav className="flex-1 p-4 space-y-1">
                 <NavLink
@@ -262,15 +262,15 @@ const Layout: React.FC = () => {
                     Gestión de Usuarios
                   </NavLink>
                 )}
-                
+
               </nav>
-    <div className="mt-2 px-4">
-    <ConnectionWidget
-      webSocketConnected={isWebSocketConnected}
-      isConnecting={isConnecting}
-      onStatusChange={(status) => setConnectionStatus(status)}
-    />
-  </div>
+              <div className="mt-2 px-4">
+                <ConnectionWidget
+                  webSocketConnected={isWebSocketConnected}
+                  isConnecting={isConnecting}
+                  onStatusChange={(status) => setConnectionStatus(status)}
+                />
+              </div>
               <div className="p-4 border-t mt-auto">
                 <button
                   onClick={handleLogout}
@@ -303,11 +303,11 @@ const Layout: React.FC = () => {
 
             {/* --- INDICADOR DE CONEXIÓN AÑADIDO AQUÍ --- */}
             <div className="ml-auto mr-4"> {/* Alinea a la derecha y añade margen */}
-             
-            
+
+
             </div>
             {/* ------------------------------------------- */}
- 
+
           </div>
         </header>
 
@@ -329,14 +329,13 @@ const Layout: React.FC = () => {
           }
         `}>
           <VideoRoom
-  roomId={activeRoomId}
-  onCallEnded={endCall}
-  isTeacher={currentUser?.role_description === 'Teacher'}
-  isCallMinimized={isCallMinimized}
-  toggleMinimizeCall={toggleMinimizeCall}
-  reverbService={webSocketService}
-  disableVideo={connectionStatus !== "good"} // baja la calidad si la conexión es mala
-/>
+            roomId={activeRoomId}
+            onCallEnded={endCall}
+            isTeacher={currentUser?.role_description === 'Teacher'}
+            isCallMinimized={isCallMinimized}
+            toggleMinimizeCall={toggleMinimizeCall}
+            handleCallCleanup={() => { }}
+          />
 
         </div>
       )}
