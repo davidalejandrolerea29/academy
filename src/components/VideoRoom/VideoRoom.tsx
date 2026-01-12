@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyIframe from '@daily-co/daily-js';
-import { MessageSquare, X, PhoneOff, Monitor, MonitorOff, Minimize2 } from 'lucide-react';
+import { MessageSquare, X, PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2 } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -20,18 +20,58 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     onCallEnded,
     handleCallCleanup,
     toggleMinimizeCall,
+    isCallMinimized,
 }) => {
     const { currentUser } = useAuth();
     const navigate = useNavigate();
     const [callObject, setCallObject] = useState<any>(null);
     const [isCreatingRoom, setIsCreatingRoom] = useState(false);
     const [roomError, setRoomError] = useState<string | null>(null);
-    const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const [participants, setParticipants] = useState<any[]>([]);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const videoContainerRef = useRef<HTMLDivElement>(null);
+
+    // Draggable widget state
+    const [widgetPosition, setWidgetPosition] = useState({ x: window.innerWidth - 420, y: 20 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+    // Handle drag start
+    const handleDragStart = (e: React.MouseEvent) => {
+        setIsDragging(true);
+        setDragOffset({
+            x: e.clientX - widgetPosition.x,
+            y: e.clientY - widgetPosition.y,
+        });
+    };
+
+    // Handle drag move
+    useEffect(() => {
+        const handleDragMove = (e: MouseEvent) => {
+            if (isDragging) {
+                setWidgetPosition({
+                    x: e.clientX - dragOffset.x,
+                    y: e.clientY - dragOffset.y,
+                });
+            }
+        };
+
+        const handleDragEnd = () => {
+            setIsDragging(false);
+        };
+
+        if (isDragging) {
+            document.addEventListener('mousemove', handleDragMove);
+            document.addEventListener('mouseup', handleDragEnd);
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleDragMove);
+            document.removeEventListener('mouseup', handleDragEnd);
+        };
+    }, [isDragging, dragOffset]);
 
     useEffect(() => {
         let mounted = true;
@@ -230,6 +270,80 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         );
     }
 
+    // Minimized draggable widget
+    if (isCallMinimized) {
+        return (
+            <>
+                <div
+                    className="fixed z-50 bg-gray-900 rounded-lg shadow-2xl overflow-hidden"
+                    style={{
+                        left: `${widgetPosition.x}px`,
+                        top: `${widgetPosition.y}px`,
+                        width: '400px',
+                        cursor: isDragging ? 'grabbing' : 'grab',
+                    }}
+                    onMouseDown={handleDragStart}
+                >
+                    {/* Widget header */}
+                    <div className="bg-gray-800 px-3 py-2 flex items-center justify-between border-b border-gray-700">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <span className="text-white text-sm font-medium">Sala: {roomId}</span>
+                        </div>
+                        <div className="flex gap-1">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleMinimizeCall();
+                                }}
+                                className="p-1 hover:bg-gray-700 rounded"
+                                title="Maximizar"
+                            >
+                                <Maximize2 className="w-4 h-4 text-white" />
+                            </button>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEndCall();
+                                }}
+                                className="p-1 hover:bg-red-700 rounded"
+                                title="Colgar"
+                            >
+                                <PhoneOff className="w-4 h-4 text-white" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Mini video grid - shows both participants */}
+                    <div className="relative bg-black grid grid-cols-2 gap-1 p-1" style={{ height: '225px' }}>
+                        {participants.map((participant: any) => (
+                            <div key={participant.session_id} className="relative bg-gray-800 rounded overflow-hidden">
+                                <video
+                                    id={`video-mini-${participant.session_id}`}
+                                    autoPlay
+                                    playsInline
+                                    muted={participant.local}
+                                    className="w-full h-full object-cover"
+                                />
+                                <div className="absolute bottom-1 left-1 text-white text-xs bg-black bg-opacity-60 px-2 py-0.5 rounded">
+                                    {participant.user_name || 'Usuario'}{participant.local && ' (Tú)'}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Toast notifications */}
+                {toast && (
+                    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
+                        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+                    </div>
+                )}
+            </>
+        );
+    }
+
+    // Full screen view
     return (
         <div className="flex h-screen bg-gray-900 overflow-hidden">
             {/* Main video area */}
@@ -269,21 +383,10 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 {/* Floating controls overlay - Top Right */}
                 <div className="absolute top-4 right-4 flex gap-2 z-50">
                     <button
-                        onClick={() => setIsChatOpen(!isChatOpen)}
-                        className={`p-3 rounded-full transition-all shadow-lg ${isChatOpen
-                            ? 'bg-orange-600 hover:bg-orange-700'
-                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
-                            }`}
-                        title="Chat"
-                    >
-                        <MessageSquare className="w-5 h-5 text-white" />
-                    </button>
-
-                    <button
                         onClick={toggleScreenShare}
                         className={`p-3 rounded-full transition-all shadow-lg ${isScreenSharing
-                            ? 'bg-blue-600 hover:bg-blue-700'
-                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                                ? 'bg-blue-600 hover:bg-blue-700'
+                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
                             }`}
                         title={isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}
                     >
@@ -312,23 +415,15 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 </div>
             </div>
 
-            {/* Chat sidebar */}
-            {isChatOpen && (
-                <div className="w-96 bg-gray-800 border-l border-gray-700 flex flex-col flex-shrink-0">
-                    <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
-                        <h3 className="text-white font-semibold text-lg">Chat</h3>
-                        <button
-                            onClick={() => setIsChatOpen(false)}
-                            className="p-2 hover:bg-gray-700 rounded-lg transition-all"
-                        >
-                            <X className="w-5 h-5 text-gray-400" />
-                        </button>
-                    </div>
-                    <div className="flex-1 min-h-0">
-                        <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />
-                    </div>
+            {/* Chat sidebar - ALWAYS OPEN */}
+            <div className="w-96 bg-gray-800 border-l border-gray-700 flex flex-col flex-shrink-0">
+                <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
+                    <h3 className="text-white font-semibold text-lg">Chat</h3>
                 </div>
-            )}
+                <div className="flex-1 min-h-0">
+                    <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />
+                </div>
+            </div>
 
             {/* Toast notifications */}
             {toast && (
