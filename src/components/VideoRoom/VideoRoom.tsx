@@ -88,7 +88,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     document.getElementById('daily-container')!,
                     {
                         showLeaveButton: false,
-                        showFullscreenButton: true,
+                        showFullscreenButton: false,
+                        showLocalVideo: true,
+                        showParticipantsBar: false,
                         iframeStyle: {
                             position: 'absolute',
                             top: '0',
@@ -97,6 +99,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             height: '100%',
                             border: '0',
                         },
+                        customTrayButtons: {}, // Remove all default buttons
                     }
                 );
 
@@ -184,16 +187,16 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     }
 
     return (
-        <div className="flex h-screen bg-gray-900">
+        <div className="flex h-screen bg-gray-900 overflow-hidden">
             {/* Main video area */}
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col min-w-0">
                 {/* Daily.co iframe container */}
                 <div className="flex-1 relative bg-black">
-                    <div id="daily-container" className="w-full h-full" />
+                    <div id="daily-container" className="absolute inset-0" />
                 </div>
 
                 {/* Bottom control bar */}
-                <div className="bg-gray-800 border-t border-gray-700 p-4">
+                <div className="bg-gray-800 border-t border-gray-700 p-4 flex-shrink-0">
                     <div className="flex items-center justify-between max-w-4xl mx-auto">
                         {/* Left side - Room info */}
                         <div className="flex items-center gap-3">
@@ -233,8 +236,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
             {/* Chat sidebar */}
             {isChatOpen && (
-                <div className="w-96 bg-gray-800 border-l border-gray-700 flex flex-col">
-                    <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between">
+                <div className="w-96 bg-gray-800 border-l border-gray-700 flex flex-col flex-shrink-0">
+                    <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
                         <h3 className="text-white font-semibold text-lg">Chat</h3>
                         <button
                             onClick={() => setIsChatOpen(false)}
@@ -243,7 +246,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             <X className="w-5 h-5 text-gray-400" />
                         </button>
                     </div>
-                    <div className="flex-1 overflow-hidden">
+                    <div className="flex-1 min-h-0">
                         <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />
                     </div>
                 </div>
