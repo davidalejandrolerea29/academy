@@ -185,31 +185,39 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
     // Update video elements when participants change
     useEffect(() => {
-        if (!callObject || !videoContainerRef.current) return;
+        if (!callObject) return;
 
         participants.forEach((participant: any) => {
-            const videoEl = document.getElementById(`video-${participant.session_id}`) as HTMLVideoElement;
-            if (videoEl) {
-                const tracks = [];
+            // Update both full-screen and minimized video elements
+            const videoIds = [
+                `video-${participant.session_id}`,
+                `video-mini-${participant.session_id}`
+            ];
 
-                // Check for screen share first (priority)
-                if (participant.tracks?.screenVideo?.persistentTrack) {
-                    tracks.push(participant.tracks.screenVideo.persistentTrack);
-                } else if (participant.tracks?.video?.persistentTrack) {
-                    tracks.push(participant.tracks.video.persistentTrack);
-                }
+            videoIds.forEach(videoId => {
+                const videoEl = document.getElementById(videoId) as HTMLVideoElement;
+                if (videoEl) {
+                    const tracks = [];
 
-                // Add audio if not local
-                if (participant.tracks?.audio?.persistentTrack && !participant.local) {
-                    tracks.push(participant.tracks.audio.persistentTrack);
-                }
+                    // Check for screen share first (priority)
+                    if (participant.tracks?.screenVideo?.persistentTrack) {
+                        tracks.push(participant.tracks.screenVideo.persistentTrack);
+                    } else if (participant.tracks?.video?.persistentTrack) {
+                        tracks.push(participant.tracks.video.persistentTrack);
+                    }
 
-                if (tracks.length > 0) {
-                    videoEl.srcObject = new MediaStream(tracks);
+                    // Add audio if not local
+                    if (participant.tracks?.audio?.persistentTrack && !participant.local) {
+                        tracks.push(participant.tracks.audio.persistentTrack);
+                    }
+
+                    if (tracks.length > 0) {
+                        videoEl.srcObject = new MediaStream(tracks);
+                    }
                 }
-            }
+            });
         });
-    }, [participants, callObject]);
+    }, [participants, callObject, isCallMinimized]);
 
     const toggleScreenShare = async () => {
         if (!callObject) return;
@@ -385,8 +393,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     <button
                         onClick={toggleScreenShare}
                         className={`p-3 rounded-full transition-all shadow-lg ${isScreenSharing
-                                ? 'bg-blue-600 hover:bg-blue-700'
-                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            ? 'bg-blue-600 hover:bg-blue-700'
+                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
                             }`}
                         title={isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}
                     >
