@@ -83,7 +83,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
                 if (!mounted) return;
 
-                // Create Daily iframe
+                // Create Daily iframe with custom styling to hide controls
                 const frame = DailyIframe.createFrame(
                     document.getElementById('daily-container')!,
                     {
@@ -96,10 +96,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             top: '0',
                             left: '0',
                             width: '100%',
-                            height: '100%',
+                            height: 'calc(100% + 80px)', // Extend iframe to hide bottom controls
                             border: '0',
                         },
-                        customTrayButtons: {}, // Remove all default buttons
                     }
                 );
 
@@ -191,7 +190,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             {/* Main video area */}
             <div className="flex-1 flex flex-col min-w-0">
                 {/* Daily.co iframe container */}
-                <div className="flex-1 relative bg-black">
+                <div className="flex-1 relative bg-black overflow-hidden">
                     <div id="daily-container" className="absolute inset-0" />
                 </div>
 
@@ -209,8 +208,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             <button
                                 onClick={() => setIsChatOpen(!isChatOpen)}
                                 className={`p-3 rounded-lg transition-all ${isChatOpen
-                                        ? 'bg-orange-600 hover:bg-orange-700'
-                                        : 'bg-gray-700 hover:bg-gray-600'
+                                    ? 'bg-orange-600 hover:bg-orange-700'
+                                    : 'bg-gray-700 hover:bg-gray-600'
                                     }`}
                                 title="Chat"
                             >
