@@ -17,6 +17,73 @@ interface VideoRoomProps {
     handleCallCleanup: () => void;
 }
 
+// Helper component to render individual video
+const DailyVideo: React.FC<{ sessionId: string; isLocal: boolean; callObject: any }> = ({
+    sessionId,
+    isLocal,
+    callObject
+}) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [userName, setUserName] = useState('Usuario');
+
+    useEffect(() => {
+        if (!callObject || !videoRef.current) return;
+
+        const updateVideo = () => {
+            const participants = callObject.participants();
+            const participant = participants[sessionId];
+
+            if (!participant || !videoRef.current) return;
+
+            setUserName(participant.user_name || 'Usuario');
+
+            // Get video track
+            const videoTrack = participant.tracks?.video?.persistentTrack;
+            const audioTrack = participant.tracks?.audio?.persistentTrack;
+
+            if (videoTrack) {
+                const tracks = [videoTrack];
+                if (audioTrack && !isLocal) {
+                    tracks.push(audioTrack);
+                }
+                videoRef.current.srcObject = new MediaStream(tracks);
+            }
+        };
+
+        // Update immediately
+        updateVideo();
+
+        // Listen for track changes
+        callObject.on('track-started', updateVideo);
+        callObject.on('track-stopped', updateVideo);
+        callObject.on('participant-updated', updateVideo);
+
+        return () => {
+            callObject.off('track-started', updateVideo);
+            callObject.off('track-stopped', updateVideo);
+            callObject.off('participant-updated', updateVideo);
+        };
+    }, [callObject, sessionId, isLocal]);
+
+    return (
+        <>
+            <video
+                ref={videoRef}
+                autoPlay
+                muted={isLocal}
+                playsInline
+                className="w-full h-full object-cover"
+            />
+            <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded">
+                <span className="text-white text-sm">
+                    {userName}
+                    {isLocal && ' (Tú)'}
+                </span>
+            </div>
+        </>
+    );
+};
+
 // Daily.co room component
 const DailyVideoRoom: React.FC<Omit<VideoRoomProps, 'isTeacher'>> = ({
     roomId,
@@ -157,36 +224,15 @@ const DailyVideoRoom: React.FC<Omit<VideoRoomProps, 'isTeacher'>> = ({
                 <div className="flex-1 relative bg-gray-950 p-4">
                     <div className="grid grid-cols-2 gap-4 h-full">
                         {participantIds.map((id) => {
-                            const participant = callObject?.participants()[id];
                             const isLocal = id === localParticipant?.session_id;
 
                             return (
                                 <div key={id} className="relative bg-gray-800 rounded-lg overflow-hidden">
-                                    <video
-                                        ref={(videoEl) => {
-                                            if (videoEl && participant) {
-                                                if (participant.video) {
-                                                    videoEl.srcObject = new MediaStream([participant.videoTrack]);
-                                                }
-                                                if (participant.audio && !isLocal) {
-                                                    videoEl.srcObject = new MediaStream([
-                                                        ...(videoEl.srcObject?.getTracks() || []),
-                                                        participant.audioTrack
-                                                    ]);
-                                                }
-                                            }
-                                        }}
-                                        autoPlay
-                                        muted={isLocal}
-                                        playsInline
-                                        className="w-full h-full object-cover"
+                                    <DailyVideo
+                                        sessionId={id}
+                                        isLocal={isLocal}
+                                        callObject={callObject}
                                     />
-                                    <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded">
-                                        <span className="text-white text-sm">
-                                            {participant?.user_name || 'Usuario'}
-                                            {isLocal && ' (Tú)'}
-                                        </span>
-                                    </div>
                                 </div>
                             );
                         })}
