@@ -259,24 +259,43 @@ const VideoRoom: React.FC<VideoRoomProps> = (props) => {
             try {
                 // Call backend to create/get room
                 const API_URL = import.meta.env.VITE_API_URL;
-                const response = await fetch(`${API_URL}/daily/room`, {
+                const token = localStorage.getItem('token');
+
+                if (!token) {
+                    throw new Error('No authentication token found');
+                }
+
+                const url = `${API_URL}/v1/auth/daily/room`;
+                console.log('[Daily] Calling URL:', url);
+                console.log('[Daily] Room ID:', roomId);
+
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                     },
                     body: JSON.stringify({ room_id: roomId }),
                 });
 
+                console.log('[Daily] Response status:', response.status);
+
                 if (!response.ok) {
-                    throw new Error('Failed to create room');
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error('[Daily] Error response:', errorData);
+                    throw new Error(
+                        errorData.message ||
+                        errorData.error ||
+                        `HTTP ${response.status}: Failed to create room`
+                    );
                 }
 
                 const data = await response.json();
+                console.log('[Daily] Success response:', data);
 
-                if (!data.success) {
-                    throw new Error(data.error || 'Failed to create room');
+                if (!data.success || !data.room?.url) {
+                    throw new Error('Invalid response from server');
                 }
 
                 const roomUrl = data.room.url;
