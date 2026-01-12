@@ -243,27 +243,106 @@ const DailyVideoRoom: React.FC<Omit<VideoRoomProps, 'isTeacher'>> = ({
 const VideoRoom: React.FC<VideoRoomProps> = (props) => {
     const { currentUser } = useAuth();
     const { roomId } = props;
-    const [callObject, setCallObject] = useState<DailyIframe | null>(null);
+    const [callObject, setCallObject] = useState<any>(null);
+    const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+    const [roomError, setRoomError] = useState<string | null>(null);
 
     useEffect(() => {
-        // Get Daily domain from environment variable
-        const dailyDomain = import.meta.env.VITE_DAILY_DOMAIN || 'academy.daily.co';
-        const roomUrl = `https://${dailyDomain.includes('.') ? dailyDomain : `${dailyDomain}.daily.co`}/${roomId}`;
+        let mounted = true;
 
-        const newCallObject = DailyIframe.createCallObject({
-            url: roomUrl,
-            userName: currentUser?.name || 'Usuario',
-        });
+        const initializeRoom = async () => {
+            if (!currentUser || !roomId) return;
 
-        setCallObject(newCallObject);
+            setIsCreatingRoom(true);
+            setRoomError(null);
 
-        // Join the call
-        newCallObject.join();
+            try {
+                // Call backend to create/get room
+                const API_URL = import.meta.env.VITE_API_URL;
+                const response = await fetch(`${API_URL}/daily/room`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ room_id: roomId }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to create room');
+                }
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to create room');
+                }
+
+                const roomUrl = data.room.url;
+                console.log('[Daily] Room URL:', roomUrl);
+
+                if (!mounted) return;
+
+                // Create Daily call object
+                const newCallObject = DailyIframe.createCallObject({
+                    url: roomUrl,
+                    userName: currentUser?.name || 'Usuario',
+                });
+
+                setCallObject(newCallObject);
+
+                // Join the call
+                await newCallObject.join();
+
+                setIsCreatingRoom(false);
+
+            } catch (error: any) {
+                console.error('[Daily] Error creating room:', error);
+                if (mounted) {
+                    setRoomError(error.message || 'Error al crear la sala');
+                    setIsCreatingRoom(false);
+                }
+            }
+        };
+
+        initializeRoom();
 
         return () => {
-            newCallObject.destroy();
+            mounted = false;
+            if (callObject) {
+                callObject.destroy();
+            }
         };
     }, [roomId, currentUser]);
+
+    if (isCreatingRoom) {
+        return (
+            <div className="flex h-screen bg-gray-900 items-center justify-center">
+                <div className="text-center">
+                    <div className="text-white text-xl mb-4">Creando sala de videollamada...</div>
+                    <div className="text-gray-400">Por favor espera un momento</div>
+                </div>
+            </div>
+        );
+    }
+
+    if (roomError) {
+        return (
+            <div className="flex h-screen bg-gray-900 items-center justify-center">
+                <div className="text-center max-w-md">
+                    <div className="text-red-500 text-xl mb-4">❌ Error</div>
+                    <div className="text-white mb-4">{roomError}</div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-lg"
+                    >
+                        Reintentar
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     if (!callObject) {
         return (
