@@ -1,12 +1,9 @@
-import React, { useEffect, useCallback, useState, useRef } from 'react';
-import { DailyProvider, useDaily, useParticipantIds, useScreenShare, useLocalParticipant } from '@daily-co/daily-react';
+import React, { useState, useEffect } from 'react';
 import DailyIframe from '@daily-co/daily-js';
-import { useAuth } from '../../contexts/AuthContext';
+import { MessageSquare, X, PhoneOff } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
-import {
-    PhoneOff, Minimize2, Maximize2, MessageSquare, X, Move, Mic, MicOff, Video, VideoOff, Monitor, MonitorOff
-} from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface VideoRoomProps {
     roomId: string;
@@ -17,304 +14,18 @@ interface VideoRoomProps {
     handleCallCleanup: () => void;
 }
 
-// Helper component to render individual video
-const DailyVideo: React.FC<{ sessionId: string; isLocal: boolean; callObject: any }> = ({
-    sessionId,
-    isLocal,
-    callObject
-}) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const [userName, setUserName] = useState('Usuario');
-
-    useEffect(() => {
-        if (!callObject || !videoRef.current) return;
-
-        const updateVideo = () => {
-            const participants = callObject.participants();
-            const participant = participants[sessionId];
-
-            if (!participant || !videoRef.current) return;
-
-            setUserName(participant.user_name || 'Usuario');
-
-            // Get video track
-            const videoTrack = participant.tracks?.video?.persistentTrack;
-            const audioTrack = participant.tracks?.audio?.persistentTrack;
-
-            if (videoTrack) {
-                const tracks = [videoTrack];
-                if (audioTrack && !isLocal) {
-                    tracks.push(audioTrack);
-                }
-                videoRef.current.srcObject = new MediaStream(tracks);
-            }
-        };
-
-        // Update immediately
-        updateVideo();
-
-        // Listen for track changes
-        callObject.on('track-started', updateVideo);
-        callObject.on('track-stopped', updateVideo);
-        callObject.on('participant-updated', updateVideo);
-
-        return () => {
-            callObject.off('track-started', updateVideo);
-            callObject.off('track-stopped', updateVideo);
-            callObject.off('participant-updated', updateVideo);
-        };
-    }, [callObject, sessionId, isLocal]);
-
-    return (
-        <>
-            <video
-                ref={videoRef}
-                autoPlay
-                muted={isLocal}
-                playsInline
-                className="w-full h-full object-cover"
-            />
-            <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded">
-                <span className="text-white text-sm">
-                    {userName}
-                    {isLocal && ' (Tú)'}
-                </span>
-            </div>
-        </>
-    );
-};
-
-// Daily.co room component
-const DailyVideoRoom: React.FC<Omit<VideoRoomProps, 'isTeacher'>> = ({
+const VideoRoom: React.FC<VideoRoomProps> = ({
     roomId,
     onCallEnded,
-    isCallMinimized,
-    toggleMinimizeCall,
     handleCallCleanup,
 }) => {
     const { currentUser } = useAuth();
-    const callObject = useDaily();
-    const participantIds = useParticipantIds();
-    const { isSharingScreen, startScreenShare, stopScreenShare } = useScreenShare();
-    const localParticipant = useLocalParticipant();
-
+    const [callFrame, setCallFrame] = useState<any>(null);
+    const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+    const [roomError, setRoomError] = useState<string | null>(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-    const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-    const [isVideoEnabled, setIsVideoEnabled] = useState(true);
-
-    // Widget dragging state
-    const [widgetPosition, setWidgetPosition] = useState({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-
-    // Initialize widget position
-    useEffect(() => {
-        if (isCallMinimized && widgetPosition.x === 0 && widgetPosition.y === 0) {
-            setWidgetPosition({
-                x: window.innerWidth - 340,
-                y: window.innerHeight - 260,
-            });
-        }
-    }, [isCallMinimized, widgetPosition]);
-
-    // Event listeners
-    useEffect(() => {
-        if (!callObject) return;
-
-        const events = {
-            'joined-meeting': () => {
-                console.log('[Daily] Joined meeting');
-                setToast({ message: 'Conectado a la sala', type: 'success' });
-            },
-            'participant-joined': (event: any) => {
-                console.log('[Daily] Participant joined:', event);
-                setToast({ message: `${event.participant.user_name} se unió`, type: 'info' });
-            },
-            'participant-left': (event: any) => {
-                console.log('[Daily] Participant left:', event);
-                setToast({ message: `${event.participant.user_name} salió`, type: 'info' });
-            },
-            'left-meeting': () => {
-                console.log('[Daily] Left meeting');
-                handleEndCall();
-            },
-        };
-
-        Object.entries(events).forEach(([event, handler]) => {
-            callObject.on(event as any, handler);
-        });
-
-        return () => {
-            Object.entries(events).forEach(([event, handler]) => {
-                callObject.off(event as any, handler);
-            });
-        };
-    }, [callObject]);
-
-    const handleEndCall = useCallback(() => {
-        if (callObject) {
-            callObject.leave();
-        }
-        handleCallCleanup();
-        onCallEnded();
-    }, [callObject, handleCallCleanup, onCallEnded]);
-
-    const toggleAudio = useCallback(() => {
-        if (callObject) {
-            callObject.setLocalAudio(!isAudioEnabled);
-            setIsAudioEnabled(!isAudioEnabled);
-        }
-    }, [callObject, isAudioEnabled]);
-
-    const toggleVideo = useCallback(() => {
-        if (callObject) {
-            callObject.setLocalVideo(!isVideoEnabled);
-            setIsVideoEnabled(!isVideoEnabled);
-        }
-    }, [callObject, isVideoEnabled]);
-
-    const toggleScreenShare = useCallback(() => {
-        if (isSharingScreen) {
-            stopScreenShare();
-        } else {
-            startScreenShare();
-        }
-    }, [isSharingScreen, startScreenShare, stopScreenShare]);
-
-    // Minimized widget view
-    if (isCallMinimized) {
-        return (
-            <div
-                className="fixed z-50 bg-gray-900 rounded-lg shadow-2xl overflow-hidden"
-                style={{
-                    left: `${widgetPosition.x}px`,
-                    top: `${widgetPosition.y}px`,
-                    width: '320px',
-                    height: '240px',
-                }}
-            >
-                <div className="bg-gray-800 p-2 flex items-center justify-between cursor-move">
-                    <div className="flex items-center gap-2">
-                        <Move className="w-4 h-4 text-gray-400" />
-                        <span className="text-white text-sm font-medium">Llamada en curso</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button onClick={toggleMinimizeCall} className="p-1 hover:bg-gray-700 rounded">
-                            <Maximize2 className="w-4 h-4 text-white" />
-                        </button>
-                        <button onClick={handleEndCall} className="p-1 hover:bg-red-600 rounded">
-                            <PhoneOff className="w-4 h-4 text-white" />
-                        </button>
-                    </div>
-                </div>
-                <div className="w-full h-[calc(100%-40px)] bg-gray-950 flex items-center justify-center">
-                    <p className="text-gray-400 text-sm">Llamada minimizada</p>
-                </div>
-            </div>
-        );
-    }
-
-    // Full screen view
-    return (
-        <div className="flex h-screen bg-gray-900">
-            <div className="flex-1 flex flex-col">
-                {/* Video Grid */}
-                <div className="flex-1 relative bg-gray-950 p-4">
-                    <div className="grid grid-cols-2 gap-4 h-full">
-                        {participantIds.map((id) => {
-                            const isLocal = id === localParticipant?.session_id;
-
-                            return (
-                                <div key={id} className="relative bg-gray-800 rounded-lg overflow-hidden">
-                                    <DailyVideo
-                                        sessionId={id}
-                                        isLocal={isLocal}
-                                        callObject={callObject}
-                                    />
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Controls overlay */}
-                    <div className="absolute top-4 right-4 flex gap-2 z-10">
-                        <button
-                            onClick={() => setIsChatOpen(!isChatOpen)}
-                            className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all"
-                        >
-                            <MessageSquare className="w-5 h-5 text-white" />
-                        </button>
-                        <button
-                            onClick={toggleMinimizeCall}
-                            className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all"
-                        >
-                            <Minimize2 className="w-5 h-5 text-white" />
-                        </button>
-                    </div>
-
-                    {/* Bottom controls */}
-                    <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex gap-4">
-                        <button
-                            onClick={toggleAudio}
-                            className={`p-4 rounded-full transition-all ${isAudioEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'
-                                }`}
-                        >
-                            {isAudioEnabled ? <Mic className="w-6 h-6 text-white" /> : <MicOff className="w-6 h-6 text-white" />}
-                        </button>
-                        <button
-                            onClick={toggleVideo}
-                            className={`p-4 rounded-full transition-all ${isVideoEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'
-                                }`}
-                        >
-                            {isVideoEnabled ? <Video className="w-6 h-6 text-white" /> : <VideoOff className="w-6 h-6 text-white" />}
-                        </button>
-                        <button
-                            onClick={toggleScreenShare}
-                            className={`p-4 rounded-full transition-all ${isSharingScreen ? 'bg-orange-600 hover:bg-orange-700' : 'bg-gray-700 hover:bg-gray-600'
-                                }`}
-                        >
-                            {isSharingScreen ? <MonitorOff className="w-6 h-6 text-white" /> : <Monitor className="w-6 h-6 text-white" />}
-                        </button>
-                        <button
-                            onClick={handleEndCall}
-                            className="p-4 bg-red-600 hover:bg-red-700 rounded-full transition-all"
-                        >
-                            <PhoneOff className="w-6 h-6 text-white" />
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Chat sidebar */}
-            {isChatOpen && (
-                <div className="w-80 bg-gray-800 border-l border-gray-700">
-                    <div className="h-full flex flex-col">
-                        <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between">
-                            <h3 className="text-white font-semibold">Chat</h3>
-                            <button onClick={() => setIsChatOpen(false)} className="p-1 hover:bg-gray-700 rounded">
-                                <X className="w-5 h-5 text-gray-400" />
-                            </button>
-                        </div>
-                        <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />
-                    </div>
-                </div>
-            )}
-
-            {/* Toast */}
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-        </div>
-    );
-};
-
-// Main component with Daily provider
-const VideoRoom: React.FC<VideoRoomProps> = (props) => {
-    const { currentUser } = useAuth();
-    const { roomId } = props;
-    const [callObject, setCallObject] = useState<any>(null);
-    const [isCreatingRoom, setIsCreatingRoom] = useState(false);
-    const [roomError, setRoomError] = useState<string | null>(null);
 
     useEffect(() => {
         let mounted = true;
@@ -334,8 +45,6 @@ const VideoRoom: React.FC<VideoRoomProps> = (props) => {
                     throw new Error('No authentication token found');
                 }
 
-                // Backend endpoint: /api/v1/auth/daily/room
-                // VITE_API_URL already has /api/v1, so we only add /auth/daily/room
                 const url = `${API_URL}/auth/daily/room`;
                 console.log('[Daily] Calling URL:', url);
                 console.log('[Daily] Room ID:', roomId);
@@ -374,18 +83,49 @@ const VideoRoom: React.FC<VideoRoomProps> = (props) => {
 
                 if (!mounted) return;
 
-                // Create Daily call object
-                const newCallObject = DailyIframe.createCallObject({
+                // Create Daily iframe
+                const frame = DailyIframe.createFrame(
+                    document.getElementById('daily-container')!,
+                    {
+                        showLeaveButton: false,
+                        showFullscreenButton: true,
+                        iframeStyle: {
+                            position: 'absolute',
+                            top: '0',
+                            left: '0',
+                            width: '100%',
+                            height: '100%',
+                            border: '0',
+                        },
+                    }
+                );
+
+                setCallFrame(frame);
+
+                // Join the call
+                await frame.join({
                     url: roomUrl,
                     userName: currentUser?.name || 'Usuario',
                 });
 
-                setCallObject(newCallObject);
-
-                // Join the call
-                await newCallObject.join();
-
                 setIsCreatingRoom(false);
+                setToast({ message: 'Conectado a la sala', type: 'success' });
+
+                // Listen for events
+                frame.on('left-meeting', () => {
+                    console.log('[Daily] Left meeting');
+                    handleEndCall();
+                });
+
+                frame.on('participant-joined', (event: any) => {
+                    console.log('[Daily] Participant joined:', event);
+                    setToast({ message: `${event.participant.user_name} se unió`, type: 'info' });
+                });
+
+                frame.on('participant-left', (event: any) => {
+                    console.log('[Daily] Participant left:', event);
+                    setToast({ message: `${event.participant.user_name} salió`, type: 'info' });
+                });
 
             } catch (error: any) {
                 console.error('[Daily] Error creating room:', error);
@@ -400,11 +140,20 @@ const VideoRoom: React.FC<VideoRoomProps> = (props) => {
 
         return () => {
             mounted = false;
-            if (callObject) {
-                callObject.destroy();
+            if (callFrame) {
+                callFrame.destroy();
             }
         };
     }, [roomId, currentUser]);
+
+    const handleEndCall = () => {
+        console.log('[Daily] Ending call');
+        if (callFrame) {
+            callFrame.destroy();
+        }
+        handleCallCleanup();
+        onCallEnded();
+    };
 
     if (isCreatingRoom) {
         return (
@@ -434,18 +183,49 @@ const VideoRoom: React.FC<VideoRoomProps> = (props) => {
         );
     }
 
-    if (!callObject) {
-        return (
-            <div className="flex h-screen bg-gray-900 items-center justify-center">
-                <div className="text-white text-xl">Conectando a la sala...</div>
-            </div>
-        );
-    }
-
     return (
-        <DailyProvider callObject={callObject}>
-            <DailyVideoRoom {...props} />
-        </DailyProvider>
+        <div className="flex h-screen bg-gray-900">
+            <div className="flex-1 flex flex-col relative">
+                {/* Daily.co iframe container */}
+                <div id="daily-container" className="flex-1 relative" />
+
+                {/* Custom controls overlay */}
+                <div className="absolute top-4 right-4 flex gap-2 z-50">
+                    <button
+                        onClick={() => setIsChatOpen(!isChatOpen)}
+                        className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all"
+                        title="Chat"
+                    >
+                        <MessageSquare className="w-5 h-5 text-white" />
+                    </button>
+                    <button
+                        onClick={handleEndCall}
+                        className="p-3 bg-red-600 hover:bg-red-700 rounded-full transition-all"
+                        title="Colgar"
+                    >
+                        <PhoneOff className="w-5 h-5 text-white" />
+                    </button>
+                </div>
+            </div>
+
+            {/* Chat sidebar */}
+            {isChatOpen && (
+                <div className="w-80 bg-gray-800 border-l border-gray-700 z-50">
+                    <div className="h-full flex flex-col">
+                        <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between">
+                            <h3 className="text-white font-semibold">Chat</h3>
+                            <button onClick={() => setIsChatOpen(false)} className="p-1 hover:bg-gray-700 rounded">
+                                <X className="w-5 h-5 text-gray-400" />
+                            </button>
+                        </div>
+                        <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />
+                    </div>
+                </div>
+            )}
+
+            {/* Toast */}
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        </div>
     );
 };
 
