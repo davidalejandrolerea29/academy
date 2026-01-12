@@ -16,6 +16,7 @@
     "@headlessui/react": "^1.7.18",
     "@jitsi/react-sdk": "^1.4.0",
     "@supabase/supabase-js": "^2.49.8",
+    "@zoom/videosdk": "^2.3.5",
     "axios": "^1.10.0",
     "firebase": "^10.7.2",
     "i18next": "^23.8.2",

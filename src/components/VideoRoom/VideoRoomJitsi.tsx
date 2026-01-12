@@ -1,8 +1,11 @@
+// VideoRoom component using Jitsi Meet
 import React, { useEffect, useRef, useState } from 'react';
 import { JitsiMeeting } from '@jitsi/react-sdk';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCall } from '../../contexts/CallContext';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
+import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import {
     PhoneOff, Minimize2, Maximize2, MessageSquare, X, Move
 } from 'lucide-react';
@@ -30,6 +33,10 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const [participantCount, setParticipantCount] = useState(1);
+
+    // Reverb for chat (optional - Jitsi has its own chat)
+    const channelRef = useRef<EchoChannel | null>(null);
+    const reverbServiceRef = useRef(createReverbWebSocketService(currentUser?.token || ''));
 
     // Widget dragging state
     const [widgetPosition, setWidgetPosition] = useState({ x: 0, y: 0 });
@@ -149,6 +156,11 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
             } catch (error) {
                 console.error('[Jitsi] Error disposing API:', error);
             }
+        }
+
+        if (channelRef.current) {
+            channelRef.current.leave();
+            channelRef.current = null;
         }
 
         handleCallCleanup();
@@ -304,15 +316,8 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
                         }}
                     />
 
-                    {/* Custom controls overlay */}
+                    {/* Custom controls overlay (optional) */}
                     <div className="absolute top-4 right-4 flex gap-2 z-10">
-                        <button
-                            onClick={() => setIsChatOpen(!isChatOpen)}
-                            className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all"
-                            title="Chat"
-                        >
-                            <MessageSquare className="w-5 h-5 text-white" />
-                        </button>
                         <button
                             onClick={toggleMinimizeCall}
                             className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all"
@@ -324,7 +329,7 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
                 </div>
             </div>
 
-            {/* Chat sidebar using existing ChatBox */}
+            {/* Optional: Custom chat sidebar using Reverb */}
             {isChatOpen && (
                 <div className="w-80 bg-gray-800 border-l border-gray-700">
                     <div className="h-full flex flex-col">
@@ -338,9 +343,12 @@ const VideoRoomJitsi: React.FC<VideoRoomJitsiProps> = ({
                             </button>
                         </div>
                         <ChatBox
-                            roomId={roomId}
                             messages={chatMessages}
-                            setMessages={setChatMessages}
+                            onSendMessage={(message) => {
+                                // Implement Reverb chat if needed
+                                console.log('Send message:', message);
+                            }}
+                            currentUserId={currentUser?.id || ''}
                         />
                     </div>
                 </div>
