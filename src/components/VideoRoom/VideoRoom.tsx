@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import DailyIframe from '@daily-co/daily-js';
 import { MessageSquare, X, PhoneOff } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
@@ -20,12 +20,14 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     handleCallCleanup,
 }) => {
     const { currentUser } = useAuth();
-    const [callFrame, setCallFrame] = useState<any>(null);
+    const [callObject, setCallObject] = useState<any>(null);
     const [isCreatingRoom, setIsCreatingRoom] = useState(false);
     const [roomError, setRoomError] = useState<string | null>(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+    const [participants, setParticipants] = useState<any[]>([]);
+    const videoContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         let mounted = true;
@@ -47,7 +49,6 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
                 const url = `${API_URL}/auth/daily/room`;
                 console.log('[Daily] Calling URL:', url);
-                console.log('[Daily] Room ID:', roomId);
 
                 const response = await fetch(url, {
                     method: 'POST',
@@ -59,20 +60,12 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     body: JSON.stringify({ room_id: roomId }),
                 });
 
-                console.log('[Daily] Response status:', response.status);
-
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
-                    console.error('[Daily] Error response:', errorData);
-                    throw new Error(
-                        errorData.message ||
-                        errorData.error ||
-                        `HTTP ${response.status}: Failed to create room`
-                    );
+                    throw new Error(errorData.message || errorData.error || 'Failed to create room');
                 }
 
                 const data = await response.json();
-                console.log('[Daily] Success response:', data);
 
                 if (!data.success || !data.room?.url) {
                     throw new Error('Invalid response from server');
@@ -83,29 +76,12 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
                 if (!mounted) return;
 
-                // Create Daily iframe with custom styling to hide controls
-                const frame = DailyIframe.createFrame(
-                    document.getElementById('daily-container')!,
-                    {
-                        showLeaveButton: false,
-                        showFullscreenButton: false,
-                        showLocalVideo: true,
-                        showParticipantsBar: false,
-                        iframeStyle: {
-                            position: 'absolute',
-                            top: '0',
-                            left: '0',
-                            width: '100%',
-                            height: 'calc(100% + 80px)', // Extend iframe to hide bottom controls
-                            border: '0',
-                        },
-                    }
-                );
-
-                setCallFrame(frame);
+                // Create call object (NO iframe)
+                const call = DailyIframe.createCallObject();
+                setCallObject(call);
 
                 // Join the call
-                await frame.join({
+                await call.join({
                     url: roomUrl,
                     userName: currentUser?.name || 'Usuario',
                 });
@@ -113,21 +89,30 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 setIsCreatingRoom(false);
                 setToast({ message: 'Conectado a la sala', type: 'success' });
 
-                // Listen for events
-                frame.on('left-meeting', () => {
+                // Listen for participant updates
+                call.on('participant-joined', (event: any) => {
+                    console.log('[Daily] Participant joined:', event);
+                    setToast({ message: `${event.participant.user_name} se unió`, type: 'info' });
+                    updateParticipants(call);
+                });
+
+                call.on('participant-left', (event: any) => {
+                    console.log('[Daily] Participant left:', event);
+                    setToast({ message: `${event.participant.user_name} salió`, type: 'info' });
+                    updateParticipants(call);
+                });
+
+                call.on('participant-updated', () => {
+                    updateParticipants(call);
+                });
+
+                call.on('left-meeting', () => {
                     console.log('[Daily] Left meeting');
                     handleEndCall();
                 });
 
-                frame.on('participant-joined', (event: any) => {
-                    console.log('[Daily] Participant joined:', event);
-                    setToast({ message: `${event.participant.user_name} se unió`, type: 'info' });
-                });
-
-                frame.on('participant-left', (event: any) => {
-                    console.log('[Daily] Participant left:', event);
-                    setToast({ message: `${event.participant.user_name} salió`, type: 'info' });
-                });
+                // Initial participant update
+                updateParticipants(call);
 
             } catch (error: any) {
                 console.error('[Daily] Error creating room:', error);
@@ -138,20 +123,42 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             }
         };
 
+        const updateParticipants = (call: any) => {
+            const parts = call.participants();
+            const participantList = Object.values(parts);
+            setParticipants(participantList);
+        };
+
         initializeRoom();
 
         return () => {
             mounted = false;
-            if (callFrame) {
-                callFrame.destroy();
+            if (callObject) {
+                callObject.destroy();
             }
         };
     }, [roomId, currentUser]);
 
+    // Update video elements when participants change
+    useEffect(() => {
+        if (!callObject || !videoContainerRef.current) return;
+
+        participants.forEach((participant: any) => {
+            const videoEl = document.getElementById(`video-${participant.session_id}`) as HTMLVideoElement;
+            if (videoEl && participant.tracks?.video?.persistentTrack) {
+                const stream = new MediaStream([participant.tracks.video.persistentTrack]);
+                if (participant.tracks?.audio?.persistentTrack && !participant.local) {
+                    stream.addTrack(participant.tracks.audio.persistentTrack);
+                }
+                videoEl.srcObject = stream;
+            }
+        });
+    }, [participants, callObject]);
+
     const handleEndCall = () => {
         console.log('[Daily] Ending call');
-        if (callFrame) {
-            callFrame.destroy();
+        if (callObject) {
+            callObject.destroy();
         }
         handleCallCleanup();
         onCallEnded();
@@ -189,9 +196,27 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         <div className="flex h-screen bg-gray-900 overflow-hidden">
             {/* Main video area */}
             <div className="flex-1 flex flex-col min-w-0">
-                {/* Daily.co iframe container */}
-                <div className="flex-1 relative bg-black overflow-hidden">
-                    <div id="daily-container" className="absolute inset-0" />
+                {/* Video grid */}
+                <div className="flex-1 relative bg-black p-4" ref={videoContainerRef}>
+                    <div className={`grid gap-4 h-full ${participants.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        {participants.map((participant: any) => (
+                            <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden">
+                                <video
+                                    id={`video-${participant.session_id}`}
+                                    autoPlay
+                                    playsInline
+                                    muted={participant.local}
+                                    className="w-full h-full object-cover"
+                                />
+                                <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
+                                    <span className="text-white font-medium">
+                                        {participant.user_name || 'Usuario'}
+                                        {participant.local && ' (Tú)'}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Bottom control bar */}
@@ -201,6 +226,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                         <div className="flex items-center gap-3">
                             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                             <span className="text-white font-medium">Sala: {roomId}</span>
+                            <span className="text-gray-400 text-sm">({participants.length} participante{participants.length !== 1 ? 's' : ''})</span>
                         </div>
 
                         {/* Center - Main controls */}
@@ -208,8 +234,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             <button
                                 onClick={() => setIsChatOpen(!isChatOpen)}
                                 className={`p-3 rounded-lg transition-all ${isChatOpen
-                                    ? 'bg-orange-600 hover:bg-orange-700'
-                                    : 'bg-gray-700 hover:bg-gray-600'
+                                        ? 'bg-orange-600 hover:bg-orange-700'
+                                        : 'bg-gray-700 hover:bg-gray-600'
                                     }`}
                                 title="Chat"
                             >
