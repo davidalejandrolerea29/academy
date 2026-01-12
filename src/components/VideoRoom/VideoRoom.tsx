@@ -185,46 +185,76 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
     return (
         <div className="flex h-screen bg-gray-900">
-            <div className="flex-1 flex flex-col relative">
+            {/* Main video area */}
+            <div className="flex-1 flex flex-col">
                 {/* Daily.co iframe container */}
-                <div id="daily-container" className="flex-1 relative" />
+                <div className="flex-1 relative bg-black">
+                    <div id="daily-container" className="w-full h-full" />
+                </div>
 
-                {/* Custom controls overlay */}
-                <div className="absolute top-4 right-4 flex gap-2 z-50">
-                    <button
-                        onClick={() => setIsChatOpen(!isChatOpen)}
-                        className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all"
-                        title="Chat"
-                    >
-                        <MessageSquare className="w-5 h-5 text-white" />
-                    </button>
-                    <button
-                        onClick={handleEndCall}
-                        className="p-3 bg-red-600 hover:bg-red-700 rounded-full transition-all"
-                        title="Colgar"
-                    >
-                        <PhoneOff className="w-5 h-5 text-white" />
-                    </button>
+                {/* Bottom control bar */}
+                <div className="bg-gray-800 border-t border-gray-700 p-4">
+                    <div className="flex items-center justify-between max-w-4xl mx-auto">
+                        {/* Left side - Room info */}
+                        <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <span className="text-white font-medium">Sala: {roomId}</span>
+                        </div>
+
+                        {/* Center - Main controls */}
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setIsChatOpen(!isChatOpen)}
+                                className={`p-3 rounded-lg transition-all ${isChatOpen
+                                        ? 'bg-orange-600 hover:bg-orange-700'
+                                        : 'bg-gray-700 hover:bg-gray-600'
+                                    }`}
+                                title="Chat"
+                            >
+                                <MessageSquare className="w-5 h-5 text-white" />
+                            </button>
+
+                            <button
+                                onClick={handleEndCall}
+                                className="p-3 bg-red-600 hover:bg-red-700 rounded-lg transition-all"
+                                title="Colgar"
+                            >
+                                <PhoneOff className="w-5 h-5 text-white" />
+                            </button>
+                        </div>
+
+                        {/* Right side - User info */}
+                        <div className="text-gray-400 text-sm">
+                            {currentUser?.name || 'Usuario'}
+                        </div>
+                    </div>
                 </div>
             </div>
 
             {/* Chat sidebar */}
             {isChatOpen && (
-                <div className="w-80 bg-gray-800 border-l border-gray-700 z-50">
-                    <div className="h-full flex flex-col">
-                        <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between">
-                            <h3 className="text-white font-semibold">Chat</h3>
-                            <button onClick={() => setIsChatOpen(false)} className="p-1 hover:bg-gray-700 rounded">
-                                <X className="w-5 h-5 text-gray-400" />
-                            </button>
-                        </div>
+                <div className="w-96 bg-gray-800 border-l border-gray-700 flex flex-col">
+                    <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between">
+                        <h3 className="text-white font-semibold text-lg">Chat</h3>
+                        <button
+                            onClick={() => setIsChatOpen(false)}
+                            className="p-2 hover:bg-gray-700 rounded-lg transition-all"
+                        >
+                            <X className="w-5 h-5 text-gray-400" />
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-hidden">
                         <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />
                     </div>
                 </div>
             )}
 
-            {/* Toast */}
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            {/* Toast notifications */}
+            {toast && (
+                <div className="fixed top-4 right-4 z-50">
+                    <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+                </div>
+            )}
         </div>
     );
 };
