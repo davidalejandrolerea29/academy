@@ -366,7 +366,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                     autoPlay
                                     playsInline
                                     muted={participant.local}
-                                    className="w-full h-full object-cover"
+                                    className="w-full h-full object-contain"
                                 />
                                 <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
                                     <span className="text-white font-medium">
