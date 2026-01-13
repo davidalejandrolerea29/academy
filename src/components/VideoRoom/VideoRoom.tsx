@@ -388,7 +388,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 <div className="flex-1 relative bg-black p-4" ref={videoContainerRef}>
                     {/* Check if anyone is sharing screen */}
                     {(() => {
-                        const screenSharer = participants.find(p => p.tracks?.screenVideo?.state === 'playable');
+                        const screenSharer = participants.find(p => p.tracks?.screenVideo?.persistentTrack);
 
                         if (screenSharer) {
                             // Google Meet style: Large screen share + small participant videos
@@ -473,8 +473,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     <button
                         onClick={toggleMute}
                         className={`p-3 rounded-full transition-all shadow-lg ${isMuted
-                                ? 'bg-red-600 hover:bg-red-700'
-                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            ? 'bg-red-600 hover:bg-red-700'
+                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
                             }`}
                         title={isMuted ? 'Activar micrófono' : 'Silenciar micrófono'}
                     >
@@ -488,8 +488,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     <button
                         onClick={toggleVideo}
                         className={`p-3 rounded-full transition-all shadow-lg ${isVideoOff
-                                ? 'bg-red-600 hover:bg-red-700'
-                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            ? 'bg-red-600 hover:bg-red-700'
+                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
                             }`}
                         title={isVideoOff ? 'Activar cámara' : 'Desactivar cámara'}
                     >
@@ -503,8 +503,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     <button
                         onClick={toggleScreenShare}
                         className={`p-3 rounded-full transition-all shadow-lg ${isScreenSharing
-                                ? 'bg-blue-600 hover:bg-blue-700'
-                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            ? 'bg-blue-600 hover:bg-blue-700'
+                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
                             }`}
                         title={isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}
                     >
