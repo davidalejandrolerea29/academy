@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyIframe from '@daily-co/daily-js';
-import { MessageSquare, X, PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2 } from 'lucide-react';
+import { MessageSquare, X, PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -31,6 +31,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const [participants, setParticipants] = useState<any[]>([]);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
+    const [isMuted, setIsMuted] = useState(false);
+    const [isVideoOff, setIsVideoOff] = useState(false);
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
     // Draggable widget state
@@ -188,10 +190,11 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         if (!callObject) return;
 
         participants.forEach((participant: any) => {
-            // Update both full-screen and minimized video elements
+            // Update all video elements: full-screen, minimized, and thumbnails
             const videoIds = [
                 `video-${participant.session_id}`,
-                `video-mini-${participant.session_id}`
+                `video-mini-${participant.session_id}`,
+                `video-thumb-${participant.session_id}`
             ];
 
             videoIds.forEach(videoId => {
@@ -199,11 +202,18 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 if (videoEl) {
                     const tracks = [];
 
-                    // Check for screen share first (priority)
-                    if (participant.tracks?.screenVideo?.persistentTrack) {
-                        tracks.push(participant.tracks.screenVideo.persistentTrack);
-                    } else if (participant.tracks?.video?.persistentTrack) {
-                        tracks.push(participant.tracks.video.persistentTrack);
+                    // For thumbnails, always show camera (not screen share)
+                    if (videoId.includes('thumb')) {
+                        if (participant.tracks?.video?.persistentTrack) {
+                            tracks.push(participant.tracks.video.persistentTrack);
+                        }
+                    } else {
+                        // For main videos, prioritize screen share
+                        if (participant.tracks?.screenVideo?.persistentTrack) {
+                            tracks.push(participant.tracks.screenVideo.persistentTrack);
+                        } else if (participant.tracks?.video?.persistentTrack) {
+                            tracks.push(participant.tracks.video.persistentTrack);
+                        }
                     }
 
                     // Add audio if not local
@@ -236,6 +246,24 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             console.error('[Daily] Screen share error:', error);
             setToast({ message: 'Error al compartir pantalla', type: 'error' });
         }
+    };
+
+    const toggleMute = async () => {
+        if (!callObject) return;
+
+        const newMutedState = !isMuted;
+        await callObject.setLocalAudio(!newMutedState);
+        setIsMuted(newMutedState);
+        setToast({ message: newMutedState ? 'Micrófono silenciado' : 'Micrófono activado', type: 'info' });
+    };
+
+    const toggleVideo = async () => {
+        if (!callObject) return;
+
+        const newVideoState = !isVideoOff;
+        await callObject.setLocalVideo(!newVideoState);
+        setIsVideoOff(newVideoState);
+        setToast({ message: newVideoState ? 'Cámara desactivada' : 'Cámara activada', type: 'info' });
     };
 
     const handleEndCall = () => {
@@ -443,10 +471,40 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 {/* Floating controls overlay - Top Right */}
                 <div className="absolute top-4 right-4 flex gap-2 z-50">
                     <button
+                        onClick={toggleMute}
+                        className={`p-3 rounded-full transition-all shadow-lg ${isMuted
+                                ? 'bg-red-600 hover:bg-red-700'
+                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            }`}
+                        title={isMuted ? 'Activar micrófono' : 'Silenciar micrófono'}
+                    >
+                        {isMuted ? (
+                            <MicOff className="w-5 h-5 text-white" />
+                        ) : (
+                            <Mic className="w-5 h-5 text-white" />
+                        )}
+                    </button>
+
+                    <button
+                        onClick={toggleVideo}
+                        className={`p-3 rounded-full transition-all shadow-lg ${isVideoOff
+                                ? 'bg-red-600 hover:bg-red-700'
+                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                            }`}
+                        title={isVideoOff ? 'Activar cámara' : 'Desactivar cámara'}
+                    >
+                        {isVideoOff ? (
+                            <VideoOff className="w-5 h-5 text-white" />
+                        ) : (
+                            <Video className="w-5 h-5 text-white" />
+                        )}
+                    </button>
+
+                    <button
                         onClick={toggleScreenShare}
                         className={`p-3 rounded-full transition-all shadow-lg ${isScreenSharing
-                            ? 'bg-blue-600 hover:bg-blue-700'
-                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
+                                ? 'bg-blue-600 hover:bg-blue-700'
+                                : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
                             }`}
                         title={isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}
                     >
