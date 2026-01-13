@@ -358,25 +358,77 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             <div className="flex-1 flex flex-col min-w-0 relative">
                 {/* Video grid */}
                 <div className="flex-1 relative bg-black p-4" ref={videoContainerRef}>
-                    <div className={`grid gap-4 h-full ${participants.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        {participants.map((participant: any) => (
-                            <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden">
-                                <video
-                                    id={`video-${participant.session_id}`}
-                                    autoPlay
-                                    playsInline
-                                    muted={participant.local}
-                                    className="w-full h-full object-contain"
-                                />
-                                <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
-                                    <span className="text-white font-medium">
-                                        {participant.user_name || 'Usuario'}
-                                        {participant.local && ' (Tú)'}
-                                    </span>
+                    {/* Check if anyone is sharing screen */}
+                    {(() => {
+                        const screenSharer = participants.find(p => p.tracks?.screenVideo?.state === 'playable');
+
+                        if (screenSharer) {
+                            // Google Meet style: Large screen share + small participant videos
+                            return (
+                                <div className="flex gap-4 h-full">
+                                    {/* Main screen share area */}
+                                    <div className="flex-1 relative bg-gray-900 rounded-lg overflow-hidden">
+                                        <video
+                                            id={`video-${screenSharer.session_id}`}
+                                            autoPlay
+                                            playsInline
+                                            muted={screenSharer.local}
+                                            className="w-full h-full object-contain"
+                                        />
+                                        <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
+                                            <span className="text-white font-medium">
+                                                {screenSharer.user_name || 'Usuario'} está compartiendo pantalla
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Participant thumbnails on the right */}
+                                    <div className="flex flex-col gap-2" style={{ width: '200px' }}>
+                                        {participants.map((participant: any) => (
+                                            <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden" style={{ height: '150px' }}>
+                                                <video
+                                                    id={`video-thumb-${participant.session_id}`}
+                                                    autoPlay
+                                                    playsInline
+                                                    muted={participant.local}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                                <div className="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs">
+                                                    <span className="text-white">
+                                                        {participant.user_name || 'Usuario'}
+                                                        {participant.local && ' (Tú)'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
+                            );
+                        } else {
+                            // Normal grid view when no screen sharing
+                            return (
+                                <div className={`grid gap-4 h-full ${participants.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                    {participants.map((participant: any) => (
+                                        <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden">
+                                            <video
+                                                id={`video-${participant.session_id}`}
+                                                autoPlay
+                                                playsInline
+                                                muted={participant.local}
+                                                className="w-full h-full object-contain"
+                                            />
+                                            <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
+                                                <span className="text-white font-medium">
+                                                    {participant.user_name || 'Usuario'}
+                                                    {participant.local && ' (Tú)'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        }
+                    })()}
                 </div>
 
                 {/* Room info - Top Left */}
