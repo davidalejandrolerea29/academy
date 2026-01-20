@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyIframe from '@daily-co/daily-js';
-import { MessageSquare, X, PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -33,6 +33,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
+    const [isTabVisible, setIsTabVisible] = useState(true);
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
     // Draggable widget state
@@ -157,6 +158,32 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     handleEndCall();
                 });
 
+                // Add error handling for connection issues
+                call.on('error', (event: any) => {
+                    console.error('[Daily] Error event:', event);
+                    // Don't disconnect on minor errors, just log them
+                    if (event.errorMsg?.includes('connection')) {
+                        setToast({ message: 'Problema de conexión detectado', type: 'error' });
+                    }
+                });
+
+                // Monitor network quality
+                call.on('network-quality-change', (event: any) => {
+                    console.log('[Daily] Network quality:', event);
+                    if (event.quality === 'low' || event.quality === 'very-low') {
+                        console.warn('[Daily] Low network quality detected');
+                    }
+                });
+
+                // Track connection state changes
+                call.on('track-started', (event: any) => {
+                    console.log('[Daily] Track started:', event.participant?.user_name, event.track?.kind);
+                });
+
+                call.on('track-stopped', (event: any) => {
+                    console.log('[Daily] Track stopped:', event.participant?.user_name, event.track?.kind);
+                });
+
                 // Initial participant update
                 updateParticipants(call);
 
@@ -184,6 +211,44 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             }
         };
     }, [roomId, currentUser]);
+
+    // Page Visibility API - Handle tab switching
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            const isVisible = !document.hidden;
+            setIsTabVisible(isVisible);
+
+            if (!isVisible) {
+                // Tab is now hidden - user switched tabs
+                console.log('[Visibility] Tab hidden - maintaining connection in background');
+                setToast({
+                    message: 'Llamada en segundo plano. Mantén esta pestaña visible para mejor calidad.',
+                    type: 'info'
+                });
+            } else {
+                // Tab is now visible - user returned
+                console.log('[Visibility] Tab visible - checking connection state');
+
+                if (callObject) {
+                    const meetingState = callObject.meetingState();
+                    console.log('[Visibility] Meeting state:', meetingState);
+
+                    // If connection was lost while in background, attempt to reconnect
+                    if (meetingState === 'left-meeting' || meetingState === 'error') {
+                        console.log('[Visibility] Connection lost while in background, attempting reconnect');
+                        setToast({ message: 'Reconectando...', type: 'info' });
+                        // The connection will be re-established by the existing error handlers
+                    } else if (meetingState === 'joined-meeting') {
+                        console.log('[Visibility] Connection maintained successfully');
+                        setToast({ message: 'Conexión activa', type: 'success' });
+                    }
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, [callObject]);
 
     // Update video elements when participants change
     useEffect(() => {
@@ -323,8 +388,11 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     {/* Widget header */}
                     <div className="bg-gray-800 px-3 py-2 flex items-center justify-between border-b border-gray-700">
                         <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <div className={`w-2 h-2 rounded-full ${isTabVisible ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
                             <span className="text-white text-sm font-medium">Sala: {roomId}</span>
+                            {!isTabVisible && (
+                                <span className="text-yellow-400 text-xs">⚠️ Segundo plano</span>
+                            )}
                         </div>
                         <div className="flex gap-1">
                             <button
@@ -433,11 +501,13 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                 </div>
                             );
                         } else {
-                            // Normal grid view when no screen sharing
-                            return (
-                                <div className={`grid gap-4 h-full ${participants.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                                    {participants.map((participant: any) => (
-                                        <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden">
+                            // Featured speaker layout: First participant large, others as thumbnails
+                            if (participants.length === 1) {
+                                // Single participant - full screen
+                                const participant = participants[0];
+                                return (
+                                    <div className="h-full">
+                                        <div className="relative bg-gray-800 rounded-lg overflow-hidden h-full">
                                             <video
                                                 id={`video-${participant.session_id}`}
                                                 autoPlay
@@ -452,9 +522,55 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                 </span>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-                            );
+                                    </div>
+                                );
+                            } else {
+                                // Multiple participants: Featured speaker + thumbnails
+                                const featuredParticipant = participants[0]; // First participant (usually teacher)
+                                const otherParticipants = participants.slice(1); // Students
+
+                                return (
+                                    <div className="flex gap-4 h-full">
+                                        {/* Main featured video area */}
+                                        <div className="flex-1 relative bg-gray-900 rounded-lg overflow-hidden">
+                                            <video
+                                                id={`video-${featuredParticipant.session_id}`}
+                                                autoPlay
+                                                playsInline
+                                                muted={featuredParticipant.local}
+                                                className="w-full h-full object-contain"
+                                            />
+                                            <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
+                                                <span className="text-white font-medium">
+                                                    {featuredParticipant.user_name || 'Usuario'}
+                                                    {featuredParticipant.local && ' (Tú)'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Student thumbnails on the right */}
+                                        <div className="flex flex-col gap-2 overflow-y-auto" style={{ width: '200px' }}>
+                                            {otherParticipants.map((participant: any) => (
+                                                <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden flex-shrink-0" style={{ height: '150px' }}>
+                                                    <video
+                                                        id={`video-${participant.session_id}`}
+                                                        autoPlay
+                                                        playsInline
+                                                        muted={participant.local}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                    <div className="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs">
+                                                        <span className="text-white">
+                                                            {participant.user_name || 'Usuario'}
+                                                            {participant.local && ' (Tú)'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            }
                         }
                     })()}
                 </div>
@@ -462,9 +578,12 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 {/* Room info - Top Left */}
                 <div className="absolute top-4 left-4 bg-black bg-opacity-60 px-4 py-2 rounded-lg z-50">
                     <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <div className={`w-2 h-2 rounded-full ${isTabVisible ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
                         <span className="text-white font-medium">Sala: {roomId}</span>
                         <span className="text-gray-300 text-sm">({participants.length} participante{participants.length !== 1 ? 's' : ''})</span>
+                        {!isTabVisible && (
+                            <span className="text-yellow-400 text-sm font-medium">⚠️ Pestaña en segundo plano</span>
+                        )}
                     </div>
                 </div>
 

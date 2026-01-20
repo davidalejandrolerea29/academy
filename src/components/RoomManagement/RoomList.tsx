@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCall } from '../../contexts/CallContext';
-import { Room, User } from '../../types';
+import { Room } from '../../types';
 import {
   Calendar,
   Clock,
@@ -96,19 +96,6 @@ const RoomList: React.FC = () => {
 
   useEffect(() => {
     fetchRooms();
-  }, [fetchRooms]);
-
-  // 🔄 Auto-refresh: Poll for room updates every 30 seconds
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      console.log('🔄 Auto-refreshing room list...');
-      fetchRooms();
-    }, 30000); // 30 seconds
-
-    return () => {
-      clearInterval(intervalId);
-      console.log('🛑 Stopped auto-refresh for room list');
-    };
   }, [fetchRooms]);
 
   const toggleRoomActive = async (roomId: number, currentStatus: boolean) => {

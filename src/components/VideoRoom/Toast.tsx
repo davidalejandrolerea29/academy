@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
-import { UserPlus, UserMinus } from 'lucide-react';
+import { UserPlus, UserMinus, CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 interface ToastProps {
     message: string;
-    type: 'join' | 'leave';
+    type: 'join' | 'leave' | 'success' | 'error' | 'info';
     onClose: () => void;
 }
 
@@ -16,8 +16,24 @@ export const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
         return () => clearTimeout(timer);
     }, [onClose]);
 
-    const bgColor = type === 'join' ? 'bg-green-600' : 'bg-gray-600';
-    const Icon = type === 'join' ? UserPlus : UserMinus;
+    const getStyles = () => {
+        switch (type) {
+            case 'join':
+                return { bgColor: 'bg-green-600', Icon: UserPlus };
+            case 'leave':
+                return { bgColor: 'bg-gray-600', Icon: UserMinus };
+            case 'success':
+                return { bgColor: 'bg-green-600', Icon: CheckCircle };
+            case 'error':
+                return { bgColor: 'bg-red-600', Icon: AlertCircle };
+            case 'info':
+                return { bgColor: 'bg-blue-600', Icon: Info };
+            default:
+                return { bgColor: 'bg-gray-600', Icon: Info };
+        }
+    };
+
+    const { bgColor, Icon } = getStyles();
 
     return (
         <div

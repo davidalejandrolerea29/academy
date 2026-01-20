@@ -7,8 +7,13 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
-  build: { // <-- Añade este bloque
-    minify: false, // <-- Deshabilita la minificación
-    sourcemap: true, // <-- Habilita los sourcemaps para depuración
+  server: {
+    hmr: {
+      overlay: false, // Disable error overlay
+    },
+  },
+  build: {
+    minify: false,
+    sourcemap: true,
   },
 });
