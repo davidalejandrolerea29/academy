@@ -580,9 +580,14 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                     </div>
                                 );
                             } else {
-                                // Speaker view - Teacher (first participant) large, students as thumbnails
-                                const featuredParticipant = participants[0];
-                                const otherParticipants = participants.slice(1);
+                                // Speaker view - Teacher large, students as thumbnails
+                                // Find the teacher by name, or default to first participant
+                                const teacherParticipant = teacherName
+                                    ? participants.find((p: any) => p.user_name === teacherName)
+                                    : null;
+
+                                const featuredParticipant = teacherParticipant || participants[0];
+                                const otherParticipants = participants.filter((p: any) => p.session_id !== featuredParticipant.session_id);
 
                                 return (
                                     <div className="flex gap-4 h-full">
