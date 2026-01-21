@@ -279,29 +279,17 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             setIsTabVisible(isVisible);
 
             if (!isVisible) {
-                // Tab is now hidden - user switched tabs
-                console.log('[Visibility] Tab hidden - maintaining connection in background');
-                setToast({
-                    message: 'Llamada en segundo plano. Mantén esta pestaña visible para mejor calidad.',
-                    type: 'info'
-                });
+                // Tab is now hidden - user switched tabs or minimized
+                console.log('[Visibility] Tab hidden - call continues in background');
             } else {
                 // Tab is now visible - user returned
-                console.log('[Visibility] Tab visible - checking connection state');
+                console.log('[Visibility] Tab visible - user returned');
 
+                // Just log the state, don't try to reconnect automatically
+                // Daily.co handles background connections internally
                 if (callObject) {
                     const meetingState = callObject.meetingState();
                     console.log('[Visibility] Meeting state:', meetingState);
-
-                    // If connection was lost while in background, attempt to reconnect
-                    if (meetingState === 'left-meeting' || meetingState === 'error') {
-                        console.log('[Visibility] Connection lost while in background, attempting reconnect');
-                        setToast({ message: 'Reconectando...', type: 'info' });
-                        // The connection will be re-established by the existing error handlers
-                    } else if (meetingState === 'joined-meeting') {
-                        console.log('[Visibility] Connection maintained successfully');
-                        setToast({ message: 'Conexión activa', type: 'success' });
-                    }
                 }
             }
         };
@@ -315,16 +303,11 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         if (!callObject) return;
 
         participants.forEach((participant: any) => {
-            // Find ALL possible video elements for this participant to support all views
-            const videoEls = [
-                document.getElementById(`video-${participant.session_id}`),       // Main view / Speaker
-                document.getElementById(`video-mini-${participant.session_id}`),  // Minimized view
-                document.getElementById(`video-thumb-${participant.session_id}`)  // Screen share thumbnails
-            ];
+            // Get the video element for this participant
+            const videoEl = document.getElementById(`video-${participant.session_id}`) as HTMLVideoElement;
 
-            videoEls.forEach((videoEl) => {
-                if (videoEl && videoEl instanceof HTMLVideoElement) {
-                    const tracks = [];
+            if (videoEl) {
+                const tracks = [];
 
                     // Prioritize screen share if available
                     if (participant.tracks?.screenVideo?.persistentTrack) {
@@ -338,25 +321,12 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                         tracks.push(participant.tracks.audio.persistentTrack);
                     }
 
-                    if (tracks.length > 0) {
-                        const newStream = new MediaStream(tracks);
-
-                        // Check if the stream currently assigned is different to avoid unnecessary seeking/flicker
-                        // Note: MediaStream objects are new instances, but we can check track IDs or just assign
-                        // For raw video elements, re-assigning srcObject usually works fine, 
-                        // but to be safer we can check if the current srcObject has the same tracks.
-                        const currentStream = videoEl.srcObject as MediaStream;
-                        const currentTracks = currentStream?.getTracks().map(t => t.id).join(',');
-                        const newTracks = tracks.map(t => t.id).join(',');
-
-                        if (currentTracks !== newTracks) {
-                            videoEl.srcObject = newStream;
-                        }
-                    }
+                if (tracks.length > 0) {
+                    videoEl.srcObject = new MediaStream(tracks);
                 }
-            });
+            }
         });
-    }, [participants, callObject, isCallMinimized, isScreenSharing, manualFeaturedId]);
+    }, [participants, callObject, isCallMinimized]);
 
     const toggleScreenShare = async () => {
         if (!callObject) return;
@@ -451,12 +421,10 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 >
                     {/* Widget header */}
                     <div className="bg-gray-800 px-3 py-2 flex items-center justify-between border-b border-gray-700">
-                        <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${isTabVisible ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
+                        <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
                             <span className="text-white text-sm font-medium">Sala: {roomId}</span>
-                            {!isTabVisible && (
-                                <span className="text-yellow-400 text-xs">⚠️ Segundo plano</span>
-                            )}
+                            <span className="text-gray-300 text-xs">({participants.length})</span>
                         </div>
                         <div className="flex gap-1">
                             <button
@@ -685,12 +653,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 {/* Room info - Top Left */}
                 <div className="absolute top-4 left-4 bg-black bg-opacity-60 px-4 py-2 rounded-lg z-50">
                     <div className="flex items-center gap-3">
-                        <div className={`w-2 h-2 rounded-full ${isTabVisible ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
+                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
                         <span className="text-white font-medium">Sala: {roomId}</span>
                         <span className="text-gray-300 text-sm">({participants.length} participante{participants.length !== 1 ? 's' : ''})</span>
-                        {!isTabVisible && (
-                            <span className="text-yellow-400 text-sm font-medium">⚠️ Pestaña en segundo plano</span>
-                        )}
                     </div>
                 </div>
 
