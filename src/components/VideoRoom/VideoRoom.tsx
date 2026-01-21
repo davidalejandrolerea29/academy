@@ -34,6 +34,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [isTabVisible, setIsTabVisible] = useState(true);
+    const [viewLayout, setViewLayout] = useState<'speaker' | 'grid' | 'focused'>('speaker');
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
     // Draggable widget state
@@ -501,7 +502,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                 </div>
                             );
                         } else {
-                            // Featured speaker layout: First participant large, others as thumbnails
+                            // Multiple layout options based on viewLayout state
                             if (participants.length === 0) {
                                 // No participants yet - show loading state
                                 return (
@@ -534,10 +535,59 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                         </div>
                                     </div>
                                 );
+                            } else if (viewLayout === 'grid') {
+                                // Grid view - all participants same size
+                                const gridCols = participants.length === 2 ? 'grid-cols-2' :
+                                    participants.length === 3 ? 'grid-cols-2' :
+                                        participants.length === 4 ? 'grid-cols-2' :
+                                            'grid-cols-3';
+                                return (
+                                    <div className={`grid ${gridCols} gap-4 h-full`}>
+                                        {participants.map((participant: any) => (
+                                            <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden">
+                                                <video
+                                                    id={`video-${participant.session_id}`}
+                                                    autoPlay
+                                                    playsInline
+                                                    muted={participant.local}
+                                                    className="w-full h-full object-contain"
+                                                />
+                                                <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
+                                                    <span className="text-white font-medium">
+                                                        {participant.user_name || 'Usuario'}
+                                                        {participant.local && ' (Tú)'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            } else if (viewLayout === 'focused') {
+                                // Focused view - only first participant (teacher)
+                                const featuredParticipant = participants[0];
+                                return (
+                                    <div className="h-full">
+                                        <div className="relative bg-gray-800 rounded-lg overflow-hidden h-full">
+                                            <video
+                                                id={`video-${featuredParticipant.session_id}`}
+                                                autoPlay
+                                                playsInline
+                                                muted={featuredParticipant.local}
+                                                className="w-full h-full object-contain"
+                                            />
+                                            <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
+                                                <span className="text-white font-medium">
+                                                    {featuredParticipant.user_name || 'Usuario'}
+                                                    {featuredParticipant.local && ' (Tú)'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
                             } else {
-                                // Multiple participants: Featured speaker + thumbnails
-                                const featuredParticipant = participants[0]; // First participant (usually teacher)
-                                const otherParticipants = participants.slice(1); // Students
+                                // Speaker view (default) - Featured speaker + thumbnails
+                                const featuredParticipant = participants[0];
+                                const otherParticipants = participants.slice(1);
 
                                 return (
                                     <div className="flex gap-4 h-full">
@@ -641,6 +691,38 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             <MonitorOff className="w-5 h-5 text-white" />
                         ) : (
                             <Monitor className="w-5 h-5 text-white" />
+                        )}
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            const layouts: Array<'speaker' | 'grid' | 'focused'> = ['speaker', 'grid', 'focused'];
+                            const currentIndex = layouts.indexOf(viewLayout);
+                            const nextIndex = (currentIndex + 1) % layouts.length;
+                            setViewLayout(layouts[nextIndex]);
+                        }}
+                        className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all shadow-lg"
+                        title={`Vista: ${viewLayout === 'speaker' ? 'Orador' : viewLayout === 'grid' ? 'Cuadrícula' : 'Enfocada'}`}
+                    >
+                        {viewLayout === 'speaker' && (
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <rect x="3" y="3" width="7" height="7" rx="1" strokeWidth="2" />
+                                <rect x="3" y="14" width="7" height="7" rx="1" strokeWidth="2" />
+                                <rect x="14" y="3" width="7" height="18" rx="1" strokeWidth="2" />
+                            </svg>
+                        )}
+                        {viewLayout === 'grid' && (
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <rect x="3" y="3" width="7" height="7" rx="1" strokeWidth="2" />
+                                <rect x="14" y="3" width="7" height="7" rx="1" strokeWidth="2" />
+                                <rect x="3" y="14" width="7" height="7" rx="1" strokeWidth="2" />
+                                <rect x="14" y="14" width="7" height="7" rx="1" strokeWidth="2" />
+                            </svg>
+                        )}
+                        {viewLayout === 'focused' && (
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <rect x="3" y="3" width="18" height="18" rx="1" strokeWidth="2" />
+                            </svg>
                         )}
                     </button>
 
