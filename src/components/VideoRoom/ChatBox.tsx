@@ -81,43 +81,6 @@ const ChatBox: React.FC<ChatBoxProps> = ({ roomId, messages, setMessages }) => {
     fetchRoomParticipantId();
   }, [currentUser, roomId, API_URL]);
 
-  // --- useEffect para CARGAR MENSAJES HISTÓRICOS ---
-  useEffect(() => {
-    const fetchHistoricalMessages = async () => {
-      if (!currentUser?.token || !roomId || !API_URL) return;
-
-      try {
-        const url = `${API_URL}/auth/messages/room/${roomId}`;
-
-        const response = await fetch(url, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Accept': 'application/json',
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log('✅ ChatBox: Mensajes históricos cargados:', data);
-
-          // Convert API messages to Message format
-          const historicalMessages = data.map((msg: any) => ({
-            sender: msg.room_participant?.user?.name || 'Usuario',
-            text: msg.content,
-          }));
-
-          setMessages(historicalMessages);
-        } else {
-          console.error('❌ ChatBox: Error al cargar mensajes históricos');
-        }
-      } catch (error) {
-        console.error('❌ ChatBox: Error al cargar mensajes históricos:', error);
-      }
-    };
-
-    fetchHistoricalMessages();
-  }, [roomId, API_URL, currentUser, setMessages]);
-
   // --- useEffect para SUSCRIBIRSE Y ESCUCHAR el CANAL de CHAT ---
   useEffect(() => {
     if (!roomId || !currentUser || !reverbServiceRef.current || roomParticipantId === null) {

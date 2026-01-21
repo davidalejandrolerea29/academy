@@ -35,6 +35,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [isTabVisible, setIsTabVisible] = useState(true);
     const [viewLayout, setViewLayout] = useState<'speaker' | 'grid' | 'focused'>('speaker');
+    const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
     // Draggable widget state
@@ -136,6 +137,28 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
                 setIsCreatingRoom(false);
                 setToast({ message: 'Conectado a la sala', type: 'success' });
+
+                // Load historical chat messages
+                try {
+                    const messagesResponse = await fetch(`${import.meta.env.VITE_API_URL}/auth/messages/room/${roomId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/json',
+                        },
+                    });
+
+                    if (messagesResponse.ok) {
+                        const messagesData = await messagesResponse.json();
+                        const historicalMessages = messagesData.map((msg: any) => ({
+                            sender: msg.room_participant?.user?.name || 'Usuario',
+                            text: msg.content,
+                        }));
+                        setChatMessages(historicalMessages);
+                        console.log('[VideoRoom] Loaded', historicalMessages.length, 'historical messages');
+                    }
+                } catch (error) {
+                    console.error('[VideoRoom] Error loading chat history:', error);
+                }
 
                 // Listen for participant updates
                 call.on('participant-joined', (event: any) => {
@@ -256,9 +279,12 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         if (!callObject) return;
 
         participants.forEach((participant: any) => {
-            // Update all video elements: full-screen, minimized, and thumbnails
+            // Update all video elements across all possible layouts
             const videoIds = [
-                `video-${participant.session_id}`,
+                `video-grid-${participant.session_id}`,
+                `video-focused-${participant.session_id}`,
+                `video-speaker-main-${participant.session_id}`,
+                `video-speaker-thumb-${participant.session_id}`,
                 `video-mini-${participant.session_id}`,
                 `video-thumb-${participant.session_id}`
             ];
@@ -536,7 +562,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                     </div>
                                 );
                             } else if (viewLayout === 'grid') {
-                                // Grid view - all participants same size
+                                // Grid view - all participants same size (clickable to pin)
                                 const gridCols = participants.length === 2 ? 'grid-cols-2' :
                                     participants.length === 3 ? 'grid-cols-2' :
                                         participants.length === 4 ? 'grid-cols-2' :
@@ -544,9 +570,17 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                 return (
                                     <div className={`grid ${gridCols} gap-4 h-full`}>
                                         {participants.map((participant: any) => (
-                                            <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden">
+                                            <div
+                                                key={participant.session_id}
+                                                className="relative bg-gray-800 rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
+                                                onClick={() => {
+                                                    setPinnedParticipantId(participant.session_id);
+                                                    setViewLayout('speaker');
+                                                }}
+                                                title="Hacer clic para destacar"
+                                            >
                                                 <video
-                                                    id={`video-${participant.session_id}`}
+                                                    id={`video-grid-${participant.session_id}`}
                                                     autoPlay
                                                     playsInline
                                                     muted={participant.local}
@@ -563,38 +597,43 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                     </div>
                                 );
                             } else if (viewLayout === 'focused') {
-                                // Focused view - only first participant (teacher)
-                                const featuredParticipant = participants[0];
+                                // Focused view - pinned participant or first one
+                                const focusedParticipant = pinnedParticipantId
+                                    ? participants.find(p => p.session_id === pinnedParticipantId) || participants[0]
+                                    : participants[0];
                                 return (
                                     <div className="h-full">
                                         <div className="relative bg-gray-800 rounded-lg overflow-hidden h-full">
                                             <video
-                                                id={`video-${featuredParticipant.session_id}`}
+                                                id={`video-focused-${focusedParticipant.session_id}`}
                                                 autoPlay
                                                 playsInline
-                                                muted={featuredParticipant.local}
+                                                muted={focusedParticipant.local}
                                                 className="w-full h-full object-contain"
                                             />
                                             <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
                                                 <span className="text-white font-medium">
-                                                    {featuredParticipant.user_name || 'Usuario'}
-                                                    {featuredParticipant.local && ' (Tú)'}
+                                                    {focusedParticipant.user_name || 'Usuario'}
+                                                    {focusedParticipant.local && ' (Tú)'}
+                                                    {pinnedParticipantId === focusedParticipant.session_id && ' 📌'}
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
                                 );
                             } else {
-                                // Speaker view (default) - Featured speaker + thumbnails
-                                const featuredParticipant = participants[0];
-                                const otherParticipants = participants.slice(1);
+                                // Speaker view - Featured speaker + thumbnails (with pin support)
+                                const featuredParticipant = pinnedParticipantId
+                                    ? participants.find(p => p.session_id === pinnedParticipantId) || participants[0]
+                                    : participants[0];
+                                const otherParticipants = participants.filter(p => p.session_id !== featuredParticipant.session_id);
 
                                 return (
                                     <div className="flex gap-4 h-full">
                                         {/* Main featured video area */}
                                         <div className="flex-1 relative bg-gray-900 rounded-lg overflow-hidden">
                                             <video
-                                                id={`video-${featuredParticipant.session_id}`}
+                                                id={`video-speaker-main-${featuredParticipant.session_id}`}
                                                 autoPlay
                                                 playsInline
                                                 muted={featuredParticipant.local}
@@ -604,16 +643,23 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                 <span className="text-white font-medium">
                                                     {featuredParticipant.user_name || 'Usuario'}
                                                     {featuredParticipant.local && ' (Tú)'}
+                                                    {pinnedParticipantId === featuredParticipant.session_id && ' 📌'}
                                                 </span>
                                             </div>
                                         </div>
 
-                                        {/* Student thumbnails on the right */}
+                                        {/* Student thumbnails on the right - clickable to pin */}
                                         <div className="flex flex-col gap-2 overflow-y-auto" style={{ width: '200px' }}>
                                             {otherParticipants.map((participant: any) => (
-                                                <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden flex-shrink-0" style={{ height: '150px' }}>
+                                                <div
+                                                    key={participant.session_id}
+                                                    className="relative bg-gray-800 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
+                                                    style={{ height: '150px' }}
+                                                    onClick={() => setPinnedParticipantId(participant.session_id)}
+                                                    title="Hacer clic para destacar"
+                                                >
                                                     <video
-                                                        id={`video-${participant.session_id}`}
+                                                        id={`video-speaker-thumb-${participant.session_id}`}
                                                         autoPlay
                                                         playsInline
                                                         muted={participant.local}
