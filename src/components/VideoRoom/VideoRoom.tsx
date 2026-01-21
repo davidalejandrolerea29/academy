@@ -310,35 +310,53 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, [callObject]);
 
-    // Update video elements when participants change
+    // Update video elements when participants change or layout changes
     useEffect(() => {
         if (!callObject) return;
 
         participants.forEach((participant: any) => {
-            // Get the video element for this participant
-            const videoEl = document.getElementById(`video-${participant.session_id}`) as HTMLVideoElement;
+            // Find ALL possible video elements for this participant to support all views
+            const videoEls = [
+                document.getElementById(`video-${participant.session_id}`),       // Main view / Speaker
+                document.getElementById(`video-mini-${participant.session_id}`),  // Minimized view
+                document.getElementById(`video-thumb-${participant.session_id}`)  // Screen share thumbnails
+            ];
 
-            if (videoEl) {
-                const tracks = [];
+            videoEls.forEach((videoEl) => {
+                if (videoEl && videoEl instanceof HTMLVideoElement) {
+                    const tracks = [];
 
-                // Prioritize screen share if available
-                if (participant.tracks?.screenVideo?.persistentTrack) {
-                    tracks.push(participant.tracks.screenVideo.persistentTrack);
-                } else if (participant.tracks?.video?.persistentTrack) {
-                    tracks.push(participant.tracks.video.persistentTrack);
+                    // Prioritize screen share if available
+                    if (participant.tracks?.screenVideo?.persistentTrack) {
+                        tracks.push(participant.tracks.screenVideo.persistentTrack);
+                    } else if (participant.tracks?.video?.persistentTrack) {
+                        tracks.push(participant.tracks.video.persistentTrack);
+                    }
+
+                    // Add audio if not local
+                    if (participant.tracks?.audio?.persistentTrack && !participant.local) {
+                        tracks.push(participant.tracks.audio.persistentTrack);
+                    }
+
+                    if (tracks.length > 0) {
+                        const newStream = new MediaStream(tracks);
+
+                        // Check if the stream currently assigned is different to avoid unnecessary seeking/flicker
+                        // Note: MediaStream objects are new instances, but we can check track IDs or just assign
+                        // For raw video elements, re-assigning srcObject usually works fine, 
+                        // but to be safer we can check if the current srcObject has the same tracks.
+                        const currentStream = videoEl.srcObject as MediaStream;
+                        const currentTracks = currentStream?.getTracks().map(t => t.id).join(',');
+                        const newTracks = tracks.map(t => t.id).join(',');
+
+                        if (currentTracks !== newTracks) {
+                            videoEl.srcObject = newStream;
+                        }
+                    }
                 }
-
-                // Add audio if not local
-                if (participant.tracks?.audio?.persistentTrack && !participant.local) {
-                    tracks.push(participant.tracks.audio.persistentTrack);
-                }
-
-                if (tracks.length > 0) {
-                    videoEl.srcObject = new MediaStream(tracks);
-                }
-            }
+            });
         });
-    }, [participants, callObject, isCallMinimized]);
+    }, [participants, callObject, isCallMinimized, isScreenSharing, manualFeaturedId]);
 
     const toggleScreenShare = async () => {
         if (!callObject) return;
@@ -591,7 +609,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                 } else {
                                     // Find the teacher by name, or default to first participant
                                     const teacherParticipant = teacherName
-                                        ? participants.find((p: any) => p.user_name === teacherName)
+                                        ? participants.find((p: any) =>
+                                            p.user_name?.toLowerCase().trim() === teacherName.toLowerCase().trim()
+                                        )
                                         : null;
                                     featuredParticipant = teacherParticipant || participants[0];
                                 }
