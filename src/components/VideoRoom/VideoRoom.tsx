@@ -35,8 +35,6 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [isTabVisible, setIsTabVisible] = useState(true);
-    const [viewLayout, setViewLayout] = useState<'speaker' | 'grid' | 'focused'>('speaker');
-    const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
     const [teacherName, setTeacherName] = useState<string | null>(null);
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
@@ -598,79 +596,17 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                         </div>
                                     </div>
                                 );
-                            } else if (viewLayout === 'grid') {
-                                // Grid view - all participants same size (clickable to pin)
-                                const gridCols = participants.length === 2 ? 'grid-cols-2' :
-                                    participants.length === 3 ? 'grid-cols-2' :
-                                        participants.length === 4 ? 'grid-cols-2' :
-                                            'grid-cols-3';
-                                return (
-                                    <div className={`grid ${gridCols} gap-4 h-full`}>
-                                        {participants.map((participant: any) => (
-                                            <div
-                                                key={participant.session_id}
-                                                className="relative bg-gray-800 rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
-                                                onClick={() => {
-                                                    setPinnedParticipantId(participant.session_id);
-                                                    setViewLayout('speaker');
-                                                }}
-                                                title="Hacer clic para destacar"
-                                            >
-                                                <video
-                                                    id={`video-grid-${participant.session_id}`}
-                                                    autoPlay
-                                                    playsInline
-                                                    muted={participant.local}
-                                                    className="w-full h-full object-contain"
-                                                />
-                                                <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
-                                                    <span className="text-white font-medium">
-                                                        {participant.user_name || 'Usuario'}
-                                                        {participant.local && ' (Tú)'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                );
-                            } else if (viewLayout === 'focused') {
-                                // Focused view - pinned participant or first one
-                                const focusedParticipant = pinnedParticipantId
-                                    ? participants.find(p => p.session_id === pinnedParticipantId) || participants[0]
-                                    : participants[0];
-                                return (
-                                    <div className="h-full">
-                                        <div className="relative bg-gray-800 rounded-lg overflow-hidden h-full">
-                                            <video
-                                                id={`video-focused-${focusedParticipant.session_id}`}
-                                                autoPlay
-                                                playsInline
-                                                muted={focusedParticipant.local}
-                                                className="w-full h-full object-contain"
-                                            />
-                                            <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
-                                                <span className="text-white font-medium">
-                                                    {focusedParticipant.user_name || 'Usuario'}
-                                                    {focusedParticipant.local && ' (Tú)'}
-                                                    {pinnedParticipantId === focusedParticipant.session_id && ' 📌'}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
                             } else {
-                                // Speaker view - Featured speaker + thumbnails (with pin support)
-                                const featuredParticipant = pinnedParticipantId
-                                    ? participants.find(p => p.session_id === pinnedParticipantId) || participants[0]
-                                    : participants[0];
-                                const otherParticipants = participants.filter(p => p.session_id !== featuredParticipant.session_id);
+                                // Speaker view - Teacher (first participant) large, students as thumbnails
+                                const featuredParticipant = participants[0];
+                                const otherParticipants = participants.slice(1);
 
                                 return (
                                     <div className="flex gap-4 h-full">
                                         {/* Main featured video area */}
                                         <div className="flex-1 relative bg-gray-900 rounded-lg overflow-hidden">
                                             <video
-                                                id={`video-speaker-main-${featuredParticipant.session_id}`}
+                                                id={`video-${featuredParticipant.session_id}`}
                                                 autoPlay
                                                 playsInline
                                                 muted={featuredParticipant.local}
@@ -680,37 +616,36 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                 <span className="text-white font-medium">
                                                     {featuredParticipant.user_name || 'Usuario'}
                                                     {featuredParticipant.local && ' (Tú)'}
-                                                    {pinnedParticipantId === featuredParticipant.session_id && ' 📌'}
                                                 </span>
                                             </div>
                                         </div>
 
-                                        {/* Student thumbnails on the right - clickable to pin */}
-                                        <div className="flex flex-col gap-2 overflow-y-auto" style={{ width: '200px' }}>
-                                            {otherParticipants.map((participant: any) => (
-                                                <div
-                                                    key={participant.session_id}
-                                                    className="relative bg-gray-800 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
-                                                    style={{ height: '150px' }}
-                                                    onClick={() => setPinnedParticipantId(participant.session_id)}
-                                                    title="Hacer clic para destacar"
-                                                >
-                                                    <video
-                                                        id={`video-speaker-thumb-${participant.session_id}`}
-                                                        autoPlay
-                                                        playsInline
-                                                        muted={participant.local}
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                    <div className="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs">
-                                                        <span className="text-white">
-                                                            {participant.user_name || 'Usuario'}
-                                                            {participant.local && ' (Tú)'}
-                                                        </span>
+                                        {/* Student thumbnails on the right */}
+                                        {otherParticipants.length > 0 && (
+                                            <div className="flex flex-col gap-2 overflow-y-auto" style={{ width: '200px' }}>
+                                                {otherParticipants.map((participant: any) => (
+                                                    <div
+                                                        key={participant.session_id}
+                                                        className="relative bg-gray-800 rounded-lg overflow-hidden flex-shrink-0"
+                                                        style={{ height: '150px' }}
+                                                    >
+                                                        <video
+                                                            id={`video-${participant.session_id}`}
+                                                            autoPlay
+                                                            playsInline
+                                                            muted={participant.local}
+                                                            className="w-full h-full object-contain"
+                                                        />
+                                                        <div className="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs">
+                                                            <span className="text-white">
+                                                                {participant.user_name || 'Usuario'}
+                                                                {participant.local && ' (Tú)'}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))}
-                                        </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             }
@@ -774,38 +709,6 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             <MonitorOff className="w-5 h-5 text-white" />
                         ) : (
                             <Monitor className="w-5 h-5 text-white" />
-                        )}
-                    </button>
-
-                    <button
-                        onClick={() => {
-                            const layouts: Array<'speaker' | 'grid' | 'focused'> = ['speaker', 'grid', 'focused'];
-                            const currentIndex = layouts.indexOf(viewLayout);
-                            const nextIndex = (currentIndex + 1) % layouts.length;
-                            setViewLayout(layouts[nextIndex]);
-                        }}
-                        className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all shadow-lg"
-                        title={`Vista: ${viewLayout === 'speaker' ? 'Orador' : viewLayout === 'grid' ? 'Cuadrícula' : 'Enfocada'}`}
-                    >
-                        {viewLayout === 'speaker' && (
-                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <rect x="3" y="3" width="7" height="7" rx="1" strokeWidth="2" />
-                                <rect x="3" y="14" width="7" height="7" rx="1" strokeWidth="2" />
-                                <rect x="14" y="3" width="7" height="18" rx="1" strokeWidth="2" />
-                            </svg>
-                        )}
-                        {viewLayout === 'grid' && (
-                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <rect x="3" y="3" width="7" height="7" rx="1" strokeWidth="2" />
-                                <rect x="14" y="3" width="7" height="7" rx="1" strokeWidth="2" />
-                                <rect x="3" y="14" width="7" height="7" rx="1" strokeWidth="2" />
-                                <rect x="14" y="14" width="7" height="7" rx="1" strokeWidth="2" />
-                            </svg>
-                        )}
-                        {viewLayout === 'focused' && (
-                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <rect x="3" y="3" width="18" height="18" rx="1" strokeWidth="2" />
-                            </svg>
                         )}
                     </button>
 
