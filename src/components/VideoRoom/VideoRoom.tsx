@@ -502,7 +502,17 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             );
                         } else {
                             // Featured speaker layout: First participant large, others as thumbnails
-                            if (participants.length === 1) {
+                            if (participants.length === 0) {
+                                // No participants yet - show loading state
+                                return (
+                                    <div className="h-full flex items-center justify-center">
+                                        <div className="text-white text-center">
+                                            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white mx-auto mb-4"></div>
+                                            <p>Conectando...</p>
+                                        </div>
+                                    </div>
+                                );
+                            } else if (participants.length === 1) {
                                 // Single participant - full screen
                                 const participant = participants[0];
                                 return (
