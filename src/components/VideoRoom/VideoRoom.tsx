@@ -314,45 +314,28 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         if (!callObject) return;
 
         participants.forEach((participant: any) => {
-            // Update all video elements across all possible layouts
-            const videoIds = [
-                `video-grid-${participant.session_id}`,
-                `video-focused-${participant.session_id}`,
-                `video-speaker-main-${participant.session_id}`,
-                `video-speaker-thumb-${participant.session_id}`,
-                `video-mini-${participant.session_id}`,
-                `video-thumb-${participant.session_id}`
-            ];
+            // Get the video element for this participant
+            const videoEl = document.getElementById(`video-${participant.session_id}`) as HTMLVideoElement;
 
-            videoIds.forEach(videoId => {
-                const videoEl = document.getElementById(videoId) as HTMLVideoElement;
-                if (videoEl) {
-                    const tracks = [];
+            if (videoEl) {
+                const tracks = [];
 
-                    // For thumbnails, always show camera (not screen share)
-                    if (videoId.includes('thumb')) {
-                        if (participant.tracks?.video?.persistentTrack) {
-                            tracks.push(participant.tracks.video.persistentTrack);
-                        }
-                    } else {
-                        // For main videos, prioritize screen share
-                        if (participant.tracks?.screenVideo?.persistentTrack) {
-                            tracks.push(participant.tracks.screenVideo.persistentTrack);
-                        } else if (participant.tracks?.video?.persistentTrack) {
-                            tracks.push(participant.tracks.video.persistentTrack);
-                        }
-                    }
-
-                    // Add audio if not local
-                    if (participant.tracks?.audio?.persistentTrack && !participant.local) {
-                        tracks.push(participant.tracks.audio.persistentTrack);
-                    }
-
-                    if (tracks.length > 0) {
-                        videoEl.srcObject = new MediaStream(tracks);
-                    }
+                // Prioritize screen share if available
+                if (participant.tracks?.screenVideo?.persistentTrack) {
+                    tracks.push(participant.tracks.screenVideo.persistentTrack);
+                } else if (participant.tracks?.video?.persistentTrack) {
+                    tracks.push(participant.tracks.video.persistentTrack);
                 }
-            });
+
+                // Add audio if not local
+                if (participant.tracks?.audio?.persistentTrack && !participant.local) {
+                    tracks.push(participant.tracks.audio.persistentTrack);
+                }
+
+                if (tracks.length > 0) {
+                    videoEl.srcObject = new MediaStream(tracks);
+                }
+            }
         });
     }, [participants, callObject, isCallMinimized]);
 
