@@ -303,11 +303,12 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         if (!callObject) return;
 
         participants.forEach((participant: any) => {
-            // Get the video element for this participant
-            const videoEl = document.getElementById(`video-${participant.session_id}`) as HTMLVideoElement;
+            // Find ALL video elements for this participant (there might be multiple in different views)
+            const videoElements = document.querySelectorAll(`video[id^="video-${participant.session_id}"]`) as NodeListOf<HTMLVideoElement>;
 
-            if (videoEl) {
-                const tracks = [];
+            videoElements.forEach((videoEl) => {
+                if (videoEl) {
+                    const tracks = [];
 
                     // Prioritize screen share if available
                     if (participant.tracks?.screenVideo?.persistentTrack) {
@@ -321,12 +322,17 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                         tracks.push(participant.tracks.audio.persistentTrack);
                     }
 
-                if (tracks.length > 0) {
-                    videoEl.srcObject = new MediaStream(tracks);
+                    if (tracks.length > 0) {
+                        const newStream = new MediaStream(tracks);
+                        // Only update if the stream is different to avoid flickering
+                        if (!videoEl.srcObject || videoEl.srcObject !== newStream) {
+                            videoEl.srcObject = newStream;
+                        }
+                    }
                 }
-            }
+            });
         });
-    }, [participants, callObject, isCallMinimized]);
+    }, [participants, callObject, isCallMinimized, manualFeaturedId]);
 
     const toggleScreenShare = async () => {
         if (!callObject) return;
