@@ -36,6 +36,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [isTabVisible, setIsTabVisible] = useState(true);
     const [teacherName, setTeacherName] = useState<string | null>(null);
+    const [manualFeaturedId, setManualFeaturedId] = useState<string | null>(null);
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
     // Draggable widget state
@@ -581,12 +582,20 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                 );
                             } else {
                                 // Speaker view - Teacher large, students as thumbnails
-                                // Find the teacher by name, or default to first participant
-                                const teacherParticipant = teacherName
-                                    ? participants.find((p: any) => p.user_name === teacherName)
-                                    : null;
+                                // Priority: manual selection > teacher > first participant
+                                let featuredParticipant;
 
-                                const featuredParticipant = teacherParticipant || participants[0];
+                                if (manualFeaturedId) {
+                                    // Use manually selected participant
+                                    featuredParticipant = participants.find((p: any) => p.session_id === manualFeaturedId) || participants[0];
+                                } else {
+                                    // Find the teacher by name, or default to first participant
+                                    const teacherParticipant = teacherName
+                                        ? participants.find((p: any) => p.user_name === teacherName)
+                                        : null;
+                                    featuredParticipant = teacherParticipant || participants[0];
+                                }
+
                                 const otherParticipants = participants.filter((p: any) => p.session_id !== featuredParticipant.session_id);
 
                                 return (
@@ -606,6 +615,16 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                     {featuredParticipant.local && ' (Tú)'}
                                                 </span>
                                             </div>
+                                            {/* Reset button if manually selected */}
+                                            {manualFeaturedId && (
+                                                <button
+                                                    onClick={() => setManualFeaturedId(null)}
+                                                    className="absolute top-4 right-4 bg-black bg-opacity-60 hover:bg-opacity-80 px-3 py-2 rounded-lg transition-all"
+                                                    title="Volver a vista por defecto"
+                                                >
+                                                    <span className="text-white text-sm">↺ Restablecer</span>
+                                                </button>
+                                            )}
                                         </div>
 
                                         {/* Student thumbnails on the right */}
@@ -614,8 +633,10 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                 {otherParticipants.map((participant: any) => (
                                                     <div
                                                         key={participant.session_id}
-                                                        className="relative bg-gray-800 rounded-lg overflow-hidden flex-shrink-0"
+                                                        className="relative bg-gray-800 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
                                                         style={{ height: '150px' }}
+                                                        onClick={() => setManualFeaturedId(participant.session_id)}
+                                                        title="Clic para ver en grande"
                                                     >
                                                         <video
                                                             id={`video-${participant.session_id}`}
