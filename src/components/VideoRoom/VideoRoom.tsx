@@ -21,6 +21,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     handleCallCleanup,
     toggleMinimizeCall,
     isCallMinimized,
+    isTeacher,
 }) => {
     const { currentUser } = useAuth();
     const navigate = useNavigate();
@@ -36,6 +37,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isTabVisible, setIsTabVisible] = useState(true);
     const [viewLayout, setViewLayout] = useState<'speaker' | 'grid' | 'focused'>('speaker');
     const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
+    const [teacherName, setTeacherName] = useState<string | null>(null);
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
     // Draggable widget state
@@ -138,6 +140,26 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 setIsCreatingRoom(false);
                 setToast({ message: 'Conectado a la sala', type: 'success' });
 
+                // Fetch room teacher information
+                try {
+                    const roomInfoResponse = await fetch(`${import.meta.env.VITE_API_URL}/auth/rooms/${roomId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/json',
+                        },
+                    });
+
+                    if (roomInfoResponse.ok) {
+                        const roomData = await roomInfoResponse.json();
+                        if (roomData.teacher?.name) {
+                            setTeacherName(roomData.teacher.name);
+                            console.log('[VideoRoom] Teacher name:', roomData.teacher.name);
+                        }
+                    }
+                } catch (error) {
+                    console.error('[VideoRoom] Error fetching room teacher:', error);
+                }
+
                 // Load historical chat messages
                 try {
                     const messagesResponse = await fetch(`${import.meta.env.VITE_API_URL}/auth/messages/room/${roomId}`, {
@@ -222,7 +244,22 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
         const updateParticipants = (call: any) => {
             const parts = call.participants();
-            const participantList = Object.values(parts);
+            let participantList = Object.values(parts);
+
+            // Sort participants: teachers first, then students
+            // We identify teachers by checking if their user_name matches the teacher's name
+            participantList = participantList.sort((a: any, b: any) => {
+                const aIsTeacher = isTeacher && a.user_name === currentUser?.name;
+                const bIsTeacher = isTeacher && b.user_name === currentUser?.name;
+
+                // If we're the teacher and this is our session, put us first
+                if (aIsTeacher && !bIsTeacher) return -1;
+                if (!aIsTeacher && bIsTeacher) return 1;
+
+                // Otherwise maintain order
+                return 0;
+            });
+
             setParticipants(participantList);
         };
 
