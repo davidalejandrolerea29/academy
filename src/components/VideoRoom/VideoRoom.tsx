@@ -303,8 +303,11 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         if (!callObject) return;
 
         participants.forEach((participant: any) => {
-            // Find ALL video elements for this participant (there might be multiple in different views)
-            const videoElements = document.querySelectorAll(`video[id^="video-${participant.session_id}"]`) as NodeListOf<HTMLVideoElement>;
+            // Find ALL video elements for this participant (normal view AND minimized widget)
+            // Matches: video-${session_id}, video-mini-${session_id}
+            const videoElements = document.querySelectorAll(
+                `video[id="video-${participant.session_id}"], video[id="video-mini-${participant.session_id}"]`
+            ) as NodeListOf<HTMLVideoElement>;
 
             videoElements.forEach((videoEl) => {
                 if (videoEl) {
