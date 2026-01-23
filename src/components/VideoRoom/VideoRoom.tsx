@@ -587,7 +587,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
     // Full screen view
     return (
-        <div className="flex h-screen bg-gray-900 overflow-hidden flex-col md:flex-row">
+        <div className="fixed inset-0 z-50 flex h-full w-full bg-gray-900 overflow-hidden flex-col md:flex-row">
             {/* Main video area */}
             <div className={`flex-1 flex flex-col min-w-0 relative ${isChatOpen && isMobile ? 'hidden' : 'flex'}`}>
                 {/* Video grid */}
