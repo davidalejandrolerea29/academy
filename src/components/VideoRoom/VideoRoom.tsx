@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyIframe from '@daily-co/daily-js';
-import { PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video, VideoOff, MessageSquare, X, LayoutGrid } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -37,6 +37,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isTabVisible, setIsTabVisible] = useState(true);
     const [teacherName, setTeacherName] = useState<string | null>(null);
     const [manualFeaturedId, setManualFeaturedId] = useState<string | null>(null);
+    const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 768);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
     // Draggable widget state
@@ -54,6 +56,23 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     };
 
     // Handle drag move
+    useEffect(() => {
+        const handleResize = () => {
+            const mobile = window.innerWidth < 768;
+            setIsMobile(mobile);
+            if (mobile && isChatOpen) {
+                // optional: close chat on mobile when resizing down? 
+                // keeping current state is usually better for UX unless it breaks layout
+            } else if (!mobile && !isChatOpen) {
+                // on desktop, default chat to open
+                setIsChatOpen(true);
+            }
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [isChatOpen]);
+
     useEffect(() => {
         const handleDragMove = (e: MouseEvent) => {
             if (isDragging) {
@@ -298,6 +317,44 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, [callObject]);
 
+    // Helper to update video source
+    const updateVideoSource = (videoEl: HTMLVideoElement, participant: any) => {
+        if (!videoEl || !participant || !videoEl.load) return;
+
+        const tracks = [];
+
+        // Prioritize screen share if available
+        if (participant.tracks?.screenVideo?.persistentTrack) {
+            tracks.push(participant.tracks.screenVideo.persistentTrack);
+        } else if (participant.tracks?.video?.persistentTrack) {
+            tracks.push(participant.tracks.video.persistentTrack);
+        }
+
+        // Add audio if not local
+        if (participant.tracks?.audio?.persistentTrack && !participant.local) {
+            tracks.push(participant.tracks.audio.persistentTrack);
+        }
+
+        if (tracks.length > 0) {
+            const newStream = new MediaStream(tracks);
+
+            // Only update if the stream is different to avoid flickering
+            if (!videoEl.srcObject) {
+                videoEl.srcObject = newStream;
+            } else {
+                const currentStream = videoEl.srcObject as MediaStream;
+                const currentTracks = currentStream.getTracks();
+                const newTracks = newStream.getTracks();
+
+                // Simple ID check to see if tracks changed
+                if (currentTracks.length !== newTracks.length ||
+                    currentTracks[0]?.id !== newTracks[0]?.id) {
+                    videoEl.srcObject = newStream;
+                }
+            }
+        }
+    };
+
     // Update video elements when participants change or layout changes
     useEffect(() => {
         if (!callObject) return;
@@ -465,6 +522,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             <div key={participant.session_id} className="relative bg-gray-800 rounded overflow-hidden">
                                 <video
                                     id={`video-mini-${participant.session_id}`}
+                                    ref={(el) => updateVideoSource(el!, participant)}
                                     autoPlay
                                     playsInline
                                     muted={participant.local}
@@ -490,9 +548,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
     // Full screen view
     return (
-        <div className="flex h-screen bg-gray-900 overflow-hidden">
+        <div className="flex h-screen bg-gray-900 overflow-hidden flex-col md:flex-row">
             {/* Main video area */}
-            <div className="flex-1 flex flex-col min-w-0 relative">
+            <div className={`flex-1 flex flex-col min-w-0 relative ${isChatOpen && isMobile ? 'hidden' : 'flex'}`}>
                 {/* Video grid */}
                 <div className="flex-1 relative bg-black p-4" ref={videoContainerRef}>
                     {/* Check if anyone is sharing screen */}
@@ -507,6 +565,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                     <div className="flex-1 relative bg-gray-900 rounded-lg overflow-hidden">
                                         <video
                                             id={`video-${screenSharer.session_id}`}
+                                            ref={(el) => updateVideoSource(el!, screenSharer)}
                                             autoPlay
                                             playsInline
                                             muted={screenSharer.local}
@@ -525,6 +584,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                             <div key={participant.session_id} className="relative bg-gray-800 rounded-lg overflow-hidden" style={{ height: '150px' }}>
                                                 <video
                                                     id={`video-thumb-${participant.session_id}`}
+                                                    ref={(el) => updateVideoSource(el!, participant)}
                                                     autoPlay
                                                     playsInline
                                                     muted={participant.local}
@@ -561,6 +621,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                         <div className="relative bg-gray-800 rounded-lg overflow-hidden h-full">
                                             <video
                                                 id={`video-${participant.session_id}`}
+                                                ref={(el) => updateVideoSource(el!, participant)}
                                                 autoPlay
                                                 playsInline
                                                 muted={participant.local}
@@ -601,6 +662,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                         <div className="flex-1 relative bg-gray-900 rounded-lg overflow-hidden">
                                             <video
                                                 id={`video-${featuredParticipant.session_id}`}
+                                                ref={(el) => updateVideoSource(el!, featuredParticipant)}
                                                 autoPlay
                                                 playsInline
                                                 muted={featuredParticipant.local}
@@ -637,6 +699,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                     >
                                                         <video
                                                             id={`video-${participant.session_id}`}
+                                                            ref={(el) => updateVideoSource(el!, participant)}
                                                             autoPlay
                                                             playsInline
                                                             muted={participant.local}
@@ -668,56 +731,46 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     </div>
                 </div>
 
-                {/* Floating controls overlay - Top Right */}
-                <div className="absolute top-4 right-4 flex gap-2 z-50">
+                {/* Bottom Controls Bar (Mobile & Desktop Unified) */}
+                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex items-center gap-4 bg-gray-900 bg-opacity-90 px-6 py-3 rounded-2xl z-50 border border-gray-800 shadow-xl">
                     <button
                         onClick={toggleMute}
-                        className={`p-3 rounded-full transition-all shadow-lg ${isMuted
-                            ? 'bg-red-600 hover:bg-red-700'
-                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
-                            }`}
+                        className={`p-3 rounded-full transition-all ${isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-700 hover:bg-gray-600'}`}
                         title={isMuted ? 'Activar micrófono' : 'Silenciar micrófono'}
                     >
-                        {isMuted ? (
-                            <MicOff className="w-5 h-5 text-white" />
-                        ) : (
-                            <Mic className="w-5 h-5 text-white" />
-                        )}
+                        {isMuted ? <MicOff className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-white" />}
                     </button>
 
                     <button
                         onClick={toggleVideo}
-                        className={`p-3 rounded-full transition-all shadow-lg ${isVideoOff
-                            ? 'bg-red-600 hover:bg-red-700'
-                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
-                            }`}
+                        className={`p-3 rounded-full transition-all ${isVideoOff ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-700 hover:bg-gray-600'}`}
                         title={isVideoOff ? 'Activar cámara' : 'Desactivar cámara'}
                     >
-                        {isVideoOff ? (
-                            <VideoOff className="w-5 h-5 text-white" />
-                        ) : (
-                            <Video className="w-5 h-5 text-white" />
-                        )}
+                        {isVideoOff ? <VideoOff className="w-5 h-5 text-white" /> : <Video className="w-5 h-5 text-white" />}
                     </button>
 
+                    {!isMobile && (
+                        <button
+                            onClick={toggleScreenShare}
+                            className={`p-3 rounded-full transition-all ${isScreenSharing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'}`}
+                            title="Compartir pantalla"
+                        >
+                            {isScreenSharing ? <MonitorOff className="w-5 h-5 text-white" /> : <Monitor className="w-5 h-5 text-white" />}
+                        </button>
+                    )}
+
                     <button
-                        onClick={toggleScreenShare}
-                        className={`p-3 rounded-full transition-all shadow-lg ${isScreenSharing
-                            ? 'bg-blue-600 hover:bg-blue-700'
-                            : 'bg-gray-800 bg-opacity-75 hover:bg-opacity-100'
-                            }`}
-                        title={isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}
+                        onClick={() => setIsChatOpen(!isChatOpen)}
+                        className={`p-3 rounded-full transition-all ${isChatOpen ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'}`}
+                        title="Chat"
                     >
-                        {isScreenSharing ? (
-                            <MonitorOff className="w-5 h-5 text-white" />
-                        ) : (
-                            <Monitor className="w-5 h-5 text-white" />
-                        )}
+                        <MessageSquare className="w-5 h-5 text-white" />
+                        {/* Unread badge logic could go here */}
                     </button>
 
                     <button
                         onClick={toggleMinimizeCall}
-                        className="p-3 bg-gray-800 bg-opacity-75 hover:bg-opacity-100 rounded-full transition-all shadow-lg"
+                        className="p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-all"
                         title="Minimizar"
                     >
                         <Minimize2 className="w-5 h-5 text-white" />
@@ -725,7 +778,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
                     <button
                         onClick={handleEndCall}
-                        className="p-3 bg-red-600 hover:bg-red-700 rounded-full transition-all shadow-lg"
+                        className="p-3 bg-red-600 hover:bg-red-700 rounded-full transition-all"
                         title="Colgar"
                     >
                         <PhoneOff className="w-5 h-5 text-white" />
@@ -733,15 +786,23 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 </div>
             </div>
 
-            {/* Chat sidebar - ALWAYS OPEN */}
-            <div className="w-96 bg-gray-800 border-l border-gray-700 flex flex-col flex-shrink-0">
-                <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
-                    <h3 className="text-white font-semibold text-lg">Chat</h3>
+            {/* Chat sidebar */}
+            {isChatOpen && (
+                <div className={`${isMobile ? 'w-full absolute inset-0 z-40' : 'w-96 border-l'} bg-gray-800 border-gray-700 flex flex-col flex-shrink-0 transition-all duration-300`}>
+                    <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
+                        <h3 className="text-white font-semibold text-lg">Chat</h3>
+                        <button
+                            onClick={() => setIsChatOpen(false)}
+                            className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+                    <div className="flex-1 min-h-0">
+                        <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />
+                    </div>
                 </div>
-                <div className="flex-1 min-h-0">
-                    <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />
-                </div>
-            </div>
+            )}
 
             {/* Toast notifications */}
             {toast && (
