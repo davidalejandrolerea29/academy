@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyIframe from '@daily-co/daily-js';
-import { PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video, VideoOff, MessageSquare, X, LayoutGrid } from 'lucide-react';
+import { PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video, VideoOff, MessageSquare, X, Signal, ShieldAlert } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -30,11 +30,13 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [roomError, setRoomError] = useState<string | null>(null);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+    const [networkQuality, setNetworkQuality] = useState<'good' | 'low' | 'very-low'>('good');
+    const [permissionError, setPermissionError] = useState(false);
     const [participants, setParticipants] = useState<any[]>([]);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
-    const [isTabVisible, setIsTabVisible] = useState(true);
+
     const [teacherName, setTeacherName] = useState<string | null>(null);
     const [manualFeaturedId, setManualFeaturedId] = useState<string | null>(null);
     const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 768);
@@ -153,6 +155,13 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 await call.join({
                     url: roomUrl,
                     userName: currentUser?.name || 'Usuario',
+                }).catch((error: any) => {
+                    console.error('[Daily] Join error:', error);
+                    // Check specifically for permission errors
+                    if (error?.errorMsg?.includes('permissions') || error?.errorMsg?.includes('device access denied')) {
+                        throw new Error('PERMISSION_DENIED');
+                    }
+                    throw error;
                 });
 
                 setIsCreatingRoom(false);
@@ -217,9 +226,15 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     updateParticipants(call);
                 });
 
-                call.on('left-meeting', () => {
-                    console.log('[Daily] Left meeting');
-                    handleEndCall();
+                call.on('left-meeting', (event: any) => {
+                    console.log('[Daily] Left meeting', event);
+                    // Handle "room full" or "meeting ended" or "kicked"
+                    if (event?.reason === 'meetingFull') {
+                        setToast({ message: 'La sala está llena', type: 'error' });
+                        setTimeout(handleEndCall, 3000);
+                    } else {
+                        handleEndCall();
+                    }
                 });
 
                 // Add error handling for connection issues
@@ -234,8 +249,14 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 // Monitor network quality
                 call.on('network-quality-change', (event: any) => {
                     console.log('[Daily] Network quality:', event);
-                    if (event.quality === 'low' || event.quality === 'very-low') {
-                        console.warn('[Daily] Low network quality detected');
+                    if (event.threshold === 'good') {
+                        setNetworkQuality('good');
+                    } else if (event.threshold === 'low') {
+                        setNetworkQuality('low');
+                        setToast({ message: 'Conexión inestable detectada', type: 'info' });
+                    } else if (event.threshold === 'very-low') {
+                        setNetworkQuality('very-low');
+                        setToast({ message: 'Conexión crítica', type: 'error' });
                     }
                 });
 
@@ -254,6 +275,11 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             } catch (error: any) {
                 console.error('[Daily] Error creating room:', error);
                 if (mounted) {
+                    if (error.message === 'PERMISSION_DENIED' || error.message?.includes('permissions')) {
+                        setPermissionError(true);
+                        setIsCreatingRoom(false);
+                        return;
+                    }
                     setRoomError(error.message || 'Error al crear la sala');
                     setIsCreatingRoom(false);
                 }
@@ -291,31 +317,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         };
     }, [roomId, currentUser]);
 
-    // Page Visibility API - Handle tab switching
-    useEffect(() => {
-        const handleVisibilityChange = () => {
-            const isVisible = !document.hidden;
-            setIsTabVisible(isVisible);
 
-            if (!isVisible) {
-                // Tab is now hidden - user switched tabs or minimized
-                console.log('[Visibility] Tab hidden - call continues in background');
-            } else {
-                // Tab is now visible - user returned
-                console.log('[Visibility] Tab visible - user returned');
-
-                // Just log the state, don't try to reconnect automatically
-                // Daily.co handles background connections internally
-                if (callObject) {
-                    const meetingState = callObject.meetingState();
-                    console.log('[Visibility] Meeting state:', meetingState);
-                }
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [callObject]);
 
     // Helper to update video source
     const updateVideoSource = (videoEl: HTMLVideoElement, participant: any) => {
@@ -449,6 +451,43 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 <div className="text-center">
                     <div className="text-white text-xl mb-4">Creando sala de videollamada...</div>
                     <div className="text-gray-400">Por favor espera un momento</div>
+                </div>
+            </div>
+        );
+    }
+
+    if (permissionError) {
+        return (
+            <div className="flex h-screen bg-gray-900 items-center justify-center p-4">
+                <div className="text-center max-w-lg bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700">
+                    <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold text-white mb-2">Permisos requeridos</h2>
+                    <p className="text-gray-300 mb-6">
+                        No pudimos acceder a tu cámara o micrófono. Para unirte a la clase, necesitas dar permiso en tu navegador.
+                    </p>
+
+                    <div className="text-left bg-gray-900 p-4 rounded-lg mb-6 border border-gray-700">
+                        <h3 className="text-white font-semibold mb-2">Cómo habilitar permisos:</h3>
+                        <ol className="list-decimal list-inside text-gray-400 space-y-2 text-sm">
+                            <li>Haz clic en el ícono de candado 🔒 o cámara 📷 en la barra de dirección (arriba a la izquierda).</li>
+                            <li>Activa los permisos de <strong>Cámara</strong> y <strong>Micrófono</strong>.</li>
+                            <li>Recarga esta página.</li>
+                        </ol>
+                    </div>
+
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all w-full"
+                    >
+                        Ya activé los permisos, recargar página
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/rooms')}
+                        className="mt-4 text-gray-400 hover:text-white text-sm underline"
+                    >
+                        Volver a la lista de salas
+                    </button>
                 </div>
             </div>
         );
@@ -657,9 +696,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                 const otherParticipants = participants.filter((p: any) => p.session_id !== featuredParticipant.session_id);
 
                                 return (
-                                    <div className="flex gap-4 h-full">
+                                    <div className="relative h-full w-full bg-black">
                                         {/* Main featured video area */}
-                                        <div className="flex-1 relative bg-gray-900 rounded-lg overflow-hidden">
+                                        <div className="absolute inset-0 z-0">
                                             <video
                                                 id={`video-${featuredParticipant.session_id}`}
                                                 ref={(el) => updateVideoSource(el!, featuredParticipant)}
@@ -668,45 +707,49 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                                 muted={featuredParticipant.local}
                                                 className="w-full h-full object-contain"
                                             />
-                                            <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 px-3 py-2 rounded-lg">
-                                                <span className="text-white font-medium">
+                                            <div className="absolute bottom-24 left-6 bg-black bg-opacity-60 px-4 py-2 rounded-lg z-10">
+                                                <span className="text-white font-medium text-lg">
                                                     {featuredParticipant.user_name || 'Usuario'}
                                                     {featuredParticipant.local && ' (Tú)'}
                                                 </span>
                                             </div>
-                                            {/* Reset button if manually selected */}
+
+                                            {/* Reset button - Moved to top center/left to avoid thumbnails */}
                                             {manualFeaturedId && (
                                                 <button
                                                     onClick={() => setManualFeaturedId(null)}
-                                                    className="absolute top-4 right-4 bg-black bg-opacity-60 hover:bg-opacity-80 px-3 py-2 rounded-lg transition-all"
+                                                    className="absolute top-20 left-6 bg-black bg-opacity-60 hover:bg-opacity-80 px-4 py-2 rounded-lg transition-all z-20 flex items-center gap-2"
                                                     title="Volver a vista por defecto"
                                                 >
-                                                    <span className="text-white text-sm">↺ Restablecer</span>
+                                                    <span className="text-white text-sm font-semibold">↺ Restablecer vista automática</span>
                                                 </button>
                                             )}
                                         </div>
 
-                                        {/* Student thumbnails on the right */}
+                                        {/* Student thumbnails - Floating on right */}
                                         {otherParticipants.length > 0 && (
-                                            <div className="flex flex-col gap-2 overflow-y-auto" style={{ width: '200px' }}>
+                                            <div
+                                                className="absolute top-4 right-4 flex flex-col gap-2 z-20 max-h-[80%] overflow-y-auto custom-scrollbar pr-1"
+                                                style={{ width: isMobile ? '120px' : '200px' }}
+                                            >
                                                 {otherParticipants.map((participant: any) => (
                                                     <div
                                                         key={participant.session_id}
-                                                        className="relative bg-gray-800 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
-                                                        style={{ height: '150px' }}
+                                                        className="relative bg-gray-800 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all shadow-lg border border-gray-700"
+                                                        style={{ height: isMobile ? '90px' : '150px' }}
                                                         onClick={() => setManualFeaturedId(participant.session_id)}
                                                         title="Clic para ver en grande"
                                                     >
                                                         <video
-                                                            id={`video-${participant.session_id}`}
+                                                            id={`video-thumb-${participant.session_id}`}
                                                             ref={(el) => updateVideoSource(el!, participant)}
                                                             autoPlay
                                                             playsInline
                                                             muted={participant.local}
-                                                            className="w-full h-full object-contain"
+                                                            className="w-full h-full object-cover"
                                                         />
-                                                        <div className="absolute bottom-2 left-2 bg-black bg-opacity-60 px-2 py-1 rounded text-xs">
-                                                            <span className="text-white">
+                                                        <div className="absolute bottom-1 left-1 bg-black bg-opacity-70 px-2 py-0.5 rounded text-[10px] sm:text-xs">
+                                                            <span className="text-white truncate max-w-[90px] block">
                                                                 {participant.user_name || 'Usuario'}
                                                                 {participant.local && ' (Tú)'}
                                                             </span>
@@ -723,11 +766,24 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 </div>
 
                 {/* Room info - Top Left */}
-                <div className="absolute top-4 left-4 bg-black bg-opacity-60 px-4 py-2 rounded-lg z-50">
+                <div className="absolute top-4 left-4 bg-black bg-opacity-60 px-4 py-2 rounded-lg z-50 flex flex-col gap-1">
                     <div className="flex items-center gap-3">
                         <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
                         <span className="text-white font-medium">Sala: {roomId}</span>
                         <span className="text-gray-300 text-sm">({participants.length} participante{participants.length !== 1 ? 's' : ''})</span>
+                    </div>
+
+                    {/* Network Quality Indicator */}
+                    <div className="flex items-center gap-2 mt-1 pl-5">
+                        <Signal className={`w-3 h-3 ${networkQuality === 'good' ? 'text-green-500' :
+                            networkQuality === 'low' ? 'text-yellow-500' : 'text-red-500'
+                            }`} />
+                        <span className={`text-xs ${networkQuality === 'good' ? 'text-gray-400' :
+                            networkQuality === 'low' ? 'text-yellow-500' : 'text-red-500'
+                            }`}>
+                            {networkQuality === 'good' ? 'Conexión estable' :
+                                networkQuality === 'low' ? 'Conexión inestable' : 'Conexión crítica'}
+                        </span>
                     </div>
                 </div>
 

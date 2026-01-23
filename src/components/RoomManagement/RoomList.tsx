@@ -60,6 +60,16 @@ const RoomList: React.FC = () => {
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [currentRoomMessages, setCurrentRoomMessages] = useState<Message[]>([]);
   const [currentRoomName, setCurrentRoomName] = useState('');
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update current time every 30 seconds to refresh room status automatically
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchRooms = useCallback(async () => {
     if (!currentUser) return;
@@ -141,7 +151,7 @@ const RoomList: React.FC = () => {
     date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
   const getRoomStatus = (room: RoomFrontend) => {
-    const now = new Date();
+    const now = currentTime;
     if (room.end_time < now) return { label: 'Finalizada', color: 'gray', icon: CheckCircle };
     if (room.start_time > now && room.is_active) return { label: 'Programada', color: 'blue', icon: Calendar };
     if (room.start_time > now && !room.is_active) return { label: 'Inactiva', color: 'red', icon: XCircle };
@@ -151,7 +161,7 @@ const RoomList: React.FC = () => {
   };
 
   const filteredRooms = rooms.filter((room) => {
-    const now = new Date();
+    const now = currentTime;
     if (filter === 'upcoming') {
       return room.end_time >= now;
     }
@@ -234,7 +244,7 @@ const RoomList: React.FC = () => {
           {filteredRooms.map((room) => {
             const status = getRoomStatus(room);
             const StatusIcon = status.icon;
-            const now = new Date();
+            const now = currentTime;
 
             // 🔄 CAMBIO: La sala está "en vivo" si está en su horario programado O si está manualmente activa
             // Esto permite que las salas se activen automáticamente cuando llega su hora
