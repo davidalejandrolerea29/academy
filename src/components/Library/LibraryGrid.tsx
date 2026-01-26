@@ -2,6 +2,7 @@ import React from 'react';
 import { LibraryItem } from '../../types/library';
 import ItemIcon from './ItemIcon';
 import { MoreVertical } from 'lucide-react';
+import { downloadFile } from '../../utils/downloadFile';
 
 interface LibraryGridProps {
     items: LibraryItem[];
@@ -17,7 +18,8 @@ const LibraryGrid: React.FC<LibraryGridProps> = ({ items, onNavigate, onDelete }
             window.open(item.externalUrl, '_blank');
         } else if (item.type === 'file') {
             if (item.filePath) {
-                window.open(item.filePath, '_blank');
+                // Download the file automatically instead of opening in new tab
+                downloadFile(item.filePath, item.title);
             } else {
                 alert('No se pudo obtener la ruta del archivo. Por favor contacte al soporte.');
             }
