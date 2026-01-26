@@ -22,7 +22,7 @@ export const LibraryService = {
         }
 
         const data = await response.json();
-        return data.items || [];
+        return data.data || [];
     },
 
     createFolder: async (token: string, parentId: string | null, title: string): Promise<LibraryFolder> => {
