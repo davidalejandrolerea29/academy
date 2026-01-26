@@ -76,6 +76,8 @@ export const LibraryService = {
         const formData = new FormData();
         if (parentId) formData.append('parent_id', parentId);
         formData.append('file', file);
+        formData.append('title', file.name);
+        formData.append('type', 'file');
 
         const response = await fetch(`${API_URL}/auth/library/file`, {
             method: 'POST',
