@@ -258,6 +258,15 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                     </div>
                 </div>
             )}
+            {/* Debug Section */}
+            <div className="mt-8 p-4 bg-gray-100 rounded text-xs font-mono overflow-auto max-h-60">
+                <p className="font-bold mb-2">Debug Info (Take a screenshot of this):</p>
+                {recordings.slice(0, 3).map((r, i) => (
+                    <div key={i} className="mb-2 border-b pb-2">
+                        <pre>{JSON.stringify(r, null, 2)}</pre>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
