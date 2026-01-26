@@ -93,8 +93,8 @@ const LibraryExplorer: React.FC = () => {
     const handleUploadFile = async (file: File) => {
         if (!currentUser?.token) return;
         try {
-            const newFile = await LibraryService.uploadFile(currentUser.token, currentFolderId, file);
-            setItems(prev => [...prev, newFile]);
+            await LibraryService.uploadFile(currentUser.token, currentFolderId, file);
+            loadItems(); // Reload to get fresh data/URLs
         } catch (error) {
             console.error('Error uploading file:', error);
             loadItems();

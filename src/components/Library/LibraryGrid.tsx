@@ -16,7 +16,11 @@ const LibraryGrid: React.FC<LibraryGridProps> = ({ items, onNavigate, onDelete }
         } else if (item.type === 'link') {
             window.open(item.externalUrl, '_blank');
         } else if (item.type === 'file') {
-            window.open(item.filePath, '_blank');
+            if (item.filePath) {
+                window.open(item.filePath, '_blank');
+            } else {
+                alert('No se pudo obtener la ruta del archivo. Por favor contacte al soporte.');
+            }
         }
     };
 
