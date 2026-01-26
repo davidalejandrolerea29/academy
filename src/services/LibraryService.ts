@@ -1,112 +1,110 @@
 import { LibraryItem, LibraryFolder, LibraryFile, LibraryLink } from '../types/library';
 
-// Mock data to simulate initial state
-let mockItems: LibraryItem[] = [
-    {
-        id: '1',
-        parentId: null,
-        userId: '1',
-        type: 'folder',
-        title: 'Material de Clase - Nivel 1',
-        description: 'Recursos para principiantes',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    },
-    {
-        id: '2',
-        parentId: null,
-        userId: '1',
-        type: 'folder',
-        title: 'Gramática Avanzada',
-        description: 'Recursos para estudiantes avanzados',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    },
-    {
-        id: '3',
-        parentId: '1',
-        userId: '1',
-        type: 'file',
-        title: 'Lista de Verbos Irregulares.pdf',
-        description: 'Guía completa de verbos',
-        filePath: 'https://example.com/verbos.pdf',
-        fileSize: 1024 * 500, // 500KB
-        mimeType: 'application/pdf',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    },
-    {
-        id: '4',
-        parentId: '1',
-        userId: '1',
-        type: 'link',
-        title: 'Video: Pronunciación Básica',
-        description: 'Tutorial en YouTube',
-        externalUrl: 'https://youtube.com/watch?v=123',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    },
-];
+const API_URL = import.meta.env.VITE_API_URL;
 
 export const LibraryService = {
-    getItems: async (parentId: string | null = null): Promise<LibraryItem[]> => {
-        // Simulate network delay
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return mockItems.filter((item) => item.parentId === parentId);
+    getItems: async (token: string, parentId: string | null = null): Promise<LibraryItem[]> => {
+        const url = new URL(`${API_URL}/auth/library`);
+        if (parentId) {
+            url.searchParams.append('parent_id', parentId);
+        }
+
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch library items');
+        }
+
+        const data = await response.json();
+        return data.items || [];
     },
 
-    createFolder: async (parentId: string | null, title: string): Promise<LibraryFolder> => {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        const newFolder: LibraryFolder = {
-            id: Math.random().toString(36).substr(2, 9),
-            parentId,
-            userId: '1', // Mock user ID
-            type: 'folder',
-            title,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-        mockItems.push(newFolder);
-        return newFolder;
+    createFolder: async (token: string, parentId: string | null, title: string): Promise<LibraryFolder> => {
+        const response = await fetch(`${API_URL}/auth/library/folder`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+                parent_id: parentId,
+                title,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to create folder');
+        }
+
+        const data = await response.json();
+        return data.folder;
     },
 
-    createLink: async (parentId: string | null, title: string, url: string): Promise<LibraryLink> => {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        const newLink: LibraryLink = {
-            id: Math.random().toString(36).substr(2, 9),
-            parentId,
-            userId: '1',
-            type: 'link',
-            title,
-            externalUrl: url,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-        mockItems.push(newLink);
-        return newLink;
+    createLink: async (token: string, parentId: string | null, title: string, url: string): Promise<LibraryLink> => {
+        const response = await fetch(`${API_URL}/auth/library/link`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+                parent_id: parentId,
+                title,
+                external_url: url,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to create link');
+        }
+
+        const data = await response.json();
+        return data.link;
     },
 
-    uploadFile: async (parentId: string | null, file: File): Promise<LibraryFile> => {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        const newFile: LibraryFile = {
-            id: Math.random().toString(36).substr(2, 9),
-            parentId,
-            userId: '1',
-            type: 'file',
-            title: file.name,
-            filePath: URL.createObjectURL(file), // Mock URL
-            fileSize: file.size,
-            mimeType: file.type,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-        mockItems.push(newFile);
-        return newFile;
+    uploadFile: async (token: string, parentId: string | null, file: File): Promise<LibraryFile> => {
+        const formData = new FormData();
+        if (parentId) formData.append('parent_id', parentId);
+        formData.append('file', file);
+
+        const response = await fetch(`${API_URL}/auth/library/file`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json',
+                // Content-Type header is not set manually for FormData, browser sets it with boundary
+            },
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.message || 'Failed to upload file');
+        }
+
+        const data = await response.json();
+        return data.file;
     },
 
-    deleteItem: async (itemId: string): Promise<void> => {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        // Recursive delete logic would go here for folders, for now simple filter
-        mockItems = mockItems.filter(item => item.id !== itemId && item.parentId !== itemId);
+    deleteItem: async (token: string, itemId: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/auth/library/${itemId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to delete item');
+        }
     }
 };

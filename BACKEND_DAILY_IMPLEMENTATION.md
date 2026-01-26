@@ -145,7 +145,8 @@ class DailyController extends Controller
                 'start_video_off' => false,
                 'start_audio_off' => false,
                 'owner_only_broadcast' => false,
-                'enable_recording' => 'cloud', // Opcional: habilitar grabación
+                'enable_recording' => 'cloud', // Habilita grabación en la nube
+                'record_on_start' => true,     // Inicia grabación al entrar el primero
             ],
         ]);
 
