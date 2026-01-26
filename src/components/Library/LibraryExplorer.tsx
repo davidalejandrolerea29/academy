@@ -35,9 +35,10 @@ const LibraryExplorer: React.FC = () => {
     }, [currentFolderId]);
 
     const loadItems = async () => {
+        if (!currentUser?.token) return;
         setLoading(true);
         try {
-            const data = await LibraryService.getItems(currentFolderId);
+            const data = await LibraryService.getItems(currentUser.token, currentFolderId);
             setItems(data);
         } catch (error) {
             console.error('Failed to load library items:', error);
@@ -68,23 +69,27 @@ const LibraryExplorer: React.FC = () => {
     );
 
     const handleCreateFolder = async (name: string) => {
-        await LibraryService.createFolder(currentFolderId, name);
+        if (!currentUser?.token) return;
+        await LibraryService.createFolder(currentUser.token, currentFolderId, name);
         loadItems();
     };
 
     const handleCreateLink = async (name: string, url: string) => {
-        await LibraryService.createLink(currentFolderId, name, url);
+        if (!currentUser?.token) return;
+        await LibraryService.createLink(currentUser.token, currentFolderId, name, url);
         loadItems();
     };
 
     const handleUploadFile = async (file: File) => {
-        await LibraryService.uploadFile(currentFolderId, file);
+        if (!currentUser?.token) return;
+        await LibraryService.uploadFile(currentUser.token, currentFolderId, file);
         loadItems();
     };
 
     const handleDeleteItem = async (itemId: string) => {
+        if (!currentUser?.token) return;
         if (window.confirm('¿Estás seguro de eliminar este elemento?')) {
-            await LibraryService.deleteItem(itemId);
+            await LibraryService.deleteItem(currentUser.token, itemId);
             loadItems();
         }
     };
