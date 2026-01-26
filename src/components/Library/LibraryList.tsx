@@ -2,6 +2,7 @@ import React from 'react';
 import { LibraryItem } from '../../types/library';
 import ItemIcon from './ItemIcon';
 import { MoreVertical, Download, ExternalLink as ExternalLinkIcon, Folder } from 'lucide-react';
+import { downloadFile } from '../../utils/downloadFile';
 
 interface LibraryListProps {
     items: LibraryItem[];
@@ -16,8 +17,10 @@ const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }
         } else if (item.type === 'link') {
             window.open(item.externalUrl, '_blank');
         } else if (item.type === 'file') {
-            // Simulate download
-            window.open(item.filePath, '_blank');
+            // Download the file automatically instead of opening in new tab
+            if (item.filePath) {
+                downloadFile(item.filePath, item.title);
+            }
         }
     };
 
@@ -63,9 +66,13 @@ const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <div className="flex items-center justify-end space-x-2" onClick={(e) => e.stopPropagation()}>
                                     {item.type === 'file' && (
-                                        <a href={item.filePath} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-400 hover:text-blue-600">
+                                        <button
+                                            onClick={() => downloadFile(item.filePath!, item.title)}
+                                            className="p-2 text-gray-400 hover:text-blue-600"
+                                            title="Descargar archivo"
+                                        >
                                             <Download size={18} />
-                                        </a>
+                                        </button>
                                     )}
                                     {item.type === 'link' && (
                                         <a href={item.externalUrl} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-400 hover:text-blue-600">
