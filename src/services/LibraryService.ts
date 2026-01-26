@@ -45,7 +45,7 @@ export const LibraryService = {
         }
 
         const data = await response.json();
-        return data.folder;
+        return { ...data.folder, type: 'folder' };
     },
 
     createLink: async (token: string, parentId: string | null, title: string, url: string): Promise<LibraryLink> => {
@@ -69,7 +69,7 @@ export const LibraryService = {
         }
 
         const data = await response.json();
-        return data.link;
+        return { ...data.link, type: 'link' };
     },
 
     uploadFile: async (token: string, parentId: string | null, file: File): Promise<LibraryFile> => {
@@ -93,7 +93,7 @@ export const LibraryService = {
         }
 
         const data = await response.json();
-        return data.file;
+        return { ...data.file, type: 'file' };
     },
 
     deleteItem: async (token: string, itemId: string): Promise<void> => {
