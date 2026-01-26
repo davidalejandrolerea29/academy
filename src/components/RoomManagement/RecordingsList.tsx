@@ -184,12 +184,18 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                                             {formatDuration(rec.duration)}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <button
-                                                onClick={() => handlePlayVideo(rec)}
-                                                className="text-orange-600 hover:text-orange-900 flex items-center ml-auto px-3 py-1 rounded-md hover:bg-orange-50 transition-colors"
-                                            >
-                                                <Play className="w-4 h-4 mr-1" /> Reproducir
-                                            </button>
+                                            {rec.download_link ? (
+                                                <button
+                                                    onClick={() => handlePlayVideo(rec)}
+                                                    className="text-orange-600 hover:text-orange-900 flex items-center ml-auto px-3 py-1 rounded-md hover:bg-orange-50 transition-colors"
+                                                >
+                                                    <Play className="w-4 h-4 mr-1" /> Reproducir
+                                                </button>
+                                            ) : (
+                                                <span className="text-gray-400 italic text-xs flex items-center justify-end">
+                                                    <AlertCircle className="w-3 h-3 mr-1" /> Procesando...
+                                                </span>
+                                            )}
                                         </td>
                                     </tr>
                                 );
