@@ -4,6 +4,8 @@ export interface DailyRecording {
     id: string;
     room_name: string;
     start_time: string;
+    start_ts?: number; // Raw timestamp from Daily
+    created_at?: number; // Creation timestamp
     duration: number;
     download_link: string;
 }

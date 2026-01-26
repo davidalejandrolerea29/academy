@@ -36,6 +36,7 @@ export const LibraryService = {
             body: JSON.stringify({
                 parent_id: parentId,
                 title,
+                type: 'folder',
             }),
         });
 
@@ -59,6 +60,7 @@ export const LibraryService = {
                 parent_id: parentId,
                 title,
                 external_url: url,
+                type: 'link',
             }),
         });
 
