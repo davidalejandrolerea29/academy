@@ -18,6 +18,8 @@ export interface User {
   assigned_students?: { id: number; name: string }[]; // Detalles de alumnos asignados
   assigned_teacher_ids?: number[]; // IDs de profesores asignados (si es alumno)
   assigned_teachers?: { id: number; name: string }[]; // Detalles de profesores asignados
+  token?: string;
+  role_description?: string;
 }
 
 export interface UserFormData {
@@ -42,7 +44,7 @@ export interface Room {
   start_time: Date;
   end_time: Date;
   is_active: boolean;
-  participant_history:string;
+  participant_history: string;
   is_recording: boolean;
   participants: string[]; // User IDs of allowed participants
 }

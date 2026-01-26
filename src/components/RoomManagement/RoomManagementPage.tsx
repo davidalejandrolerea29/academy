@@ -10,6 +10,7 @@ const RoomManagementPage: React.FC = () => {
   const [view, setView] = useState<'list' | 'create' | 'recordings'>('list');
 
   const canCreateRooms = currentUser?.role_description === 'Admin' || currentUser?.role_description === 'Teacher';
+  const canViewRecordings = currentUser?.role_description === 'Admin';
 
   const handleRoomCreated = () => {
     setView('list');
@@ -37,17 +38,19 @@ const RoomManagementPage: React.FC = () => {
               Ver Salas
             </button>
 
-            <button
-              onClick={() => setView('recordings')}
-              className={`w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center
-                ${view === 'recordings'
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}
-              `}
-            >
-              <Video className="w-4 h-4 mr-2" />
-              Grabaciones
-            </button>
+            {canViewRecordings && (
+              <button
+                onClick={() => setView('recordings')}
+                className={`w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center
+                  ${view === 'recordings'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}
+                `}
+              >
+                <Video className="w-4 h-4 mr-2" />
+                Grabaciones
+              </button>
+            )}
 
             <button
               onClick={() => setView('create')}
@@ -70,7 +73,7 @@ const RoomManagementPage: React.FC = () => {
           <CreateRoomForm onRoomCreated={handleRoomCreated} />
         </div>
       )}
-      {view === 'recordings' && <RecordingsList />}
+      {view === 'recordings' && canViewRecordings && <RecordingsList />}
     </div>
   );
 };

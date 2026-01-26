@@ -24,6 +24,7 @@ import logo from '../../assets/logo.png';
 
 // Importa tu servicio WebSocket
 import { createReverbWebSocketService, ReverbWebSocketService } from '../../services/ReverbWebSocketService';
+import { getImageUrl } from '../../utils/urlUtils';
 
 const Layout: React.FC = () => {
   const { currentUser, logout } = useAuth();
@@ -203,7 +204,7 @@ const Layout: React.FC = () => {
                 <div className="flex items-center">
                   {currentUser.photo_url ? (
                     <img
-                      src={currentUser.photo_url}
+                      src={getImageUrl(currentUser.photo_url)}
                       alt={currentUser.name}
                       className="w-10 h-10 rounded-full mr-3"
                     />
