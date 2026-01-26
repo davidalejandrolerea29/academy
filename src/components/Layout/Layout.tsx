@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Users,
   LogOut,
+  FolderOpen, // Imported FolderOpen icon
   Menu,
   X,
   UserCircle,
@@ -23,6 +24,7 @@ import logo from '../../assets/logo.png';
 
 // Importa tu servicio WebSocket
 import { createReverbWebSocketService, ReverbWebSocketService } from '../../services/ReverbWebSocketService';
+import { getImageUrl } from '../../utils/urlUtils';
 
 const Layout: React.FC = () => {
   const { currentUser, logout } = useAuth();
@@ -202,7 +204,7 @@ const Layout: React.FC = () => {
                 <div className="flex items-center">
                   {currentUser.photo_url ? (
                     <img
-                      src={currentUser.photo_url}
+                      src={getImageUrl(currentUser.photo_url)}
                       alt={currentUser.name}
                       className="w-10 h-10 rounded-full mr-3"
                     />
@@ -245,6 +247,20 @@ const Layout: React.FC = () => {
                 >
                   <MessageSquare className="w-5 h-5 mr-3" />
                   Mensajes
+                </NavLink>
+
+                <NavLink
+                  to="/library"
+                  className={({ isActive }) => `
+                    flex items-center px-4 py-2 rounded-md text-sm font-medium
+                    ${isActive
+                      ? 'bg-blue-50 text-orange-700'
+                      : 'text-gray-700 hover:bg-gray-100'}
+                  `}
+                  onClick={closeSidebar}
+                >
+                  <FolderOpen className="w-5 h-5 mr-3" />
+                  Biblioteca
                 </NavLink>
 
                 {currentUser.role_description === 'Admin' && (

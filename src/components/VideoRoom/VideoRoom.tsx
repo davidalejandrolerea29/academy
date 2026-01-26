@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyIframe from '@daily-co/daily-js';
-import { PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video, VideoOff, MessageSquare, X, Signal, ShieldAlert } from 'lucide-react';
+import { PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video, VideoOff, MessageSquare, X, Signal, ShieldAlert, Disc, Square } from 'lucide-react';
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -36,6 +36,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
 
     const [teacherName, setTeacherName] = useState<string | null>(null);
     const [manualFeaturedId, setManualFeaturedId] = useState<string | null>(null);
@@ -269,6 +270,23 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     console.log('[Daily] Track stopped:', event.participant?.user_name, event.track?.kind);
                 });
 
+                // Recording events
+                call.on('recording-started', () => {
+                    setIsRecording(true);
+                    setToast({ message: 'La grabación ha comenzado', type: 'success' });
+                });
+
+                call.on('recording-stopped', () => {
+                    setIsRecording(false);
+                    setToast({ message: 'La grabación ha terminado', type: 'info' });
+                });
+
+                call.on('recording-error', (event: any) => {
+                    console.error('[Daily] Recording error:', event);
+                    setToast({ message: 'Error en la grabación', type: 'error' });
+                    setIsRecording(false);
+                });
+
                 // Initial participant update
                 updateParticipants(call);
 
@@ -431,6 +449,21 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         await callObject.setLocalVideo(!newVideoState);
         setIsVideoOff(newVideoState);
         setToast({ message: newVideoState ? 'Cámara desactivada' : 'Cámara activada', type: 'info' });
+    };
+
+    const toggleRecording = async () => {
+        if (!callObject) return;
+
+        try {
+            if (isRecording) {
+                await callObject.stopRecording();
+            } else {
+                await callObject.startRecording();
+            }
+        } catch (error) {
+            console.error('[Daily] Toggle recording error:', error);
+            setToast({ message: 'Error al cambiar estado de grabación', type: 'error' });
+        }
     };
 
     const handleEndCall = () => {
@@ -773,6 +806,13 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                         <span className="text-gray-300 text-sm">({participants.length} participante{participants.length !== 1 ? 's' : ''})</span>
                     </div>
 
+                    {isRecording && (
+                        <div className="flex items-center gap-2 pl-5 animate-pulse">
+                            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                            <span className="text-red-500 text-xs font-bold uppercase tracking-wider">Grabando</span>
+                        </div>
+                    )}
+
                     {/* Network Quality Indicator */}
                     <div className="flex items-center gap-2 mt-1 pl-5">
                         <Signal className={`w-3 h-3 ${networkQuality === 'good' ? 'text-green-500' :
@@ -812,6 +852,16 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             title="Compartir pantalla"
                         >
                             {isScreenSharing ? <MonitorOff className="w-5 h-5 text-white" /> : <Monitor className="w-5 h-5 text-white" />}
+                        </button>
+                    )}
+
+                    {isTeacher && (
+                        <button
+                            onClick={toggleRecording}
+                            className={`p-3 rounded-full transition-all ${isRecording ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-700 hover:bg-gray-600'}`}
+                            title={isRecording ? 'Detener grabación' : 'Iniciar grabación'}
+                        >
+                            {isRecording ? <Square className="w-5 h-5 text-white" /> : <Disc className="w-5 h-5 text-white" />}
                         </button>
                     )}
 

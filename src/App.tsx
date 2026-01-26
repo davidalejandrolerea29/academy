@@ -11,14 +11,15 @@ import MessagingPage from './components/Messaging/MessagingPage';
 import UserManagement from './components/Admin/UserManagement';
 import RegisterPage from './components/Auth/RegisterPage';
 import ChangePasswordPage from './components/Auth/ChangePasswordPage';
+import LibraryExplorer from './components/Library/LibraryExplorer';
 import { CallProvider } from './contexts/CallContext';
 // Protected route component
-const ProtectedRoute: React.FC<{ 
+const ProtectedRoute: React.FC<{
   children: React.ReactNode;
   allowedRoles?: string[];
 }> = ({ children, allowedRoles }) => {
   const { currentUser, loading } = useAuth();
-  
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -26,20 +27,20 @@ const ProtectedRoute: React.FC<{
       </div>
     );
   }
-  
+
   if (!currentUser) {
     return <Navigate to="/login" replace />;
   }
-  
-if (allowedRoles) {
-  const userRole = currentUser.role?.description?.toLowerCase();
-  if (!userRole || !allowedRoles.map(r => r.toLowerCase()).includes(userRole)) {
-    return <Navigate to="/rooms" replace />;
+
+  if (allowedRoles) {
+    const userRole = currentUser.role?.description?.toLowerCase();
+    if (!userRole || !allowedRoles.map(r => r.toLowerCase()).includes(userRole)) {
+      return <Navigate to="/rooms" replace />;
+    }
   }
-}
 
 
-  
+
   return <>{children}</>;
 };
 
@@ -53,42 +54,47 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/cambiar-password" element={<ChangePasswordPage />} />
-            
-            <Route 
-              path="/" 
+
+            <Route
+              path="/"
               element={
                 <ProtectedRoute>
                   <Layout />
                 </ProtectedRoute>
               }
             >
-            <Route index element={<Navigate to="/rooms" replace />} />
-              
-              <Route 
-                path="rooms" 
-                element={<RoomManagementPage />} 
+              <Route index element={<Navigate to="/rooms" replace />} />
+
+              <Route
+                path="rooms"
+                element={<RoomManagementPage />}
               />
-              
+
               {/* <Route 
                 path="rooms/:roomId" 
                 element={<VideoRoom />} 
               />
                */}
-              <Route 
-                path="messages" 
-                element={<MessagingPage />} 
+              <Route
+                path="messages"
+                element={<MessagingPage />}
               />
-              
-              <Route 
-                path="admin/users" 
+
+              <Route
+                path="library"
+                element={<LibraryExplorer />}
+              />
+
+              <Route
+                path="admin/users"
                 element={
                   <ProtectedRoute allowedRoles={['Admin']}>
                     <UserManagement />
                   </ProtectedRoute>
-                } 
+                }
               />
             </Route>
-            
+
             <Route path="*" element={<Navigate to="/rooms" replace />} />
           </Routes>
         </CallProvider>
