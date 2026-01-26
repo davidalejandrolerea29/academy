@@ -70,20 +70,35 @@ const LibraryExplorer: React.FC = () => {
 
     const handleCreateFolder = async (name: string) => {
         if (!currentUser?.token) return;
-        await LibraryService.createFolder(currentUser.token, currentFolderId, name);
-        loadItems();
+        try {
+            const newFolder = await LibraryService.createFolder(currentUser.token, currentFolderId, name);
+            setItems(prev => [...prev, newFolder]);
+        } catch (error) {
+            console.error('Error creating folder:', error);
+            loadItems();
+        }
     };
 
     const handleCreateLink = async (name: string, url: string) => {
         if (!currentUser?.token) return;
-        await LibraryService.createLink(currentUser.token, currentFolderId, name, url);
-        loadItems();
+        try {
+            const newLink = await LibraryService.createLink(currentUser.token, currentFolderId, name, url);
+            setItems(prev => [...prev, newLink]);
+        } catch (error) {
+            console.error('Error creating link:', error);
+            loadItems();
+        }
     };
 
     const handleUploadFile = async (file: File) => {
         if (!currentUser?.token) return;
-        await LibraryService.uploadFile(currentUser.token, currentFolderId, file);
-        loadItems();
+        try {
+            const newFile = await LibraryService.uploadFile(currentUser.token, currentFolderId, file);
+            setItems(prev => [...prev, newFile]);
+        } catch (error) {
+            console.error('Error uploading file:', error);
+            loadItems();
+        }
     };
 
     const handleDeleteItem = async (itemId: string) => {
