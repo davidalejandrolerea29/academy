@@ -53,6 +53,26 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
         fetchData();
     }, [currentUser?.token, roomName]);
 
+    const getRecordingDate = (rec: DailyRecording) => {
+        // Try multiple fields for the timestamp
+        let val: string | number | undefined = rec.start_ts || rec.created_at || rec.start_time;
+
+        // If val is missing or 0, return current date or handle gracefully
+        if (!val) return new Date();
+
+        // If it's a number (timestamp)
+        if (typeof val === 'number') {
+            // Heuristic: if small (seconds), multiply by 1000 to get ms
+            if (val < 10000000000) {
+                return new Date(val * 1000);
+            }
+            return new Date(val);
+        }
+
+        // If it's a string, let Date parse it
+        return new Date(val);
+    };
+
     const formatDuration = (seconds: number) => {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
@@ -149,13 +169,13 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="text-sm text-gray-900 flex items-center">
                                                 <Calendar className="w-4 h-4 mr-1.5 text-gray-400" />
-                                                {new Date(rec.start_time).toLocaleDateString(undefined, {
+                                                {getRecordingDate(rec).toLocaleDateString(undefined, {
                                                     day: 'numeric', month: 'short', year: 'numeric'
                                                 })}
                                             </div>
                                             <div className="text-sm text-gray-500 flex items-center mt-1">
                                                 <Clock className="w-4 h-4 mr-1.5 text-gray-400" />
-                                                {new Date(rec.start_time).toLocaleTimeString(undefined, {
+                                                {getRecordingDate(rec).toLocaleTimeString(undefined, {
                                                     hour: '2-digit', minute: '2-digit'
                                                 })}
                                             </div>
@@ -198,7 +218,7 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                             <h3 className="text-white font-medium truncate pr-4">
                                 {getRoomDetails(selectedVideo.room_name)?.name || selectedVideo.room_name}
                                 <span className="text-gray-400 text-sm ml-2">
-                                    ({new Date(selectedVideo.start_time).toLocaleDateString()})
+                                    ({getRecordingDate(selectedVideo).toLocaleDateString()})
                                 </span>
                             </h3>
                             <button
