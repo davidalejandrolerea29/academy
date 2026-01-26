@@ -1,4 +1,3 @@
-```
 import React, { useState, useEffect } from 'react';
 import { Play, Calendar, Clock, Video, AlertCircle, User as UserIcon, X } from 'lucide-react';
 import { DailyService, DailyRecording } from '../../services/DailyService';
@@ -15,7 +14,7 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
     const [rooms, setRooms] = useState<RoomFrontend[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    
+
     // Video Player State
     const [selectedVideo, setSelectedVideo] = useState<DailyRecording | null>(null);
 
@@ -36,10 +35,10 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                 ]);
 
                 // Sort recordings
-                const sortedRecordings = recordingsData.sort((a, b) => 
+                const sortedRecordings = recordingsData.sort((a, b) =>
                     new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
                 );
-                
+
                 setRecordings(sortedRecordings);
                 setRooms(roomsData);
 
@@ -58,22 +57,22 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
         const s = seconds % 60;
-        
+
         const pad = (n: number) => n.toString().padStart(2, '0');
         if (h > 0) {
-            return `${ pad(h) }:${ pad(m) }:${ pad(s) } `;
+            return pad(h) + ':' + pad(m) + ':' + pad(s);
         }
-        return `${ pad(m) }:${ pad(s) } `;
+        return pad(m) + ':' + pad(s);
     };
 
     const getRoomDetails = (recordingRoomName: string) => {
         // Try to match by name first, assuming recording.room_name corresponds to room.name or room.id
         // Daily usually uses the NAME provided at creation.
         // Backend implementation uses room_id as the name passed to Daily.
-        
+
         // Find room where name matches or ID matches (as string)
-        return rooms.find(r => 
-            r.name === recordingRoomName || 
+        return rooms.find(r =>
+            r.name === recordingRoomName ||
             String(r.id) === recordingRoomName ||
             recordingRoomName.includes(r.name) // Flexible match
         );
@@ -129,7 +128,7 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {recordings.map((rec) => {
                                 const roomDetails = getRoomDetails(rec.room_name);
-                                
+
                                 return (
                                     <tr key={rec.id} className="hover:bg-gray-50 transition-colors">
                                         <td className="px-6 py-4 whitespace-nowrap">
@@ -137,10 +136,10 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                                                 {roomDetails ? roomDetails.name : rec.room_name}
                                             </div>
                                             {roomDetails && roomDetails.teacher ? (
-                                                 <div className="text-xs text-gray-500 flex items-center mt-1">
+                                                <div className="text-xs text-gray-500 flex items-center mt-1">
                                                     <UserIcon className="w-3 h-3 mr-1" />
                                                     Prof: {roomDetails.teacher.name}
-                                                 </div>
+                                                </div>
                                             ) : (
                                                 <div className="text-xs text-gray-400 font-mono mt-1">
                                                     ID: {rec.room_name}
@@ -165,7 +164,7 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                                             {formatDuration(rec.duration)}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <button 
+                                            <button
                                                 onClick={() => handlePlayVideo(rec)}
                                                 className="text-orange-600 hover:text-orange-900 flex items-center ml-auto px-3 py-1 rounded-md hover:bg-orange-50 transition-colors"
                                             >
@@ -197,12 +196,12 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                     <div className="bg-gray-900 rounded-lg shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
                         <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
                             <h3 className="text-white font-medium truncate pr-4">
-                                {getRoomDetails(selectedVideo.room_name)?.name || selectedVideo.room_name} 
+                                {getRoomDetails(selectedVideo.room_name)?.name || selectedVideo.room_name}
                                 <span className="text-gray-400 text-sm ml-2">
                                     ({new Date(selectedVideo.start_time).toLocaleDateString()})
                                 </span>
                             </h3>
-                            <button 
+                            <button
                                 onClick={closePlayer}
                                 className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-gray-700 transition-colors"
                             >
@@ -210,10 +209,10 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                             </button>
                         </div>
                         <div className="relative bg-black flex-grow flex items-center justify-center aspect-video">
-                            <video 
-                                src={selectedVideo.download_link} 
-                                controls 
-                                autoPlay 
+                            <video
+                                src={selectedVideo.download_link}
+                                controls
+                                autoPlay
                                 className="w-full h-full max-h-[70vh]"
                                 onError={(e) => console.error("Video Error:", e)}
                             >
@@ -221,15 +220,15 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                             </video>
                         </div>
                         <div className="p-4 bg-gray-800 flex justify-end">
-                            <a 
-                                href={selectedVideo.download_link} 
-                                target="_blank" 
+                            <a
+                                href={selectedVideo.download_link}
+                                target="_blank"
                                 rel="noreferrer"
                                 className="text-orange-400 hover:text-orange-300 text-sm underline mr-auto"
                             >
                                 Abrir enlace directo de descarga
                             </a>
-                            <button 
+                            <button
                                 onClick={closePlayer}
                                 className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm transition-colors"
                             >
@@ -244,4 +243,3 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
 };
 
 export default RecordingsList;
-```
