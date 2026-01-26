@@ -22,7 +22,7 @@ export const LibraryService = {
         }
 
         const data = await response.json();
-        return data.data || [];
+        return (data.data || []).map(transformItem);
     },
 
     createFolder: async (token: string, parentId: string | null, title: string): Promise<LibraryFolder> => {
@@ -45,7 +45,7 @@ export const LibraryService = {
         }
 
         const data = await response.json();
-        return { ...data.folder, type: 'folder' };
+        return transformItem(data.folder) as LibraryFolder;
     },
 
     createLink: async (token: string, parentId: string | null, title: string, url: string): Promise<LibraryLink> => {
@@ -69,7 +69,7 @@ export const LibraryService = {
         }
 
         const data = await response.json();
-        return { ...data.link, type: 'link' };
+        return transformItem(data.link) as LibraryLink;
     },
 
     uploadFile: async (token: string, parentId: string | null, file: File): Promise<LibraryFile> => {
@@ -95,7 +95,7 @@ export const LibraryService = {
         }
 
         const data = await response.json();
-        return { ...data.file, type: 'file' };
+        return transformItem(data.file) as LibraryFile;
     },
 
     deleteItem: async (token: string, itemId: string): Promise<void> => {
@@ -110,5 +110,35 @@ export const LibraryService = {
         if (!response.ok) {
             throw new Error('Failed to delete item');
         }
+    }
+};
+
+const transformItem = (item: any): LibraryItem => {
+    const base = {
+        id: item.id,
+        parentId: item.parent_id,
+        userId: item.user_id,
+        title: item.title,
+        description: item.description,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+    };
+
+    if (item.type === 'folder') {
+        return { ...base, type: 'folder' };
+    } else if (item.type === 'link') {
+        return {
+            ...base,
+            type: 'link',
+            externalUrl: item.external_url,
+        };
+    } else { // file
+        return {
+            ...base,
+            type: 'file',
+            filePath: item.file_path,
+            fileSize: item.size,
+            mimeType: item.mime_type,
+        };
     }
 };
