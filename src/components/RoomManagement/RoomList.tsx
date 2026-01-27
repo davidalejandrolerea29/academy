@@ -315,7 +315,7 @@ const RoomList: React.FC = () => {
                         <StatusIcon className={`w-3 h-3 mr-1 text-${status.color}-500`} />
                         {status.label}
                       </span>
-                      {backendStatus?.status === 'active' && (
+                      {(backendStatus?.status === 'active' || (backendStatus?.status === 'scheduled' && backendStatus.time_until_start <= 0)) && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 animate-pulse">
                           🟢 En vivo
                         </span>
@@ -348,7 +348,8 @@ const RoomList: React.FC = () => {
 
                   {/* PRIMERA FILA DE BOTONES: Unirse/Ver Sala y Activar/Desactivar */}
                   <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-2">
-                    {backendStatus?.status === 'active' ? (
+                    {/* Check if room should be active: either backend says 'active' OR time_until_start <= 0 */}
+                    {(backendStatus?.status === 'active' || (backendStatus?.status === 'scheduled' && backendStatus.time_until_start <= 0)) ? (
                       canJoinRoom ? (
                         <button
                           onClick={() => startCall(String(room.id))}
@@ -362,7 +363,7 @@ const RoomList: React.FC = () => {
                           No tienes permiso para unirte a esta sala.
                         </span>
                       )
-                    ) : backendStatus?.status === 'scheduled' ? (
+                    ) : backendStatus?.status === 'scheduled' && backendStatus.time_until_start > 0 ? (
                       <div className="flex items-center text-sm text-blue-600 px-3 py-2 w-full flex-grow">
                         <Timer className="w-4 h-4 mr-2" />
                         {formatTimeRemaining(backendStatus.time_until_start)}
