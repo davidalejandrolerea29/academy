@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { RoomService } from '../services/RoomService';
 import { RoomStatusResponse } from '../types';
 
-const POLLING_INTERVAL = 30000; // 30 seconds
+const POLLING_INTERVAL = 5000; // 5 seconds for faster updates
 
 export function useRoomStatus(token: string | null) {
     const [statusData, setStatusData] = useState<RoomStatusResponse | null>(null);
