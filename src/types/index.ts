@@ -84,3 +84,23 @@ export interface RoomParticipant {
   role: UserRole;
   joinTime: Date;
 }
+
+// Room Status types for automatic activation
+export interface RoomStatus {
+  id: number;
+  name: string;
+  start_time: string; // ISO 8601
+  end_time: string; // ISO 8601
+  is_active: boolean;
+  should_be_active: boolean;
+  can_activate: boolean; // KEY FIELD for button state
+  time_until_start: number; // seconds
+  time_until_end: number; // seconds
+  status: 'scheduled' | 'active' | 'finished';
+}
+
+export interface RoomStatusResponse {
+  success: boolean;
+  current_time: string; // ISO 8601
+  rooms: RoomStatus[];
+}
