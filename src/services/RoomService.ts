@@ -3,7 +3,7 @@ import { Room } from '../types';
 const API_URL = import.meta.env.VITE_API_URL;
 
 // We extend the base Room type to include frontend specific fields if needed
-export interface RoomFrontend extends Omit<Room, 'start_time' | 'end_time'> {
+export interface RoomFrontend extends Omit<Room, 'start_time' | 'end_time' | 'participants'> {
     start_time: string; // The API returns date strings
     end_time: string;
     teacher?: {
@@ -45,5 +45,21 @@ export const RoomService = {
         }
 
         return await response.json();
-    }
+    },
+
+    getRoomsStatus: async (token: string) => {
+        const response = await fetch(`${API_URL}/auth/rooms/status`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Error fetching rooms status');
+        }
+
+        return await response.json();
+    },
 };

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCall } from '../../contexts/CallContext';
-import { Room } from '../../types';
+import { Room, RoomStatus } from '../../types';
+import { useRoomStatus } from '../../hooks/useRoomStatus';
 import {
   Calendar,
   Clock,
@@ -12,7 +13,8 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  MessageSquare
+  MessageSquare,
+  Timer
 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -61,6 +63,10 @@ const RoomList: React.FC = () => {
   const [currentRoomMessages, setCurrentRoomMessages] = useState<Message[]>([]);
   const [currentRoomName, setCurrentRoomName] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Use room status hook for automatic activation
+  const token = localStorage.getItem('token');
+  const { statusData } = useRoomStatus(token);
 
   // Update current time every 30 seconds to refresh room status automatically
   useEffect(() => {
@@ -150,7 +156,33 @@ const RoomList: React.FC = () => {
   const formatTime = (date: Date) =>
     date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
-  const getRoomStatus = (room: RoomFrontend) => {
+  // Helper function to format countdown timer
+  const formatTimeRemaining = (seconds: number): string => {
+    if (seconds <= 0) return '';
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (hours > 0) {
+      return `Disponible en ${hours}h ${minutes}m`;
+    }
+    return `Disponible en ${minutes}m`;
+  };
+
+  const getRoomStatus = (room: RoomFrontend, backendStatus?: RoomStatus) => {
+    // Use backend status if available
+    if (backendStatus) {
+      switch (backendStatus.status) {
+        case 'active':
+          return { label: 'En curso', color: 'green', icon: Play };
+        case 'scheduled':
+          return { label: 'Programada', color: 'blue', icon: Calendar };
+        case 'finished':
+          return { label: 'Finalizada', color: 'gray', icon: CheckCircle };
+      }
+    }
+
+    // Fallback to client-side calculation
     const now = currentTime;
     if (room.end_time < now) return { label: 'Finalizada', color: 'gray', icon: CheckCircle };
     if (room.start_time > now && room.is_active) return { label: 'Programada', color: 'blue', icon: Calendar };
@@ -242,30 +274,32 @@ const RoomList: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredRooms.map((room) => {
-            const status = getRoomStatus(room);
+            // Get backend status for this room
+            const backendStatus = statusData?.rooms.find(r => r.id === room.id);
+            const status = getRoomStatus(room, backendStatus);
             const StatusIcon = status.icon;
             const now = currentTime;
 
-            // 🔄 CAMBIO: La sala está "en vivo" si está en su horario programado O si está manualmente activa
-            // Esto permite que las salas se activen automáticamente cuando llega su hora
+            // Use backend can_activate if available, otherwise fallback to client-side logic
             const isInScheduledTime = room.start_time <= now && room.end_time >= now;
-            const isLive = isInScheduledTime || (room.is_active && isInScheduledTime);
-            // Simplificado: si está en el horario programado, está disponible
             const isLiveSimplified = isInScheduledTime;
 
             const uniqueParticipants = new Set(room.participants.map(p => p.user_id)).size;
 
-            // *** LÓGICA CLAVE REVISADA AQUÍ: Determinar si el botón "Unirse" debe mostrarse ***
+            // *** USE BACKEND can_activate FIELD AS SOURCE OF TRUTH ***
             let canJoinRoom = false;
-            if (currentUser?.role?.description === 'Admin') {
-              // Admin puede unirse si la sala está en vivo Y (es el creador O es un participante)
-              canJoinRoom = isLiveSimplified && (room.teacher_id === currentUser.id || room.participants.some(p => p.user_id === currentUser.id));
-            } else if (currentUser?.role?.description === 'Teacher') {
-              // Profesor solo puede unirse si es el creador de la sala
-              canJoinRoom = isLiveSimplified && room.teacher_id === currentUser.id;
-            } else if (currentUser?.role?.description === 'Student') {
-              // Alumno puede unirse si la sala está en vivo y él es un participante
-              canJoinRoom = isLiveSimplified && room.participants.some(p => p.user_id === currentUser.id);
+            if (backendStatus) {
+              // Backend determines if user can activate/join the room
+              canJoinRoom = backendStatus.can_activate;
+            } else {
+              // Fallback to client-side logic if backend status not available
+              if (currentUser?.role?.description === 'Admin') {
+                canJoinRoom = isLiveSimplified && (room.teacher_id === currentUser.id || room.participants.some(p => p.user_id === currentUser.id));
+              } else if (currentUser?.role?.description === 'Teacher') {
+                canJoinRoom = isLiveSimplified && room.teacher_id === currentUser.id;
+              } else if (currentUser?.role?.description === 'Student') {
+                canJoinRoom = isLiveSimplified && room.participants.some(p => p.user_id === currentUser.id);
+              }
             }
 
 
@@ -274,12 +308,19 @@ const RoomList: React.FC = () => {
                 <div className="p-4 sm:p-5 flex-grow">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3">
                     <h2 className="text-base sm:text-lg font-semibold text-gray-800 flex-1 mb-2 sm:mb-0">{room.name}</h2>
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-${status.color}-100 text-${status.color}-800`}
-                    >
-                      <StatusIcon className={`w-3 h-3 mr-1 text-${status.color}-500`} />
-                      {status.label}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-${status.color}-100 text-${status.color}-800`}
+                      >
+                        <StatusIcon className={`w-3 h-3 mr-1 text-${status.color}-500`} />
+                        {status.label}
+                      </span>
+                      {backendStatus?.status === 'active' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 animate-pulse">
+                          🟢 En vivo
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <p className="text-gray-600 text-sm mb-3 sm:mb-4">{room.description}</p>
@@ -307,8 +348,8 @@ const RoomList: React.FC = () => {
 
                   {/* PRIMERA FILA DE BOTONES: Unirse/Ver Sala y Activar/Desactivar */}
                   <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-2">
-                    {isLive ? ( // Solo mostramos el botón "Unirse" si la sala está "En curso"
-                      canJoinRoom ? ( // Si el usuario actual puede unirse
+                    {backendStatus?.status === 'active' ? (
+                      canJoinRoom ? (
                         <button
                           onClick={() => startCall(String(room.id))}
                           className="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-md flex items-center justify-center text-sm transition-colors w-full flex-grow"
@@ -317,13 +358,16 @@ const RoomList: React.FC = () => {
                           Unirse
                         </button>
                       ) : (
-                        // Mensajes cuando no puede unirse (pero la sala está en vivo)
                         <span className="text-sm text-gray-500 px-3 py-2 w-full text-center sm:text-left flex-grow">
                           No tienes permiso para unirte a esta sala.
                         </span>
                       )
+                    ) : backendStatus?.status === 'scheduled' ? (
+                      <div className="flex items-center text-sm text-blue-600 px-3 py-2 w-full flex-grow">
+                        <Timer className="w-4 h-4 mr-2" />
+                        {formatTimeRemaining(backendStatus.time_until_start)}
+                      </div>
                     ) : (
-                      // Mensajes cuando la sala no está en vivo
                       <span className="text-sm text-gray-500 px-3 py-2 w-full text-center sm:text-left flex-grow">
                         {room.start_time > now ? 'Próximamente' : 'Finalizada'}
                       </span>

@@ -5,6 +5,7 @@ import { PhoneOff, Monitor, MonitorOff, Minimize2, Maximize2, Mic, MicOff, Video
 import ChatBox, { Message } from './ChatBox';
 import Toast from './Toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 
 interface VideoRoomProps {
     roomId: string;
@@ -43,6 +44,12 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 768);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const videoContainerRef = useRef<HTMLDivElement>(null);
+
+    // Chat WebSocket states (moved from ChatBox to ensure always active)
+    const [unreadMessages, setUnreadMessages] = useState(0);
+    const [roomParticipantId, setRoomParticipantId] = useState<number | null>(null);
+    const reverbServiceRef = useRef<any>(null);
+    const chatChannelRef = useRef<EchoChannel | null>(null);
 
     // Draggable widget state
     const [widgetPosition, setWidgetPosition] = useState({ x: window.innerWidth - 420, y: 20 });
@@ -100,6 +107,109 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             document.removeEventListener('mouseup', handleDragEnd);
         };
     }, [isDragging, dragOffset]);
+
+    // Initialize Reverb WebSocket service
+    useEffect(() => {
+        if (currentUser?.token && !reverbServiceRef.current) {
+            reverbServiceRef.current = createReverbWebSocketService(currentUser.token);
+            console.log('[VideoRoom] Reverb service initialized');
+        } else if (currentUser?.token && reverbServiceRef.current) {
+            reverbServiceRef.current.setToken(currentUser.token);
+        }
+    }, [currentUser]);
+
+    // Fetch room participant ID for chat
+    useEffect(() => {
+        const fetchRoomParticipantId = async () => {
+            if (!currentUser?.token || !roomId || !currentUser?.id) return;
+
+            try {
+                const API_URL = import.meta.env.VITE_API_URL;
+                const url = `${API_URL}/auth/room-participant?user_id=${currentUser.id}&room_id=${roomId}`;
+
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${currentUser.token}`,
+                        'Accept': 'application/json',
+                    },
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data?.id) {
+                    console.log('[VideoRoom] room_participant_id obtained:', data.id);
+                    setRoomParticipantId(data.id);
+                } else {
+                    console.error('[VideoRoom] Failed to get room_participant_id:', data);
+                }
+            } catch (err) {
+                console.error('[VideoRoom] Error fetching room_participant_id:', err);
+            }
+        };
+
+        fetchRoomParticipantId();
+    }, [currentUser, roomId]);
+
+    // Subscribe to chat channel (ALWAYS ACTIVE - even when chat is closed)
+    useEffect(() => {
+        if (!roomId || !currentUser || !reverbServiceRef.current || roomParticipantId === null) {
+            console.log('[VideoRoom Chat] Waiting for required data to subscribe to chat...');
+            return;
+        }
+        if (chatChannelRef.current) {
+            console.log('[VideoRoom Chat] Already subscribed to chat channel');
+            return;
+        }
+
+        const chatChannelName = `private-room.${roomId}`;
+        console.log(`[VideoRoom Chat] Subscribing to channel: ${chatChannelName}`);
+
+        reverbServiceRef.current.private(chatChannelName)
+            .then((channel: EchoChannel) => {
+                chatChannelRef.current = channel;
+                console.log(`[VideoRoom Chat] Successfully subscribed to ${chatChannelName}`);
+
+                channel.listen('messagecreated', (e: any) => {
+                    console.log('[VideoRoom Chat] Message received via WebSocket:', e);
+                    const senderName = e.room_participant?.user?.name || 'Usuario';
+                    const messageText = e.content;
+
+                    setChatMessages(prev => [...prev, {
+                        sender: senderName,
+                        text: messageText,
+                    }]);
+
+                    // Increment unread counter if chat is closed
+                    if (!isChatOpen) {
+                        setUnreadMessages(prev => prev + 1);
+                        console.log('[VideoRoom Chat] Unread messages incremented');
+                    }
+                });
+
+                channel.error((error: any) => {
+                    console.error('[VideoRoom Chat] Channel error:', error);
+                });
+            })
+            .catch(error => {
+                console.error(`[VideoRoom Chat] Failed to subscribe to ${chatChannelName}:`, error);
+                chatChannelRef.current = null;
+            });
+
+        return () => {
+            if (chatChannelRef.current) {
+                console.log(`[VideoRoom Chat] Unsubscribing from ${chatChannelName}`);
+                chatChannelRef.current.leave();
+                chatChannelRef.current = null;
+            }
+        };
+    }, [roomId, currentUser, roomParticipantId, isChatOpen]);
+
+    // Reset unread counter when chat is opened
+    useEffect(() => {
+        if (isChatOpen) {
+            setUnreadMessages(0);
+        }
+    }, [isChatOpen]);
 
     useEffect(() => {
         let mounted = true;
@@ -476,6 +586,36 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
         // Navigate back to rooms list using React Router
         navigate('/rooms');
+    };
+
+    const handleSendChatMessage = async (text: string) => {
+        if (!roomParticipantId || !currentUser?.token) {
+            throw new Error('No se puede enviar el mensaje');
+        }
+
+        const API_URL = import.meta.env.VITE_API_URL;
+        const response = await fetch(`${API_URL}/auth/messages`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${currentUser.token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+                content: text,
+                room_participant_id: roomParticipantId,
+                room_id: Number(roomId),
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            if (data.code === 'BANNED_CONTENT_DETECTED') {
+                throw new Error(data.message);
+            }
+            throw new Error(data.message || 'Error al enviar mensaje');
+        }
     };
 
     if (isCreatingRoom) {
@@ -867,11 +1007,15 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
                     <button
                         onClick={() => setIsChatOpen(!isChatOpen)}
-                        className={`p-3 rounded-full transition-all ${isChatOpen ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'}`}
+                        className={`relative p-3 rounded-full transition-all ${isChatOpen ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'}`}
                         title="Chat"
                     >
                         <MessageSquare className="w-5 h-5 text-white" />
-                        {/* Unread badge logic could go here */}
+                        {unreadMessages > 0 && !isChatOpen && (
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold animate-pulse">
+                                {unreadMessages > 9 ? '9+' : unreadMessages}
+                            </span>
+                        )}
                     </button>
 
                     <button
@@ -905,7 +1049,11 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                         </button>
                     </div>
                     <div className="flex-1 min-h-0">
-                        <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />
+                        <ChatBox
+                            messages={chatMessages}
+                            onSendMessage={handleSendChatMessage}
+                            currentUserName={currentUser?.name || 'Usuario'}
+                        />
                     </div>
                 </div>
             )}
