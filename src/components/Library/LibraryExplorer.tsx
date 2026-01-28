@@ -22,7 +22,7 @@ const LibraryExplorer: React.FC = () => {
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPath, setCurrentPath] = useState<Breadcrumb[]>([]);
-    const [currentPath, setCurrentPath] = useState<Breadcrumb[]>([]);
+
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isUploading, setIsUploading] = useState(false);
