@@ -1,4 +1,5 @@
 import { LibraryItem, LibraryFolder, LibraryFile, LibraryLink } from '../types/library';
+import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -72,30 +73,33 @@ export const LibraryService = {
         return transformItem(data.link) as LibraryLink;
     },
 
-    uploadFile: async (token: string, parentId: string | null, file: File): Promise<LibraryFile> => {
+    uploadFile: async (token: string, parentId: string | null, file: File, onProgress?: (progress: number) => void): Promise<LibraryFile> => {
         const formData = new FormData();
         if (parentId) formData.append('parent_id', parentId);
         formData.append('file', file);
         formData.append('title', file.name);
         formData.append('type', 'file');
 
-        const response = await fetch(`${API_URL}/auth/library/file`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json',
-                // Content-Type header is not set manually for FormData, browser sets it with boundary
-            },
-            body: formData,
-        });
+        try {
+            const response = await axios.post(`${API_URL}/auth/library/file`, formData, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'multipart/form-data',
+                },
+                onUploadProgress: (progressEvent: any) => {
+                    if (progressEvent.total && onProgress) {
+                        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                        onProgress(percentCompleted);
+                    }
+                },
+            });
 
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.message || 'Failed to upload file');
+            return transformItem(response.data.file) as LibraryFile;
+        } catch (error: any) {
+            console.error('Upload error:', error);
+            throw new Error(error.response?.data?.message || 'Failed to upload file');
         }
-
-        const data = await response.json();
-        return transformItem(data.file) as LibraryFile;
     },
 
     deleteItem: async (token: string, itemId: string): Promise<void> => {

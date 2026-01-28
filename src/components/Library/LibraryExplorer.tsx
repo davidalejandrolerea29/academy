@@ -22,7 +22,10 @@ const LibraryExplorer: React.FC = () => {
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPath, setCurrentPath] = useState<Breadcrumb[]>([]);
+    const [currentPath, setCurrentPath] = useState<Breadcrumb[]>([]);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [isUploading, setIsUploading] = useState(false);
 
     // Derived state
     const currentFolderId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null;
@@ -92,12 +95,19 @@ const LibraryExplorer: React.FC = () => {
 
     const handleUploadFile = async (file: File) => {
         if (!currentUser?.token) return;
+        setIsUploading(true);
+        setUploadProgress(0);
         try {
-            await LibraryService.uploadFile(currentUser.token, currentFolderId, file);
+            await LibraryService.uploadFile(currentUser.token, currentFolderId, file, (progress) => {
+                setUploadProgress(progress);
+            });
             loadItems(); // Reload to get fresh data/URLs
         } catch (error) {
             console.error('Error uploading file:', error);
             loadItems();
+        } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
         }
     };
 
@@ -181,6 +191,22 @@ const LibraryExplorer: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Upload Progress Bar */}
+            {isUploading && (
+                <div className="mb-4 bg-white p-4 rounded-lg shadow-sm border border-blue-100">
+                    <div className="flex justify-between mb-1">
+                        <span className="text-sm font-medium text-blue-700">Subiendo archivo...</span>
+                        <span className="text-sm font-medium text-blue-700">{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                        <div
+                            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out"
+                            style={{ width: `${uploadProgress}%` }}
+                        ></div>
+                    </div>
+                </div>
+            )}
 
             {/* Content */}
             {loading ? (
