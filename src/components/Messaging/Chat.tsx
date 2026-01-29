@@ -4,7 +4,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
 import { useAuth } from '../../contexts/AuthContext';
 import { MessagePrivate, User } from '../../types';
-import { Send, Paperclip, Smile, ArrowLeft } from 'lucide-react';
+import { ChatService } from '../../services/ChatService';
+import { UploadProgress } from '../../services/LibraryService';
+import { formatBytes } from '../../utils/fileValidation';
+import { Send, Paperclip, Smile, ArrowLeft, Loader2 } from 'lucide-react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
@@ -36,6 +39,8 @@ const Chat: React.FC<ChatProps> = ({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress>({ percent: 0, loaded: 0, total: 0 });
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -215,23 +220,21 @@ const Chat: React.FC<ChatProps> = ({
     if (isObservationMode) return;
 
     const messageContent = newMessage.trim();
-    // if (!messageContent && !attachedFile) return;
+    const currentFile = attachedFile;
 
-    // if (containsBannedWordsOrPatterns(messageContent)) {
-    //   setWarningMessage(
-    //     '¡Advertencia! Este mensaje contiene información sensible o prohibida. Por favor, revisa el contenido. El intento de compartir contactos externos puede resultar en la suspensión de tu cuenta.'
-    //   );
-    //   setTimeout(() => setWarningMessage(null), 8000);
-    //   return;
-    // }
+    // Clear input immediately for better UX
+    setNewMessage('');
+    setAttachedFile(null);
+    setShowEmojiPicker(false);
+    setWarningMessage(null);
 
+    // Create temp message for optimistic UI
     const tempMessage: MessagePrivate = {
       id: Date.now(),
       tempId: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       user_id: currentUser!.id,
       contact_id: Number(recipientId),
       content: messageContent,
-      attachment_url: attachedFile ? URL.createObjectURL(attachedFile) : undefined,
       read: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -240,54 +243,79 @@ const Chat: React.FC<ChatProps> = ({
     };
 
     setMessages((prev) => [...prev, tempMessage]);
-    setNewMessage('');
-    setAttachedFile(null);
-    setShowEmojiPicker(false);
-    setWarningMessage(null);
-
-    const formData = new FormData();
-    formData.append('user_id', String(currentUser?.id));
-    formData.append('contact_id', String(recipientId));
-    formData.append('content', messageContent || '');
-
-    if (attachedFile) {
-      formData.append('file', attachedFile);
-    }
 
     try {
-      const response = await fetch(`${API_URL}/auth/privatechat`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${currentUser?.token}`,
-          Accept: 'application/json',
-        },
-        body: formData,
-      });
+      let messageData;
 
-      const data = await response.json();
+      // If there's a file, use S3 upload flow
+      if (currentFile) {
+        setIsUploading(true);
+        setUploadProgress({ percent: 0, loaded: 0, total: currentFile.size });
 
-      // --- MANEJO DE LA RESPUESTA DEL BACKEND PARA MENSAJES BANEADOS ---
-      if (response.status === 403 && data.code === 'BANNED_CONTENT_DETECTED') {
-        console.warn('🚫 Mensaje bloqueado por el backend (chat privado):', data.message);
-        setWarningMessage(data.message); // Muestra el mensaje de advertencia del backend
-        setTimeout(() => setWarningMessage(null), 8000);
-        // Eliminar el mensaje provisional del UI porque fue baneado
-        setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
-        return; // Detener el flujo de envío exitoso
+        messageData = await ChatService.uploadChatFile(
+          currentUser!.token!,
+          currentUser!.id,
+          Number(recipientId),
+          currentFile,
+          messageContent,
+          (progress) => {
+            setUploadProgress(progress);
+          }
+        );
+
+        setIsUploading(false);
+        setUploadProgress({ percent: 0, loaded: 0, total: 0 });
+      } else {
+        // Text-only message - use existing endpoint
+        const formData = new FormData();
+        formData.append('user_id', String(currentUser?.id));
+        formData.append('contact_id', String(recipientId));
+        formData.append('content', messageContent || '');
+
+        const response = await fetch(`${API_URL}/auth/privatechat`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${currentUser?.token}`,
+            Accept: 'application/json',
+          },
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        // Handle banned content
+        if (response.status === 403 && data.code === 'BANNED_CONTENT_DETECTED') {
+          console.warn('🚫 Mensaje bloqueado por el backend (chat privado):', data.message);
+          setWarningMessage(data.message);
+          setTimeout(() => setWarningMessage(null), 8000);
+          setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
+          return;
+        }
+
+        if (!response.ok) {
+          console.error('❌ Error del backend al enviar mensaje:', data);
+          setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
+          setWarningMessage(data.message || 'Error al enviar el mensaje. Por favor, inténtalo de nuevo.');
+          setTimeout(() => setWarningMessage(null), 5000);
+          return;
+        }
+
+        messageData = data.data;
       }
-      // --- FIN DEL MANEJO DE MENSAJES BANEADOS ---
 
-      if (!response.ok) {
-        console.error('❌ Error del backend al enviar mensaje:', data);
-        // Si el backend responde con un error (ej. validación), removemos el mensaje optimista.
-        setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
-        setWarningMessage(data.message || 'Error al enviar el mensaje. Por favor, inténtalo de nuevo.');
-        setTimeout(() => setWarningMessage(null), 5000);
-        return;
-      }
-    } catch (error) {
+      // Update temp message with real data from backend
+      setMessages((prev) => prev.map(msg =>
+        msg.tempId === tempMessage.tempId
+          ? { ...messageData, status: 'sent' }
+          : msg
+      ));
+    } catch (error: any) {
       console.error('Error al enviar mensaje:', error);
       setMessages((prev) => prev.filter(msg => msg.tempId !== tempMessage.tempId));
+      setWarningMessage(error.message || 'Error al enviar el mensaje');
+      setTimeout(() => setWarningMessage(null), 5000);
+      setIsUploading(false);
+      setUploadProgress({ percent: 0, loaded: 0, total: 0 });
     }
   };
 
@@ -402,6 +430,27 @@ const Chat: React.FC<ChatProps> = ({
             </div>
           )}
 
+          {/* Upload Progress */}
+          {isUploading && (
+            <div className="mb-3 bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <div className="flex justify-between mb-1">
+                <span className="text-sm font-medium text-blue-700 flex items-center">
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Subiendo archivo...
+                </span>
+                <span className="text-sm font-medium text-blue-700">
+                  {uploadProgress.percent}% ({formatBytes(uploadProgress.loaded)} / {formatBytes(uploadProgress.total)})
+                </span>
+              </div>
+              <div className="w-full bg-blue-200 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-in-out"
+                  style={{ width: `${uploadProgress.percent}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-end space-x-2">
             <div className="relative flex-shrink-0">
               <button
@@ -420,7 +469,7 @@ const Chat: React.FC<ChatProps> = ({
 
             <label className="cursor-pointer text-gray-500 hover:text-orange-600 flex-shrink-0 p-1 rounded-full transition-colors">
               <Paperclip className="w-6 h-6" />
-              <input type="file" hidden onChange={handleFileChange} />
+              <input type="file" hidden onChange={handleFileChange} disabled={isUploading} />
             </label>
 
             <input
@@ -429,17 +478,18 @@ const Chat: React.FC<ChatProps> = ({
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder="Escribe un mensaje..."
               className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:focus:ring-orange-500 min-w-0"
+              disabled={isUploading}
             />
 
             <button
               type="submit"
-              className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg transition-colors flex-shrink-0"
-              disabled={!newMessage.trim() && !attachedFile}
+              className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={(!newMessage.trim() && !attachedFile) || isUploading}
             >
               <Send className="w-5 h-5" />
             </button>
           </div>
-          {attachedFile && (
+          {attachedFile && !isUploading && (
             <div className="mt-2 text-xs text-gray-500 text-right">
               Archivo seleccionado: <strong>{attachedFile.name}</strong>
             </div>
