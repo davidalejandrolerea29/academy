@@ -215,6 +215,30 @@ const Chat: React.FC<ChatProps> = ({
     return false;
   };
 
+  const handleDownloadAttachment = async (messageId: number) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/privatechat/${messageId}/download-url`, {
+        headers: {
+          'Authorization': `Bearer ${currentUser?.token}`,
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al obtener URL de descarga');
+      }
+
+      const data = await response.json();
+
+      // Open download URL in new tab
+      window.open(data.download_url, '_blank');
+    } catch (error) {
+      console.error('Error downloading attachment:', error);
+      alert('Error al descargar el archivo. Por favor, intenta de nuevo.');
+    }
+  };
+
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isObservationMode) return;
@@ -396,14 +420,12 @@ const Chat: React.FC<ChatProps> = ({
                     {message.content}
                   </div>
                   {message.attachment_url && (
-                    <a
-                      href={message.attachment_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`block mt-2 text-xs ${isMyMessage ? 'text-blue-100' : 'text-orange-500'} underline`}
+                    <button
+                      onClick={() => handleDownloadAttachment(message.id)}
+                      className={`block mt-2 text-xs ${isMyMessage ? 'text-blue-100' : 'text-orange-500'} underline hover:opacity-80`}
                     >
-                      Ver archivo adjunto
-                    </a>
+                      📎 Descargar archivo adjunto
+                    </button>
                   )}
                   <div className="flex items-center justify-end mt-1">
                     <span className={`text-xs ${isMyMessage ? 'text-blue-100' : 'text-gray-400'}`}>
