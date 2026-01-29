@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { LibraryService } from '../../services/LibraryService';
+import { LibraryService, UploadProgress } from '../../services/LibraryService';
 import { LibraryItem, Breadcrumb } from '../../types/library';
+import { validateFile, formatBytes } from '../../utils/fileValidation';
 import LibraryList from './LibraryList';
 import LibraryGrid from './LibraryGrid';
 import CreateModal from './CreateModal';
@@ -12,7 +13,8 @@ import {
     Plus,
     ChevronRight,
     Home,
-    Loader2
+    Loader2,
+    AlertCircle
 } from 'lucide-react';
 
 const LibraryExplorer: React.FC = () => {
@@ -24,8 +26,9 @@ const LibraryExplorer: React.FC = () => {
     const [currentPath, setCurrentPath] = useState<Breadcrumb[]>([]);
 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadProgress, setUploadProgress] = useState<UploadProgress>({ percent: 0, loaded: 0, total: 0 });
     const [isUploading, setIsUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
 
     // Derived state
     const currentFolderId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null;
@@ -95,19 +98,31 @@ const LibraryExplorer: React.FC = () => {
 
     const handleUploadFile = async (file: File) => {
         if (!currentUser?.token) return;
+
+        // Validate file before upload
+        const validation = validateFile(file);
+        if (!validation.valid) {
+            setUploadError(validation.error || 'Invalid file');
+            setTimeout(() => setUploadError(null), 5000);
+            return;
+        }
+
         setIsUploading(true);
-        setUploadProgress(0);
+        setUploadProgress({ percent: 0, loaded: 0, total: file.size });
+        setUploadError(null);
+
         try {
             await LibraryService.uploadFile(currentUser.token, currentFolderId, file, (progress) => {
                 setUploadProgress(progress);
             });
             loadItems(); // Reload to get fresh data/URLs
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error uploading file:', error);
-            loadItems();
+            setUploadError(error.message || 'Error al subir el archivo');
+            setTimeout(() => setUploadError(null), 5000);
         } finally {
             setIsUploading(false);
-            setUploadProgress(0);
+            setUploadProgress({ percent: 0, loaded: 0, total: 0 });
         }
     };
 
@@ -197,13 +212,25 @@ const LibraryExplorer: React.FC = () => {
                 <div className="mb-4 bg-white p-4 rounded-lg shadow-sm border border-blue-100">
                     <div className="flex justify-between mb-1">
                         <span className="text-sm font-medium text-blue-700">Subiendo archivo...</span>
-                        <span className="text-sm font-medium text-blue-700">{uploadProgress}%</span>
+                        <span className="text-sm font-medium text-blue-700">
+                            {uploadProgress.percent}% ({formatBytes(uploadProgress.loaded)} / {formatBytes(uploadProgress.total)})
+                        </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2.5">
                         <div
                             className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out"
-                            style={{ width: `${uploadProgress}%` }}
+                            style={{ width: `${uploadProgress.percent}%` }}
                         ></div>
+                    </div>
+                </div>
+            )}
+
+            {/* Upload Error */}
+            {uploadError && (
+                <div className="mb-4 bg-red-50 p-4 rounded-lg shadow-sm border border-red-200">
+                    <div className="flex items-center">
+                        <AlertCircle className="h-5 w-5 text-red-600 mr-2" />
+                        <span className="text-sm font-medium text-red-800">{uploadError}</span>
                     </div>
                 </div>
             )}
