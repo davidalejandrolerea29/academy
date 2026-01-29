@@ -76,6 +76,7 @@ export const ChatService = {
 
             xhr.open('PUT', uploadUrl);
             xhr.setRequestHeader('Content-Type', file.type);
+            xhr.setRequestHeader('x-amz-acl', 'public-read'); // Make file publicly accessible
             xhr.send(file);
         });
     },
