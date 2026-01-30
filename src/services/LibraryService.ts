@@ -46,6 +46,26 @@ export const LibraryService = {
         return (data.data || []).map(transformItem);
     },
 
+    /**
+     * Get secure download URL for a file
+     */
+    getDownloadUrl: async (token: string, itemId: string): Promise<string> => {
+        const response = await fetch(`${API_URL}/auth/library/${itemId}/download`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to get download URL');
+        }
+
+        const data = await response.json();
+        return data.url;
+    },
+
     createFolder: async (token: string, parentId: string | null, title: string): Promise<LibraryFolder> => {
         const response = await fetch(`${API_URL}/auth/library/folder`, {
             method: 'POST',

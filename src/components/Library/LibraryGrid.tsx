@@ -2,7 +2,8 @@ import React from 'react';
 import { LibraryItem } from '../../types/library';
 import ItemIcon from './ItemIcon';
 import { MoreVertical } from 'lucide-react';
-import { downloadFile } from '../../utils/downloadFile';
+import { LibraryService } from '../../services/LibraryService';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface LibraryGridProps {
     items: LibraryItem[];
@@ -11,18 +12,29 @@ interface LibraryGridProps {
 }
 
 const LibraryGrid: React.FC<LibraryGridProps> = ({ items, onNavigate, onDelete }) => {
+    const { currentUser } = useAuth();
+
+    const handleDownload = async (item: LibraryItem) => {
+        if (!currentUser?.token) return;
+
+        if (item.type !== 'file' || !item.filePath) return;
+
+        try {
+            const url = await LibraryService.getDownloadUrl(currentUser.token, item.id);
+            window.open(url, '_blank');
+        } catch (error) {
+            console.error('Error downloading file:', error);
+            alert('Error al descargar el archivo. Por favor intente nuevamente.');
+        }
+    };
+
     const handleItemClick = (item: LibraryItem) => {
         if (item.type === 'folder') {
             onNavigate(item.id);
         } else if (item.type === 'link') {
             window.open(item.externalUrl, '_blank');
         } else if (item.type === 'file') {
-            if (item.filePath) {
-                // Download the file automatically instead of opening in new tab
-                downloadFile(item.filePath, item.title);
-            } else {
-                alert('No se pudo obtener la ruta del archivo. Por favor contacte al soporte.');
-            }
+            handleDownload(item);
         }
     };
 
