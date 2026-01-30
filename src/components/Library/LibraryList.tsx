@@ -2,7 +2,8 @@ import React from 'react';
 import { LibraryItem } from '../../types/library';
 import ItemIcon from './ItemIcon';
 import { MoreVertical, Download, ExternalLink as ExternalLinkIcon, Folder } from 'lucide-react';
-import { downloadFile } from '../../utils/downloadFile';
+import { LibraryService } from '../../services/LibraryService';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface LibraryListProps {
     items: LibraryItem[];
@@ -11,16 +12,29 @@ interface LibraryListProps {
 }
 
 const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }) => {
+    const { currentUser } = useAuth();
+
+    const handleDownload = async (item: LibraryItem) => {
+        if (!currentUser?.token) return;
+
+        if (item.type !== 'file' || !item.filePath) return;
+
+        try {
+            const url = await LibraryService.getDownloadUrl(currentUser.token, item.id);
+            window.open(url, '_blank');
+        } catch (error) {
+            console.error('Error downloading file:', error);
+            alert('Error al descargar el archivo. Por favor intente nuevamente.');
+        }
+    };
+
     const handleItemClick = (item: LibraryItem) => {
         if (item.type === 'folder') {
             onNavigate(item.id);
         } else if (item.type === 'link') {
             window.open(item.externalUrl, '_blank');
         } else if (item.type === 'file') {
-            // Download the file automatically instead of opening in new tab
-            if (item.filePath) {
-                downloadFile(item.filePath, item.title);
-            }
+            handleDownload(item);
         }
     };
 
@@ -67,7 +81,7 @@ const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }
                                 <div className="flex items-center justify-end space-x-2" onClick={(e) => e.stopPropagation()}>
                                     {item.type === 'file' && (
                                         <button
-                                            onClick={() => downloadFile(item.filePath!, item.title)}
+                                            onClick={() => handleDownload(item)}
                                             className="p-2 text-gray-400 hover:text-blue-600"
                                             title="Descargar archivo"
                                         >
