@@ -397,6 +397,22 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                     setIsRecording(false);
                 });
 
+                // Auto-start cloud recording for teachers/admins
+                if (isTeacher) {
+                    try {
+                        console.log('[Daily] Auto-starting cloud recording...');
+                        await call.startRecording();
+                        console.log('[Daily] Cloud recording started automatically.');
+                    } catch (recError: any) {
+                        // recording-already-started is not a real problem
+                        if (recError?.errorMsg?.includes('already') || recError?.message?.includes('already')) {
+                            console.log('[Daily] Recording was already running.');
+                        } else {
+                            console.error('[Daily] Failed to auto-start recording:', recError);
+                        }
+                    }
+                }
+
                 // Initial participant update
                 updateParticipants(call);
 
