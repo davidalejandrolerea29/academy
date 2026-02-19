@@ -117,7 +117,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
           start_time: startDateTime.toISOString(),
           end_time: endDateTime.toISOString(),
           is_active: true,
-          is_recording: false,
+          is_recording: true,
           participants: selectedParticipants,
           created_at: new Date().toISOString(),
         }),
