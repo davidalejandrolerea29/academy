@@ -1011,7 +1011,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                         </button>
                     )}
 
-                    {isTeacher && (
+                    {/* Recording button: only Admins can start/stop. Teachers see only the indicator. */}
+                    {currentUser?.role?.description === 'Admin' && (
                         <button
                             onClick={toggleRecording}
                             className={`p-3 rounded-full transition-all ${isRecording ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-700 hover:bg-gray-600'}`}
