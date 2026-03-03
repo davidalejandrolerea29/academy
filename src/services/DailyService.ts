@@ -42,5 +42,27 @@ export const DailyService = {
             console.error('Error fetching recordings:', error);
             throw error;
         }
+    },
+
+    getRecordingLink: async (token: string, recordingId: string): Promise<string | null> => {
+        try {
+            const response = await fetch(`${API_URL}/auth/daily/recordings/${recordingId}/link`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Error al obtener el enlace de la grabación');
+            }
+
+            const data = await response.json();
+            return data.download_link || null;
+        } catch (error) {
+            console.error('Error fetching recording link:', error);
+            throw error;
+        }
     }
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Calendar, Clock, Video, AlertCircle, User as UserIcon, X } from 'lucide-react';
+import { Play, Calendar, Clock, Video, AlertCircle, User as UserIcon, X, Loader2 } from 'lucide-react';
 import { DailyService, DailyRecording } from '../../services/DailyService';
 import { RoomService, RoomFrontend } from '../../services/RoomService';
 import { useAuth } from '../../contexts/AuthContext';
@@ -17,6 +17,7 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
 
     // Video Player State
     const [selectedVideo, setSelectedVideo] = useState<DailyRecording | null>(null);
+    const [loadingLinkId, setLoadingLinkId] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -86,20 +87,41 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
     };
 
     const getRoomDetails = (recordingRoomName: string) => {
-        // Try to match by name first, assuming recording.room_name corresponds to room.name or room.id
-        // Daily usually uses the NAME provided at creation.
-        // Backend implementation uses room_id as the name passed to Daily.
-
-        // Find room where name matches or ID matches (as string)
         return rooms.find(r =>
             r.name === recordingRoomName ||
             String(r.id) === recordingRoomName ||
-            recordingRoomName.includes(r.name) // Flexible match
+            recordingRoomName.includes(r.name)
         );
     };
 
-    const handlePlayVideo = (recording: DailyRecording) => {
-        setSelectedVideo(recording);
+    const handlePlayVideo = async (recording: DailyRecording) => {
+        // If we already have the download link cached, play immediately
+        if (recording.download_link) {
+            setSelectedVideo(recording);
+            return;
+        }
+
+        // Otherwise, fetch the link on-demand
+        if (!currentUser?.token) return;
+
+        setLoadingLinkId(recording.id);
+        try {
+            const link = await DailyService.getRecordingLink(currentUser.token, recording.id);
+            if (link) {
+                const updatedRecording = { ...recording, download_link: link };
+                // Cache the link in state so we don't fetch it again
+                setRecordings(prev => prev.map(r => r.id === recording.id ? updatedRecording : r));
+                setSelectedVideo(updatedRecording);
+            } else {
+                setError('No se pudo obtener el enlace de la grabación.');
+                setTimeout(() => setError(null), 5000);
+            }
+        } catch {
+            setError('Error al obtener el enlace de la grabación.');
+            setTimeout(() => setError(null), 5000);
+        } finally {
+            setLoadingLinkId(null);
+        }
     };
 
     const closePlayer = () => {
@@ -184,18 +206,17 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                                             {formatDuration(rec.duration)}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            {rec.download_link ? (
-                                                <button
-                                                    onClick={() => handlePlayVideo(rec)}
-                                                    className="text-orange-600 hover:text-orange-900 flex items-center ml-auto px-3 py-1 rounded-md hover:bg-orange-50 transition-colors"
-                                                >
-                                                    <Play className="w-4 h-4 mr-1" /> Reproducir
-                                                </button>
-                                            ) : (
-                                                <span className="text-gray-400 italic text-xs flex items-center justify-end">
-                                                    <AlertCircle className="w-3 h-3 mr-1" /> Procesando...
-                                                </span>
-                                            )}
+                                            <button
+                                                onClick={() => handlePlayVideo(rec)}
+                                                disabled={loadingLinkId === rec.id}
+                                                className="text-orange-600 hover:text-orange-900 flex items-center ml-auto px-3 py-1 rounded-md hover:bg-orange-50 transition-colors disabled:opacity-50 disabled:cursor-wait"
+                                            >
+                                                {loadingLinkId === rec.id ? (
+                                                    <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Cargando...</>
+                                                ) : (
+                                                    <><Play className="w-4 h-4 mr-1" /> Reproducir</>
+                                                )}
+                                            </button>
                                         </td>
                                     </tr>
                                 );
@@ -264,15 +285,7 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                     </div>
                 </div>
             )}
-            {/* Debug Section */}
-            <div className="mt-8 p-4 bg-gray-100 rounded text-xs font-mono overflow-auto max-h-60">
-                <p className="font-bold mb-2">Debug Info (Take a screenshot of this):</p>
-                {recordings.slice(0, 3).map((r, i) => (
-                    <div key={i} className="mb-2 border-b pb-2">
-                        <pre>{JSON.stringify(r, null, 2)}</pre>
-                    </div>
-                ))}
-            </div>
+
         </div>
     );
 };
