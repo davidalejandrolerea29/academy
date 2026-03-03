@@ -347,6 +347,34 @@ const Chat: React.FC<ChatProps> = ({
   const displayLoading = isObservationMode ? observationLoading : loading;
   const displayError = isObservationMode ? observationError : null;
 
+  // Helper: formato de fecha estilo WhatsApp (Hoy, Ayer, o fecha completa)
+  const getDateLabel = (dateStr: string): string => {
+    const messageDate = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    const isSameDay = (d1: Date, d2: Date) =>
+      d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate();
+
+    if (isSameDay(messageDate, today)) return 'Hoy';
+    if (isSameDay(messageDate, yesterday)) return 'Ayer';
+
+    return messageDate.toLocaleDateString('es-ES', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: messageDate.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
+    });
+  };
+
+  const getDateKey = (dateStr: string): string => {
+    const d = new Date(dateStr);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  };
+
   if (displayLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -393,50 +421,64 @@ const Chat: React.FC<ChatProps> = ({
             <p className="text-sm">Envía tu primer mensaje para iniciar la conversación.</p>
           </div>
         ) : (
-          displayMessages.map((message) => {
+          displayMessages.map((message, index) => {
             const isMyMessage = String(message.user_id) === String(currentUser?.id);
+            const currentDateKey = getDateKey(message.created_at);
+            const prevDateKey = index > 0 ? getDateKey(displayMessages[index - 1].created_at) : null;
+            const showDateSeparator = index === 0 || currentDateKey !== prevDateKey;
 
             return (
-              <div
-                key={message.id}
-                className={`flex mb-4 ${isMyMessage ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`
-                    max-w-[75%]
-                    md:max-w-md
-                    lg:max-w-lg
-                    px-4 py-2 rounded-2xl shadow-sm
-                    ${isMyMessage ? 'bg-orange-500 text-white' : 'bg-white text-gray-800 border'}
-                  `}
-                >
-                  {!isMyMessage && (
-                    <div className="text-xs text-gray-500 mb-1">
-                      {message.sender?.name || 'Usuario desconocido'}
-                    </div>
-                  )}
-
-                  <div className="text-sm break-words whitespace-pre-wrap">
-                    {message.content}
-                  </div>
-                  {message.attachment_url && (
-                    <button
-                      onClick={() => handleDownloadAttachment(message.id)}
-                      className={`block mt-2 text-xs ${isMyMessage ? 'text-blue-100' : 'text-orange-500'} underline hover:opacity-80`}
+              <React.Fragment key={message.id}>
+                {showDateSeparator && (
+                  <div className="flex items-center justify-center my-4">
+                    <div
+                      className="px-4 py-1 rounded-lg text-xs font-medium text-gray-600 shadow-sm"
+                      style={{ backgroundColor: '#e2ddd5' }}
                     >
-                      📎 Descargar archivo adjunto
-                    </button>
-                  )}
-                  <div className="flex items-center justify-end mt-1">
-                    <span className={`text-xs ${isMyMessage ? 'text-blue-100' : 'text-gray-400'}`}>
-                      {new Date(message.created_at).toLocaleTimeString('es-ES', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
+                      {getDateLabel(message.created_at)}
+                    </div>
+                  </div>
+                )}
+                <div
+                  className={`flex mb-4 ${isMyMessage ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`
+                      max-w-[75%]
+                      md:max-w-md
+                      lg:max-w-lg
+                      px-4 py-2 rounded-2xl shadow-sm
+                      ${isMyMessage ? 'bg-orange-500 text-white' : 'bg-white text-gray-800 border'}
+                    `}
+                  >
+                    {!isMyMessage && (
+                      <div className="text-xs text-gray-500 mb-1">
+                        {message.sender?.name || 'Usuario desconocido'}
+                      </div>
+                    )}
+
+                    <div className="text-sm break-words whitespace-pre-wrap">
+                      {message.content}
+                    </div>
+                    {message.attachment_url && (
+                      <button
+                        onClick={() => handleDownloadAttachment(message.id)}
+                        className={`block mt-2 text-xs ${isMyMessage ? 'text-blue-100' : 'text-orange-500'} underline hover:opacity-80`}
+                      >
+                        📎 Descargar archivo adjunto
+                      </button>
+                    )}
+                    <div className="flex items-center justify-end mt-1">
+                      <span className={`text-xs ${isMyMessage ? 'text-blue-100' : 'text-gray-400'}`}>
+                        {new Date(message.created_at).toLocaleTimeString('es-ES', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </React.Fragment>
             );
           })
         )}
