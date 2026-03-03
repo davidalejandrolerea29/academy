@@ -256,11 +256,30 @@ const RecordingsList: React.FC<RecordingsListProps> = ({ roomName }) => {
                             </button>
                         </div>
                         <div className="relative bg-black flex-grow flex items-center justify-center aspect-video">
+                            {/* Loading spinner overlay */}
+                            <div id="video-loading-spinner" className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                                <div className="flex flex-col items-center">
+                                    <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
+                                    <span className="text-gray-400 text-sm mt-2">Cargando video...</span>
+                                </div>
+                            </div>
                             <video
-                                src={selectedVideo.download_link}
+                                src={selectedVideo.download_link || ''}
                                 controls
                                 autoPlay
-                                className="w-full h-full max-h-[70vh]"
+                                preload="auto"
+                                playsInline
+                                className="w-full h-full max-h-[70vh] relative z-20"
+                                onPlaying={(e) => {
+                                    // Ocultar spinner cuando empieza a reproducir
+                                    const spinner = (e.target as HTMLVideoElement).parentElement?.querySelector('#video-loading-spinner');
+                                    if (spinner) (spinner as HTMLElement).style.display = 'none';
+                                }}
+                                onWaiting={(e) => {
+                                    // Mostrar spinner cuando está buffereando
+                                    const spinner = (e.target as HTMLVideoElement).parentElement?.querySelector('#video-loading-spinner');
+                                    if (spinner) (spinner as HTMLElement).style.display = 'flex';
+                                }}
                                 onError={(e) => console.error("Video Error:", e)}
                             >
                                 Tu navegador no soporta la reproducción de video.
