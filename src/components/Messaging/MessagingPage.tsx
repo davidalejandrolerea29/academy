@@ -30,7 +30,7 @@ const MessagingPage: React.FC = () => {
 
   // Mensajes separados
   const [observedChatMessages, setObservedChatMessages] = useState<PrivateChatType[]>([]);
-  const [directChatMessages, setDirectChatMessages] = useState<{ [contactId: string]: PrivateChatType[] }>({});
+
 
   const [loadingObservedChat, setLoadingObservedChat] = useState(false);
   const [observedChatError, setObservedChatError] = useState<string | null>(null);
@@ -39,7 +39,7 @@ const MessagingPage: React.FC = () => {
 
   const reverbServiceRef = useRef<ReverbWebSocketService | null>(null);
   const userChannelRef = useRef<EchoChannel | null>(null);
-  const privateChatChannelRef = useRef<EchoChannel | null>(null);
+
 
   const isInitialRender = useRef(true);
 
@@ -76,12 +76,6 @@ const MessagingPage: React.FC = () => {
     } catch (err) { console.error(err); }
   }, [currentUser]);
 
-  const markSingleMessageAsRead = useCallback(async (messageId: number) => {
-    if (!currentUser) return;
-    try {
-      await fetch(`${API_URL}/auth/messages/${messageId}/read`, { method: 'POST', headers: { Authorization: `Bearer ${currentUser.token}` } });
-    } catch (err) { console.error(err); }
-  }, [currentUser]);
 
   const resetChatPanel = useCallback(() => {
     setSelectedContactId(null);
@@ -130,7 +124,7 @@ const MessagingPage: React.FC = () => {
 
     // Canal usuario (contadores)
     const subscribeToUserChannel = async () => {
-      if (!userChannelRef.current && [1,2,3].includes(currentUser.role_id)) {
+      if (!userChannelRef.current && [1, 2, 3].includes(currentUser.role_id)) {
         try {
           const userChannel = await reverbService.private(`private-user.${currentUser.id}`);
           userChannelRef.current = userChannel;
@@ -146,37 +140,12 @@ const MessagingPage: React.FC = () => {
     };
     subscribeToUserChannel();
 
-    // Canal chat directo (por contacto)
-    const subscribeToPrivateChat = async () => {
-      if (!selectedContactId) return;
 
-      if (privateChatChannelRef.current) { privateChatChannelRef.current.leave(); privateChatChannelRef.current = null; }
-
-      try {
-        const chatChannel = await reverbService.private(`private-chat.${currentUser.id}.${selectedContactId}`);
-        privateChatChannelRef.current = chatChannel;
-
-        chatChannel.listen('message.new', (message: PrivateChatType) => {
-          if (chatMode === 'observation') {
-            setObservedChatMessages(prev => [...prev, message]);
-          } else {
-            setDirectChatMessages(prev => ({
-              ...prev,
-              [selectedContactId]: [...(prev[selectedContactId] || []), message]
-            }));
-          }
-          markSingleMessageAsRead(message.id);
-        });
-        chatChannel.error((err: any) => console.error('Private chat error:', err));
-      } catch (err) { console.error('Error subscribing to private chat:', err); }
-    };
-    subscribeToPrivateChat();
 
     return () => {
       if (userChannelRef.current) { userChannelRef.current.leave(); userChannelRef.current = null; }
-      if (privateChatChannelRef.current) { privateChatChannelRef.current.leave(); privateChatChannelRef.current = null; }
     };
-  }, [currentUser?.id, currentUser?.token, selectedContactId, chatMode, fetchUnreadCounts, markSingleMessageAsRead]);
+  }, [currentUser?.id, currentUser?.token, fetchUnreadCounts]);
 
   // --- Historial chat observado ---
   useEffect(() => {
@@ -208,7 +177,7 @@ const MessagingPage: React.FC = () => {
   const getChatPanelPlaceholderMessage = () => {
     if (currentUser?.role_id === 1) {
       if (adminView === 'teachers') return 'Selecciona un profesor para ver sus alumnos o su chat.';
-      if (['students','all-students'].includes(adminView)) return 'Selecciona un alumno para ver su historial de chat.';
+      if (['students', 'all-students'].includes(adminView)) return 'Selecciona un alumno para ver su historial de chat.';
     }
     return 'Selecciona un contacto para comenzar a chatear.';
   };
@@ -258,7 +227,7 @@ const MessagingPage: React.FC = () => {
             selectedTeacherForStudents={selectedTeacher}
             onSetSelectedTeacher={setSelectedTeacher}
             onClearChatPanel={resetChatPanel}
-            unreadCounts={unreadCounts} 
+            unreadCounts={unreadCounts}
           />
         </div>
 
@@ -270,12 +239,9 @@ const MessagingPage: React.FC = () => {
               recipientData={selectedContactData}
               isObservationMode={chatMode === 'observation'}
               observationMessages={observedChatMessages}
-              directMessages={directChatMessages[selectedContactId!] || []}
               observationLoading={loadingObservedChat}
               observationError={observedChatError}
               onBackToContacts={handleBackToStudents}
-              reverbService={reverbServiceRef.current}
-              onMarkSingleMessageAsRead={markSingleMessageAsRead}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-gray-100">
