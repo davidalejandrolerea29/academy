@@ -58,7 +58,7 @@ const Chat: React.FC<ChatProps> = ({
   }, [messages, recipientId, isObservationMode]);
 
   const roomId = currentUser && recipientId && !isObservationMode
-    ? [currentUser.id, recipientId].sort().join('-')
+    ? [Number(currentUser.id), Number(recipientId)].sort((a, b) => a - b).join('-')
     : null;
 
   const handleNewMessage = useCallback((data: any) => {
@@ -103,13 +103,16 @@ const Chat: React.FC<ChatProps> = ({
     });
   }, [currentUser, isObservationMode]);
 
+  // Sync observation mode state separately to avoid unstable deps in WebSocket effect
   useEffect(() => {
     if (isObservationMode) {
       setMessages(observationMessages);
       setLoading(observationLoading);
-      return;
     }
+  }, [isObservationMode, observationMessages, observationLoading]);
 
+  useEffect(() => {
+    if (isObservationMode) return;
     if (!currentUser?.id || !recipientId) return;
 
     const fetchMessages = async () => {
@@ -158,7 +161,7 @@ const Chat: React.FC<ChatProps> = ({
         }
       };
     }
-  }, [currentUser, recipientId, roomId, handleNewMessage, isObservationMode, observationMessages, observationLoading]);
+  }, [currentUser?.id, currentUser?.token, recipientId, roomId, handleNewMessage, isObservationMode]);
 
   // Auto-scroll hacia abajo cuando llegan nuevos mensajes
   useEffect(() => {
