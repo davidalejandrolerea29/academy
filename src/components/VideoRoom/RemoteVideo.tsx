@@ -17,6 +17,7 @@ interface RemoteVideoProps {
   onSelectMain?: (streamId: string | null) => void; // Callback para seleccionar este stream como principal
   isSelectedMain?: boolean; // Indica si este stream es actualmente el principal seleccionado
   showSelectButton?: boolean;
+  fill?: boolean; // true = llena el contenedor (vista principal); false = fuerza 16:9 (miniaturas/grilla)
 }
 
 const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
@@ -32,6 +33,7 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
   onSelectMain,
   isSelectedMain,
   showSelectButton,
+  fill = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const showVideoContent = isScreenShare ? true : videoEnabled; // Determina si se muestra el video o el placeholder
@@ -151,11 +153,14 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
         onSelectMain(isSelectedMain ? null : participantId);
     }
   };
-  const screenShareBorderClass = isScreenShare ? 'border-4 border-blue-500' : '';
+  const screenShareBorderClass = isScreenShare ? 'border-2 border-blue-500' : '';
+  // Pantalla compartida: SIEMPRE se muestra completa (object-contain) y nunca se recorta
+  // (max-w/max-h + centrado). Cámara: llena la celda (object-cover).
   const videoObjectFitClass = isScreenShare ? 'object-contain' : 'object-cover';
+  const videoSizeClass = isScreenShare ? 'max-w-full max-h-full' : 'w-full h-full';
 
   return (
-    <div className={`relative bg-gray-800 rounded-lg overflow-hidden aspect-video ${className || ''} ${screenShareBorderClass}`}>
+    <div className={`relative bg-gray-800 rounded-lg overflow-hidden flex items-center justify-center ${fill ? 'w-full h-full' : 'aspect-video'} ${className || ''} ${screenShareBorderClass}`}>
       <video
         ref={videoRef}
         autoPlay
@@ -164,7 +169,7 @@ const RemoteVideoComponent: React.FC<RemoteVideoProps> = ({
         // Si es local o es pantalla compartida, siempre muteado.
         // Si es remoto, muteado solo si su micEnabled es false.
         muted={isLocal || isScreenShare ? true : !micEnabled}
-        className={`w-full h-full ${videoObjectFitClass}`}
+        className={`${videoSizeClass} ${videoObjectFitClass}`}
       ></video>
 
       {!showVideoContent && (

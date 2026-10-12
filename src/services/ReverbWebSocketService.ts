@@ -281,11 +281,16 @@ private dispatchToChannelListeners(message: any) {
 
         } else if (message.event === 'pusher_internal:member_removed') {
             // console.log(`ReverbWebSocketService: Recibido pusher_internal:member_removed para canal: ${message.channel}`);
-            const removedMember = parsedData.user_info;
-            if (channelData.presenceMembers && removedMember && removedMember.id) {
-                channelData.presenceMembers.delete(String(removedMember.id));
+            // El server envía SOLO { user_id } en member_removed (sin user_info). Normalizamos
+            // a un objeto con `id` para que el handler `leaving` pueda eliminar al participante.
+            const removedId = parsedData?.user_info?.id ?? parsedData?.user_id;
+            const removedMember = parsedData?.user_info || (removedId != null ? { id: removedId } : null);
+            if (channelData.presenceMembers && removedId != null) {
+                channelData.presenceMembers.delete(String(removedId));
             }
-            channelData.listeners.get('leaving')?.forEach(cb => cb(removedMember));
+            if (removedMember) {
+                channelData.listeners.get('leaving')?.forEach(cb => cb(removedMember));
+            }
 
         } else if (message.event.startsWith('client-')) {
             // Estos son los whispers. Se registran con 'client-' prefix.
@@ -631,7 +636,8 @@ let reverbServiceInstance: ReverbWebSocketService | null = null;
 
 export const createReverbWebSocketService = (token: string): ReverbWebSocketService => {
   if (!reverbServiceInstance) {
-    const appKey = 'sfnheugrsf0hhvj0k6oo'; // Tu APP_KEY de Reverb
+    // APP_KEY configurable por entorno (fallback al valor histórico)
+    const appKey = import.meta.env.VITE_REVERB_APP_KEY || 'sfnheugrsf0hhvj0k6oo';
 
     const apiUrlParsed = new URL(API_URL);
     const apiHost = apiUrlParsed.hostname;
@@ -641,18 +647,22 @@ export const createReverbWebSocketService = (token: string): ReverbWebSocketServ
     let authEndpoint: string;
     let forceTLS: boolean;
 
-    // Detectar si estamos en producción (basado en el dominio)
-    if (apiHost === 'portalnewpath.com') {
+    // Detección genérica por protocolo del API:
+    //   https → despliegue con dominio + TLS (el gateway proxea /app y /broadcasting
+    //           al servidor Node bajo el MISMO dominio, puerto 443).
+    //   http  → desarrollo local (Node en 127.0.0.1:3000).
+    // Funciona para CUALQUIER subdominio, no solo portalnewpath.com.
+    if (apiUrlParsed.protocol === 'https:') {
       wsHost = apiHost;
-      wsPort = 443; // En producción, usamos el puerto HTTPS estándar
-      authEndpoint = `https://${apiHost}/broadcasting/auth`; // Sin el puerto 3000, Apache lo redirige
-      forceTLS = true; // Forzamos HTTPS
+      wsPort = 443;
+      authEndpoint = `https://${apiHost}/broadcasting/auth`;
+      forceTLS = true;
     } else {
       // Entorno local (desarrollo)
-      wsHost = '127.0.0.1'; // O 'localhost' si tu Node.js escucha ahí
-      wsPort = 3000; // Puerto interno del servidor Node.js
-      authEndpoint = `${apiUrlParsed.protocol}//${apiHost}:${wsPort}/broadcasting/auth`; // O tu IP local
-      forceTLS = false; // No forzar TLS en local
+      wsHost = apiHost || '127.0.0.1';
+      wsPort = 3000; // Puerto del servidor Node.js
+      authEndpoint = `${apiUrlParsed.protocol}//${apiHost}:${wsPort}/broadcasting/auth`;
+      forceTLS = false;
     }
 
     //console.log("ReverbService: Usando wsHost:", wsHost);
