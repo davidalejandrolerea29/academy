@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createReverbWebSocketService, EchoChannel } from '../../services/ReverbWebSocketService';
+import { RecordingService, RecordingSource } from '../../services/RecordingService';
 // import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase'; // Asumo que esto es relevante para otras partes de tu app
@@ -10,7 +11,7 @@ import ScreenShareManager, { ScreenShareManagerHandle } from './ScreenShareManag
 
 import {
     Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle,
-    MessageSquare, PhoneOff, Minimize2, Maximize2, Users, // <-- NUEVO: Íconos de minimizar/maximizar
+    MessageSquare, PhoneOff, Minimize2, Maximize2, Users, Circle, // <-- NUEVO: Íconos de minimizar/maximizar
     X, Move, Dot, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
@@ -122,6 +123,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         polite: boolean;
         createdAt: number;
         connected: boolean;
+        lastRestart: number;
     }>>({});
 
     const getNegState = useCallback((peerId: string) => {
@@ -135,6 +137,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 polite: localId > remoteId,
                 createdAt: Date.now(),
                 connected: false,
+                lastRestart: 0,
             };
         }
         return negotiationStateRef.current[peerId];
@@ -142,6 +145,11 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
 
     // Espejo de participants para leerlo desde intervalos/closures sin valores viejos.
     const participantsRef = useRef<Record<string, any>>({});
+
+    // --- Grabación propia (solo profesor) ---
+    const [isRecording, setIsRecording] = useState(false);
+    const recordingServiceRef = useRef<RecordingService | null>(null);
+    const recordingSourceRef = useRef<RecordingSource>({ screen: null, cameras: [], audioStreams: [] });
     const channelRef = useRef<EchoChannel | null>(null);
 
     // Connection monitoring states
@@ -1261,10 +1269,68 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
         void localUserId; void remotePeerIdNum; // (se mantienen por compatibilidad, ya no deciden quién ofrece)
     }, [currentUser, localStream, getOrCreatePeerConnection, sendSignal, getNegState]); // Dependencias del useCallback
 
+    // Recrea DESDE CERO la conexión con un peer (cierra la vieja + limpia estado + crea nueva).
+    // Clave para recuperación automática: cuando un peer (re)entra tras un corte de red, su lado
+    // ya cerró la conexión; nosotros debemos empezar fresco para que ambos re-establezcan.
+    const recreatePeerConnection = useCallback(async (peerId: string) => {
+        const old = peerConnectionsRef.current[peerId];
+        if (old) {
+            try { old.onconnectionstatechange = null; old.oniceconnectionstatechange = null; old.ontrack = null; old.onnegotiationneeded = null; old.onicecandidate = null; } catch { /* noop */ }
+            try { if (old.connectionState !== 'closed') old.close(); } catch { /* noop */ }
+            delete peerConnectionsRef.current[peerId];
+        }
+        delete negotiationStateRef.current[peerId];
+        delete iceCandidatesQueueRef.current[peerId];
+        await setupPeerConnectionForPeer(peerId);
+    }, [setupPeerConnectionForPeer]);
+
     // Mantiene participantsRef sincronizado con el estado.
     useEffect(() => {
         participantsRef.current = participants;
     }, [participants]);
+
+    // Mantiene la "fuente" para la grabación (cámaras + pantalla + audios) siempre fresca.
+    useEffect(() => {
+        const cameras: RecordingSource['cameras'] = [];
+        const audioStreams: MediaStream[] = [];
+        let screen: MediaStream | null = isSharingScreen ? localScreenShareStream : null;
+
+        if (localStream && videoEnabled) cameras.push({ id: 'local', stream: localStream, name: 'Tú' });
+        if (localStream && localStream.getAudioTracks().length > 0) audioStreams.push(localStream);
+
+        Object.values(participants).forEach((p: any) => {
+            if (p.cameraStream) {
+                cameras.push({ id: p.id, stream: p.cameraStream, name: p.name });
+                if (p.cameraStream.getAudioTracks().length > 0) audioStreams.push(p.cameraStream);
+            }
+            if (p.screenStream) {
+                if (!screen) screen = p.screenStream;
+                if (p.screenStream.getAudioTracks().length > 0) audioStreams.push(p.screenStream);
+            }
+        });
+
+        recordingSourceRef.current = { screen, cameras, audioStreams };
+    }, [localStream, videoEnabled, localScreenShareStream, isSharingScreen, participants]);
+
+    // Iniciar / detener grabación (solo el profesor)
+    const toggleRecording = useCallback(async () => {
+        if (!isRecording) {
+            try {
+                const svc = new RecordingService(API_URL, currentUser?.token || '', () => recordingSourceRef.current);
+                await svc.start(roomId);
+                recordingServiceRef.current = svc;
+                setIsRecording(true);
+            } catch (e) {
+                console.error('[Recording] no se pudo iniciar:', e);
+                alert('No se pudo iniciar la grabación.');
+            }
+        } else {
+            setIsRecording(false);
+            const svc = recordingServiceRef.current;
+            recordingServiceRef.current = null;
+            try { await svc?.stop(); } catch (e) { console.error('[Recording] error al detener:', e); }
+        }
+    }, [isRecording, API_URL, currentUser, roomId]);
 
     // --- WATCHDOG de recuperación: mantiene las conexiones firmes sin tener que re-entrar ---
     // Cada 5s: (1) asegura que cada participante tenga PeerConnection; (2) reinicia ICE en
@@ -1289,13 +1355,16 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                 if (!pc || pc.connectionState === 'closed') return;
                 const neg = getNegState(peerId);
                 const failed = pc.connectionState === 'failed' || pc.iceConnectionState === 'failed';
+                const disconnected = pc.connectionState === 'disconnected' || pc.iceConnectionState === 'disconnected';
                 const stuck = !neg.connected &&
                     pc.connectionState !== 'connected' &&
                     (Date.now() - neg.createdAt) > STUCK_MS;
-                if (failed || stuck) {
-                    // El lado "impolite" (menor id) nudgea; restartIce() re-dispara la oferta.
-                    if (!neg.polite) {
-                        console.warn(`[watchdog] Recuperando ${peerId} (failed=${failed}, stuck=${stuck}) → restartIce().`);
+                if (failed || stuck || disconnected) {
+                    // Cualquiera de los dos lados reinicia ICE (perfect negotiation resuelve el glare).
+                    // Cooldown de 8s por peer para no entrar en loop de reinicios.
+                    if (Date.now() - neg.lastRestart > 8000) {
+                        neg.lastRestart = Date.now();
+                        console.warn(`[watchdog] Recuperando ${peerId} (failed=${failed}, stuck=${stuck}, disconnected=${disconnected}) → restartIce().`);
                         try { pc.restartIce(); } catch (e) { /* noop */ }
                     }
                 }
@@ -1358,14 +1427,14 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                                 micEnabled: true,
                                 stream: null
                             };
-                            await setupPeerConnectionForPeer(member.id);
-                            // const remoteMemberId = parseInt(String(member.id));
-                            // Determina si este cliente debe iniciar la oferta
-                            // const shouldInitiate = localUserId < remoteMemberId;
-
-                            // Llama a la nueva función para iniciar la llamada con este peer
-                            // await initiateCallForPeer(String(member.id), shouldInitiate);
-                            getOrCreatePeerConnection(member.id);
+                            // Si ya había una PC con este peer y NO está 'connected', es una
+                            // reconexión tras un corte → la vieja quedó rota, empezamos fresco.
+                            const existingPc = peerConnectionsRef.current[String(member.id)];
+                            if (existingPc && existingPc.connectionState !== 'connected') {
+                                await recreatePeerConnection(String(member.id));
+                            } else {
+                                await setupPeerConnectionForPeer(member.id);
+                            }
                         }
                     }
                     setParticipants(initialParticipants);
@@ -1391,8 +1460,9 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                         };
                         return updatedParticipants;
                     });
-                    await setupPeerConnectionForPeer(member.id);
-                    getOrCreatePeerConnection(member.id);
+                    // Un member_added = (re)entró. Recrear fresco garantiza que ambos lados
+                    // re-establezcan la conexión (recuperación automática tras un corte de red).
+                    await recreatePeerConnection(memberId);
 
                 });
 
@@ -2006,7 +2076,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     return (
         // Contenedor general que ocupa toda la pantalla (h-screen)
         // Ya tienes `h-screen` aquí cuando no está minimizado
-        <div className={`flex bg-black text-white w-full ${isCallMinimized ? 'flex-col' : 'h-[100dvh] flex-col md:flex-row'}`}>
+        <div className={`flex bg-black text-white w-full max-w-full overflow-hidden ${isCallMinimized ? 'flex-col' : 'h-[100dvh] flex-col md:flex-row'}`}>
 
             <ScreenShareManager
                 ref={screenShareManagerRef} // ¡Pasa el ref aquí!
@@ -2039,6 +2109,12 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             {/* Si NO está minimizado, queremos que esto ocupe todo el espacio principal */}
             {!isCallMinimized && (
                 <div className="relative flex flex-1 min-w-0 min-h-0 flex-col bg-gray-950 overflow-hidden">
+                    {isRecording && (
+                        <div className="absolute top-3 left-3 z-30 flex items-center gap-1.5 bg-black/70 backdrop-blur px-3 py-1 rounded-full text-xs font-semibold">
+                            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                            REC
+                        </div>
+                    )}
                     {/* Escenario de videos */}
                     <div className="flex-1 min-h-0 relative p-3 md:p-5 pb-24 flex flex-col">
                         {(() => {
@@ -2180,6 +2256,16 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             <ScreenShare size={20} />
                         </button>
 
+                        {isTeacher && (
+                            <button
+                                onClick={toggleRecording}
+                                title={isRecording ? 'Detener grabación' : 'Grabar la clase'}
+                                className={`w-11 h-11 md:w-12 md:h-12 rounded-full flex items-center justify-center transition ${isRecording ? 'bg-red-600 hover:bg-red-700 animate-pulse' : 'bg-gray-700 hover:bg-gray-600'}`}
+                            >
+                                {isRecording ? <StopCircle size={20} /> : <Circle size={20} className="text-red-500" fill="currentColor" />}
+                            </button>
+                        )}
+
                         <button
                             onClick={() => setIsChatOpenDesktop(prev => !prev)}
                             title="Chat"
@@ -2212,8 +2298,8 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
             {/* ===== Panel de Chat ===== */}
             {!isCallMinimized && (
                 <>
-                    {/* Desktop: panel lateral deslizable a la derecha */}
-                    <div className={`hidden md:flex flex-col bg-gray-900 border-l border-gray-800 overflow-hidden transition-all duration-300 ease-in-out ${isChatOpenDesktop ? 'w-80' : 'w-0'}`}>
+                    {/* Desktop: panel FIJO anclado al borde derecho (no empuja el layout → nunca se corta) */}
+                    <div className={`hidden md:flex flex-col fixed top-0 right-0 bottom-0 z-40 w-80 max-w-[85vw] bg-gray-900 border-l border-gray-800 shadow-2xl overflow-hidden transition-transform duration-300 ease-in-out ${isChatOpenDesktop ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}>
                         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0">
                             <span className="font-semibold">Chat</span>
                             <button onClick={() => setIsChatOpenDesktop(false)} className="text-gray-400 hover:text-white" title="Cerrar chat">
@@ -2221,7 +2307,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                             </button>
                         </div>
                         <div className="flex-1 min-h-0 flex flex-col">
-                            {roomId && <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />}
+                            {isChatOpenDesktop && roomId && <ChatBox roomId={roomId} messages={chatMessages} setMessages={setChatMessages} />}
                         </div>
                     </div>
 

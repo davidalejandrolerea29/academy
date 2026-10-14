@@ -341,7 +341,7 @@ const Layout: React.FC = () => {
           fixed z-40 transition-all duration-300 ease-in-out
           ${isCallMinimized
             ? '' // Mantén esto si no quieres que el video flotante sea interactivo cuando minimizado
-            : 'inset-0 bg-black bg-opacity-75 flex items-start justify-center pointer-events-auto'
+            : 'inset-0 bg-black bg-opacity-75 pointer-events-auto'
           }
         `}>
           <VideoRoom

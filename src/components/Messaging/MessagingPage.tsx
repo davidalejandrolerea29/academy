@@ -103,6 +103,15 @@ const MessagingPage: React.FC = () => {
     }
   }, [currentUser, adminView, markAllMessagesAsRead]);
 
+  // Abrir chat DIRECTO con un usuario (usado por el admin para chatear con un profesor)
+  const handleDirectChatWith = useCallback((userId: number, userData: User) => {
+    setSelectedContactId(userId.toString());
+    setSelectedContactData(userData);
+    setChatMode('direct-chat');
+    setMobileView('chat');
+    markAllMessagesAsRead(userId);
+  }, [markAllMessagesAsRead]);
+
   const handleBackToTeachers = useCallback(() => { setSelectedTeacher(null); setAdminView('teachers'); resetChatPanel(); }, [resetChatPanel]);
   const handleBackToStudents = useCallback(() => { setAdminView('students'); resetChatPanel(); }, [resetChatPanel]);
   const handleBackToAllStudents = useCallback(() => { resetChatPanel(); }, [resetChatPanel]);
@@ -221,6 +230,7 @@ const MessagingPage: React.FC = () => {
         <div className={`${mobileView === 'contacts' ? 'block' : 'hidden'} lg:block w-full lg:w-1/3 border-r overflow-y-auto h-full`}>
           <ContactsList
             onSelectChatTarget={handleSelectChatTarget}
+            onDirectChat={handleDirectChatWith}
             selectedChatTargetId={selectedContactId}
             currentAdminView={adminView}
             setCurrentAdminView={setAdminView}

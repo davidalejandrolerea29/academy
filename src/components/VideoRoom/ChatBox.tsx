@@ -59,8 +59,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ messages, onSendMessage, currentUserN
       {/* Messages container with scroll */}
       <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto p-4 space-y-3"
-        style={{ maxHeight: 'calc(100vh - 200px)' }}
+        className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3"
       >
         {messages.map((msg, index) => {
           const isCurrentUser = msg.sender === currentUserName;
@@ -86,7 +85,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ messages, onSendMessage, currentUserN
       </div>
 
       {/* Input area */}
-      <div className="p-4 bg-gray-900 border-t border-gray-700">
+      <div className="p-4 bg-gray-900 border-t border-gray-700 flex-shrink-0">
         <form onSubmit={handleSendMessage} className="flex gap-2">
           <input
             type="text"
@@ -94,6 +93,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ messages, onSendMessage, currentUserN
             onChange={(e) => setChatInput(e.target.value)}
             placeholder="Escribe un mensaje..."
             disabled={isSending}
+            autoFocus
             className="flex-1 bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 placeholder-gray-400 disabled:opacity-50"
           />
           <button

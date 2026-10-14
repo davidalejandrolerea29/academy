@@ -3,12 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, MessageSquare } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
 interface ContactsListProps {
   onSelectChatTarget: (userId: number, userData: User) => void;
+  onDirectChat?: (userId: number, userData: User) => void;
   selectedChatTargetId: string | null;
   currentAdminView: 'contacts' | 'teachers' | 'students' | 'chat-observation' | 'all-students';
   setCurrentAdminView: (view: 'contacts' | 'teachers' | 'students' | 'chat-observation' | 'all-students') => void;
@@ -20,6 +21,7 @@ interface ContactsListProps {
 
 const ContactsList: React.FC<ContactsListProps> = ({
   onSelectChatTarget,
+  onDirectChat,
   selectedChatTargetId,
   currentAdminView,
   setCurrentAdminView,
@@ -239,6 +241,16 @@ const ContactsList: React.FC<ContactsListProps> = ({
                   <span className="ml-2 px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
                     {unreadCount}
                   </span>
+                )}
+                {/* Admin: chatear directo con el profesor (sin entrar a sus alumnos) */}
+                {currentUser?.role_id === 1 && currentAdminView === 'teachers' && onDirectChat && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDirectChat(item.id, item); }}
+                    title={`Chatear con ${item.name}`}
+                    className="ml-2 p-2 rounded-full text-orange-500 hover:bg-orange-100"
+                  >
+                    <MessageSquare size={18} />
+                  </button>
                 )}
               </li>
             );

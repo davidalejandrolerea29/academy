@@ -10,7 +10,8 @@ const RoomManagementPage: React.FC = () => {
   const [view, setView] = useState<'list' | 'create' | 'recordings'>('list');
 
   const canCreateRooms = currentUser?.role_description === 'Admin' || currentUser?.role_description === 'Teacher';
-  const canViewRecordings = currentUser?.role_description === 'Admin';
+  // Todos pueden ver Grabaciones; la API filtra por rol (alumno ve solo las de sus salas).
+  const canViewRecordings = true;
 
   const handleRoomCreated = () => {
     setView('list');
@@ -24,7 +25,7 @@ const RoomManagementPage: React.FC = () => {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Gestión de Salas</h1> {/* Tamaño de texto responsivo */}
         </div>
 
-        {canCreateRooms && (
+        {(canCreateRooms || canViewRecordings) && (
           <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto"> {/* Apila en móvil, luego en fila */}
             <button
               onClick={() => setView('list')}
@@ -52,17 +53,19 @@ const RoomManagementPage: React.FC = () => {
               </button>
             )}
 
-            <button
-              onClick={() => setView('create')}
-              className={`w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center
-                ${view === 'create'
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}
-              `}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Crear Sala
-            </button>
+            {canCreateRooms && (
+              <button
+                onClick={() => setView('create')}
+                className={`w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center
+                  ${view === 'create'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}
+                `}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Crear Sala
+              </button>
+            )}
           </div>
         )}
       </div>
