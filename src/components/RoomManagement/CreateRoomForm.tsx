@@ -4,6 +4,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Añ
 import { useAuth } from '../../contexts/AuthContext';
 import { User } from '../../types';
 import { Calendar, Clock, Users, Info, Search } from 'lucide-react'; // Añadimos Search para el buscador
+import BrandLoader from '../UI/BrandLoader';
+import { apiFetch as fetch } from '../../services/apiFetch';
+import { isDevPreview } from '../../config/devPreview';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -27,7 +30,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
 
   const fetchAllUsers = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = isDevPreview ? currentUser?.token : localStorage.getItem('token');
       if (!token) {
         setError('Token de autenticación no encontrado. Por favor, inicia sesión.');
         return;
@@ -75,7 +78,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
+    const token = isDevPreview ? currentUser?.token : localStorage.getItem('token');
 
     if (!currentUser || (currentUser.role?.description !== 'Admin' && currentUser.role?.description !== 'Teacher')) {
       setError('No tienes permisos para crear salas');
@@ -194,18 +197,18 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
 
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+    <form onSubmit={handleSubmit} className="ui-surface ui-page-enter bg-white rounded-2xl p-4 sm:p-6">
       <h2 className="text-xl font-semibold text-gray-800 mb-4 sm:mb-6">Crear Nueva Sala</h2>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md flex items-start text-sm">
+        <div className="ui-feedback mb-4 p-3 bg-red-50 border border-red-100 text-red-700 rounded-xl flex items-start text-sm">
           <Info className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {success && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md text-sm">
+        <div className="ui-feedback mb-4 p-3 bg-green-50 border border-green-100 text-green-700 rounded-xl text-sm">
           Sala creada exitosamente
         </div>
       )}
@@ -220,7 +223,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+            className="ui-interactive w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:border-orange-400 text-sm"
             required
           />
         </div>
@@ -233,7 +236,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
             id="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+            className="ui-interactive w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:border-orange-400 text-sm"
             rows={3}
             required
           />
@@ -251,7 +254,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                 id="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                className="ui-interactive w-full pl-10 px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:border-orange-400 text-sm"
                 required
               />
             </div>
@@ -268,7 +271,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                 id="startTime"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                className="ui-interactive w-full pl-10 px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:border-orange-400 text-sm"
                 required
               />
             </div>
@@ -285,7 +288,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                 id="endTime"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                className="ui-interactive w-full pl-10 px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:border-orange-400 text-sm"
                 required
               />
             </div>
@@ -308,7 +311,7 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value as 'All' | 'Admin' | 'Teacher' | 'Student')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-orange-500 focus:border-orange-500"
+                className="ui-interactive w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white text-sm focus:ring-orange-500 focus:border-orange-500"
               >
                 <option value="All">Todos los Roles</option>
                 <option value="Admin">Administradores</option>
@@ -325,17 +328,17 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
                 placeholder="Buscar por nombre o email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-orange-500 focus:border-orange-500"
+                className="ui-interactive w-full pl-10 px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white text-sm focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
           </div>
 
-          <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-md p-2">
+          <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-xl p-2 bg-gray-50/50">
             {displayedUsers.length === 0 ? (
               <p className="text-gray-500 text-sm p-2 text-center">No hay usuarios que coincidan con los filtros.</p>
             ) : (
               displayedUsers.map((user) => (
-                <div key={user.id} className="flex items-center p-2 hover:bg-gray-50">
+                <div key={user.id} className="flex items-center p-2 rounded-lg hover:bg-orange-50 transition-colors duration-200 motion-reduce:transition-none">
                   <input
                     type="checkbox"
                     id={`user-${user.id}`}
@@ -370,11 +373,11 @@ const CreateRoomForm: React.FC<{ onRoomCreated: () => void }> = ({ onRoomCreated
         <button
           type="submit"
           disabled={loading}
-          className={`w-full py-2 px-4 rounded-md text-white font-medium text-base
+          className={`ui-interactive w-full py-2 px-4 rounded-xl shadow-sm text-white font-medium text-base
             ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'}
             transition-colors`}
         >
-          {loading ? 'Creando...' : 'Crear Sala'}
+          {loading ? <BrandLoader inline size="sm" tone="dark" label="Creando..." /> : 'Crear Sala'}
         </button>
       </div>
     </form>

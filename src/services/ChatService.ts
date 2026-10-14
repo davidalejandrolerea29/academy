@@ -1,4 +1,5 @@
 import { UploadProgress } from './LibraryService';
+import { apiFetch as fetch } from './apiFetch';
 
 const API_URL = import.meta.env.VITE_API_URL;
 

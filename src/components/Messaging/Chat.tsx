@@ -7,9 +7,12 @@ import { MessagePrivate, User } from '../../types';
 import { ChatService } from '../../services/ChatService';
 import { UploadProgress } from '../../services/LibraryService';
 import { formatBytes } from '../../utils/fileValidation';
-import { Send, Paperclip, Smile, ArrowLeft, Loader2 } from 'lucide-react';
+import { Send, Paperclip, Smile, ArrowLeft } from 'lucide-react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
+import BrandLoader from '../UI/BrandLoader';
+import { apiFetch as fetch } from '../../services/apiFetch';
+import { isDevPreview } from '../../config/devPreview';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -136,6 +139,8 @@ const Chat: React.FC<ChatProps> = ({
     };
 
     fetchMessages();
+
+    if (isDevPreview) return;
 
     let channel: EchoChannel | null = null;
     const reverbService = createReverbWebSocketService(currentUser?.token);
@@ -380,15 +385,15 @@ const Chat: React.FC<ChatProps> = ({
 
   if (displayLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="flex items-center justify-center h-full bg-slate-50/60">
+        <BrandLoader label="Cargando conversación..." />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="bg-white shadow-sm border-b flex items-center p-2">
+    <div className="ui-page-enter flex flex-col h-full">
+      <div className="bg-gradient-to-r from-white to-orange-50/40 shadow-sm border-b border-slate-100 flex items-center p-2">
         {/*
           CAMBIO CLAVE AQUÍ:
           El botón de volver se muestra si:
@@ -398,12 +403,13 @@ const Chat: React.FC<ChatProps> = ({
         {onBackToContacts && (currentUser?.role_id !== 1 || (currentUser?.role_id === 1 && isObservationMode)) && (
           <button
             onClick={onBackToContacts}
-            className="lg:hidden text-orange-500 hover:text-orange-600 mr-3 flex items-center"
+            aria-label="Volver a contactos"
+            className="ui-interactive lg:hidden rounded-lg text-orange-600 hover:text-orange-700 mr-3 flex items-center"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
         )}
-        <h2 className="text-lg font-semibold text-gray-800 flex-1">
+        <h2 className="text-lg font-semibold tracking-tight text-slate-800 flex-1">
           {recipientData.name}
           {isObservationMode && (
             <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
@@ -413,14 +419,14 @@ const Chat: React.FC<ChatProps> = ({
         </h2>
       </div>
 
-      <div ref={messagesContainerRef} className="flex-1 p-4 overflow-y-auto bg-gray-100">
+      <div ref={messagesContainerRef} className="flex-1 p-4 overflow-y-auto bg-gradient-to-br from-slate-50 via-slate-50 to-orange-50/40">
         {displayError ? (
-          <div className="flex items-center justify-center h-full text-red-500 text-center">
+          <div className="ui-feedback flex items-center justify-center h-full text-red-600 text-center">
             Error al cargar el chat: {displayError}
           </div>
         ) : displayMessages.length === 0 && !displayLoading ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400 text-center">
-            <p className="text-lg font-semibold mb-2">¡Es hora de conectar!</p>
+          <div className="ui-empty-state ui-feedback flex flex-col items-center justify-center h-full text-slate-500 text-center">
+            <p className="text-lg font-semibold text-slate-700 mb-2">¡Es hora de conectar!</p>
             <p className="text-sm">Envía tu primer mensaje para iniciar la conversación.</p>
           </div>
         ) : (
@@ -435,7 +441,7 @@ const Chat: React.FC<ChatProps> = ({
                 {showDateSeparator && (
                   <div className="flex items-center justify-center my-4">
                     <div
-                      className="px-4 py-1 rounded-lg text-xs font-medium text-gray-600 shadow-sm"
+                      className="px-4 py-1 rounded-full text-xs font-medium text-slate-600 shadow-sm"
                       style={{ backgroundColor: '#e2ddd5' }}
                     >
                       {getDateLabel(message.created_at)}
@@ -443,7 +449,7 @@ const Chat: React.FC<ChatProps> = ({
                   </div>
                 )}
                 <div
-                  className={`flex mb-4 ${isMyMessage ? 'justify-end' : 'justify-start'}`}
+                  className={`ui-stagger-item flex mb-4 ${isMyMessage ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
                     className={`
@@ -451,11 +457,11 @@ const Chat: React.FC<ChatProps> = ({
                       md:max-w-md
                       lg:max-w-lg
                       px-4 py-2 rounded-2xl shadow-sm
-                      ${isMyMessage ? 'bg-orange-500 text-white' : 'bg-white text-gray-800 border'}
+                      ${isMyMessage ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-orange-500/10' : 'bg-white text-slate-800 border border-slate-100'}
                     `}
                   >
                     {!isMyMessage && (
-                      <div className="text-xs text-gray-500 mb-1">
+                      <div className="text-xs font-medium text-slate-500 mb-1">
                         {message.sender?.name || 'Usuario desconocido'}
                       </div>
                     )}
@@ -466,13 +472,13 @@ const Chat: React.FC<ChatProps> = ({
                     {message.attachment_url && (
                       <button
                         onClick={() => handleDownloadAttachment(message.id)}
-                        className={`block mt-2 text-xs ${isMyMessage ? 'text-blue-100' : 'text-orange-500'} underline hover:opacity-80`}
+                        className={`ui-interactive block mt-2 rounded text-xs ${isMyMessage ? 'text-orange-50' : 'text-orange-600'} underline hover:opacity-80`}
                       >
                         📎 Descargar archivo adjunto
                       </button>
                     )}
                     <div className="flex items-center justify-end mt-1">
-                      <span className={`text-xs ${isMyMessage ? 'text-blue-100' : 'text-gray-400'}`}>
+                      <span className={`text-xs ${isMyMessage ? 'text-orange-50' : 'text-slate-400'}`}>
                         {new Date(message.created_at).toLocaleTimeString('es-ES', {
                           hour: '2-digit',
                           minute: '2-digit',
@@ -489,9 +495,9 @@ const Chat: React.FC<ChatProps> = ({
       </div>
 
       {!isObservationMode && (
-        <form onSubmit={sendMessage} className="p-4 bg-white border-t">
+        <form onSubmit={sendMessage} className="p-4 bg-white border-t border-slate-100">
           {warningMessage && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-3 text-sm" role="alert">
+            <div className="ui-feedback bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl relative mb-3 text-sm" role="alert">
               <strong className="font-bold">¡Cuidado! </strong>
               <span className="block sm:inline">{warningMessage}</span>
             </div>
@@ -499,19 +505,18 @@ const Chat: React.FC<ChatProps> = ({
 
           {/* Upload Progress */}
           {isUploading && (
-            <div className="mb-3 bg-blue-50 p-3 rounded-lg border border-blue-200">
+            <div className="ui-feedback mb-3 bg-orange-50 p-3 rounded-xl border border-orange-100">
               <div className="flex justify-between mb-1">
-                <span className="text-sm font-medium text-blue-700 flex items-center">
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Subiendo archivo...
+                <span className="text-sm font-medium text-orange-700 flex items-center">
+                  <BrandLoader label="Subiendo archivo..." inline size="sm" />
                 </span>
-                <span className="text-sm font-medium text-blue-700">
+                <span className="text-sm font-medium text-orange-700">
                   {uploadProgress.percent}% ({formatBytes(uploadProgress.loaded)} / {formatBytes(uploadProgress.total)})
                 </span>
               </div>
-              <div className="w-full bg-blue-200 rounded-full h-2">
+              <div className="w-full bg-orange-100 rounded-full h-2">
                 <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-in-out"
+                  className="bg-orange-500 h-2 rounded-full transition-[width] duration-300 ease-in-out motion-reduce:transition-none"
                   style={{ width: `${uploadProgress.percent}%` }}
                 ></div>
               </div>
@@ -523,7 +528,8 @@ const Chat: React.FC<ChatProps> = ({
               <button
                 type="button"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                className="text-gray-500 hover:text-orange-600 p-1 rounded-full transition-colors"
+                aria-label="Abrir selector de emojis"
+                className="ui-icon-tile ui-interactive text-slate-500 hover:text-orange-600 hover:bg-orange-50 p-1 rounded-full"
               >
                 <Smile className="w-6 h-6" />
               </button>
@@ -534,9 +540,9 @@ const Chat: React.FC<ChatProps> = ({
               )}
             </div>
 
-            <label className="cursor-pointer text-gray-500 hover:text-orange-600 flex-shrink-0 p-1 rounded-full transition-colors">
+            <label className="ui-icon-tile ui-interactive cursor-pointer text-slate-500 hover:text-orange-600 hover:bg-orange-50 flex-shrink-0 p-1 rounded-full" aria-label="Adjuntar archivo">
               <Paperclip className="w-6 h-6" />
-              <input type="file" hidden onChange={handleFileChange} disabled={isUploading} />
+              <input type="file" hidden onChange={handleFileChange} disabled={isUploading} aria-label="Adjuntar archivo" />
             </label>
 
             <input
@@ -544,20 +550,22 @@ const Chat: React.FC<ChatProps> = ({
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder="Escribe un mensaje..."
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:focus:ring-orange-500 min-w-0"
+              aria-label="Mensaje"
+              className="ui-field ui-interactive flex-1 border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 text-base placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20 min-w-0"
               disabled={isUploading}
             />
 
             <button
               type="submit"
-              className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Enviar mensaje"
+              className="ui-button-primary ui-interactive bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-xl shadow-sm shadow-orange-500/20 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={(!newMessage.trim() && !attachedFile) || isUploading}
             >
               <Send className="w-5 h-5" />
             </button>
           </div>
           {attachedFile && !isUploading && (
-            <div className="mt-2 text-xs text-gray-500 text-right">
+            <div className="ui-feedback mt-2 text-xs text-slate-500 text-right">
               Archivo seleccionado: <strong>{attachedFile.name}</strong>
             </div>
           )}

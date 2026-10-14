@@ -1,7 +1,7 @@
 // src/components/Layout/Layout.tsx
 
 import React, { useState, useEffect } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCall } from '../../contexts/CallContext';
 import ConnectionTest from "../ConnectionTest";
@@ -25,10 +25,12 @@ import logo from '../../assets/logo.png';
 // Importa tu servicio WebSocket
 import { createReverbWebSocketService, ReverbWebSocketService } from '../../services/ReverbWebSocketService';
 import { getImageUrl } from '../../utils/urlUtils';
+import { isDevPreview } from '../../config/devPreview';
 
 const Layout: React.FC = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { activeRoomId, endCall, isCallMinimized, toggleMinimizeCall } = useCall();
   const [connectionStatus, setConnectionStatus] = useState<"good" | "warning" | "error">("good");
@@ -40,6 +42,10 @@ const Layout: React.FC = () => {
   // ---------------------------------------------------
 
   useEffect(() => {
+    if (isDevPreview) {
+      setIsConnecting(false);
+      return;
+    }
     if (currentUser?.token) {
       const service = createReverbWebSocketService(currentUser.token);
       setWebSocketService(service);
@@ -161,11 +167,11 @@ const Layout: React.FC = () => {
 
   return (
 
-    <div className="flex h-screen bg-gray-50">
+    <div className="app-shell flex h-screen">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-20 bg-gray-900 bg-opacity-50 lg:hidden"
+          className="ui-feedback fixed inset-0 z-20 bg-gray-950/40 backdrop-blur-sm lg:hidden"
           onClick={closeSidebar}
         ></div>
       )}
@@ -175,23 +181,24 @@ const Layout: React.FC = () => {
       <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-30
-          w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out
+          app-sidebar w-64 bg-white transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
         <div className="flex flex-col h-full">
-          <div className="flex flex-col items-center justify-center p-4 border-b text-center relative">
+          <div className="app-sidebar-brand flex flex-col items-center justify-center p-4 border-b border-slate-100 text-center relative">
             <img
               src={logo}
               alt="Logo English New Path"
-              className="h-16 w-16 object-contain mb-2"
+              className="h-16 w-16 object-contain mb-2 rounded-full ring-4 ring-white shadow-sm"
             />
             <h1 className="text-sm font-semibold text-gray-700 leading-tight">
               English New Path<br />Academia de Inglés online
             </h1>
             <button
-              className="absolute right-4 top-4 lg:hidden text-gray-500 hover:text-gray-700"
+              className="ui-interactive absolute right-4 top-4 lg:hidden rounded-lg p-1 text-gray-500 hover:text-gray-700 hover:bg-slate-100"
               onClick={closeSidebar}
+              aria-label="Cerrar menú"
             >
               <X className="w-6 h-6" />
             </button>
@@ -200,7 +207,7 @@ const Layout: React.FC = () => {
 
           {currentUser && (
             <>
-              <div className="p-4 border-b">
+              <div className="p-4 border-b border-slate-100">
                 <div className="flex items-center">
                   {currentUser.photo_url ? (
                     <img
@@ -220,11 +227,11 @@ const Layout: React.FC = () => {
 
 
 
-              <nav className="flex-1 p-4 space-y-1">
+              <nav className="flex-1 p-4 space-y-1" aria-label="Navegación principal">
                 <NavLink
                   to="/rooms"
                   className={({ isActive }) => `
-                    flex items-center px-4 py-2 rounded-md text-sm font-medium
+                    app-nav-link flex items-center px-4 text-sm font-medium
                     ${isActive
                       ? 'bg-blue-50 text-orange-700'
                       : 'text-gray-700 hover:bg-gray-100'}
@@ -238,7 +245,7 @@ const Layout: React.FC = () => {
                 <NavLink
                   to="/messages"
                   className={({ isActive }) => `
-                    flex items-center px-4 py-2 rounded-md text-sm font-medium
+                    app-nav-link flex items-center px-4 text-sm font-medium
                     ${isActive
                       ? 'bg-blue-50 text-orange-700'
                       : 'text-gray-700 hover:bg-gray-100'}
@@ -252,7 +259,7 @@ const Layout: React.FC = () => {
                 <NavLink
                   to="/library"
                   className={({ isActive }) => `
-                    flex items-center px-4 py-2 rounded-md text-sm font-medium
+                    app-nav-link flex items-center px-4 text-sm font-medium
                     ${isActive
                       ? 'bg-blue-50 text-orange-700'
                       : 'text-gray-700 hover:bg-gray-100'}
@@ -267,7 +274,7 @@ const Layout: React.FC = () => {
                   <NavLink
                     to="/admin/users"
                     className={({ isActive }) => `
-                      flex items-center px-4 py-2 rounded-md text-sm font-medium
+                      app-nav-link flex items-center px-4 text-sm font-medium
                       ${isActive
                         ? 'bg-blue-50 text-orange-700'
                         : 'text-gray-700 hover:bg-gray-100'}
@@ -281,20 +288,26 @@ const Layout: React.FC = () => {
 
               </nav>
               <div className="mt-2 px-4">
-                <ConnectionWidget
+                {isDevPreview ? (
+                  <span className="block rounded-xl border border-orange-100 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-800">
+                    Vista previa local · Datos de ejemplo
+                  </span>
+                ) : <ConnectionWidget
                   webSocketConnected={isWebSocketConnected}
                   isConnecting={isConnecting}
                   onStatusChange={(status) => setConnectionStatus(status)}
-                />
+                />}
               </div>
-              <div className="p-4 border-t mt-auto">
-                <button
+              <div className="p-4 border-t border-slate-100 mt-auto">
+                {isDevPreview ? (
+                  <span className="block px-4 py-2 text-sm text-slate-500">Acceso temporal sin login</span>
+                ) : <button
                   onClick={handleLogout}
-                  className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-100"
+                  className="ui-interactive flex items-center w-full px-4 py-2 text-sm font-medium text-gray-700 rounded-xl hover:bg-orange-50 hover:text-orange-700"
                 >
                   <LogOut className="w-5 h-5 mr-3" />
                   Cerrar Sesión
-                </button>
+                </button>}
               </div>
             </>
           )}
@@ -304,17 +317,19 @@ const Layout: React.FC = () => {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top header */}
-        <header className="bg-white shadow-sm z-10">
+        <header className="app-header z-10">
           <div className="px-4 py-3 flex items-center justify-between">
             <button
-              className="lg:hidden text-gray-500 focus:outline-none"
+              className="ui-interactive lg:hidden text-gray-500 rounded-lg p-1 hover:bg-slate-100"
               onClick={() => setSidebarOpen(true)}
+              aria-label="Abrir menú"
             >
               <Menu className="w-6 h-6" />
             </button>
 
             <div className="flex-1 flex justify-center lg:justify-start">
               <h2 className="text-lg font-semibold text-gray-800 lg:hidden">English New Path</h2>
+              <span className="hidden lg:block text-sm font-medium text-slate-500">Tu espacio de aprendizaje</span>
             </div>
 
             {/* --- INDICADOR DE CONEXIÓN AÑADIDO AQUÍ --- */}
@@ -328,8 +343,8 @@ const Layout: React.FC = () => {
         </header>
 
         {/* Content area */}
-        <main className="flex-1 overflow-x-hidden lg:overflow-y-auto bg-gray-50">
-          <div className="container mx-auto p-0 lg:p-4 h-full">
+        <main className="app-content flex-1 overflow-x-hidden lg:overflow-y-auto">
+          <div key={location.pathname} className="app-route container mx-auto p-0 lg:p-4 h-full">
             <Outlet />
           </div>
         </main>

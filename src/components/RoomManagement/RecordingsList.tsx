@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Calendar, Clock, Video, AlertCircle, User as UserIcon, X, Loader2 } from 'lucide-react';
+import { Play, Calendar, Clock, Video, AlertCircle, User as UserIcon, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import BrandLoader from '../UI/BrandLoader';
+import { apiFetch as fetch } from '../../services/apiFetch';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -91,27 +93,29 @@ const RecordingsList: React.FC<RecordingsListProps> = () => {
     if (!currentUser) return <div className="p-4 text-center">Inicia sesión para ver las grabaciones.</div>;
 
     return (
-        <div className="bg-white rounded-lg shadow-md overflow-hidden relative">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-                    <Video className="w-5 h-5 mr-2 text-orange-500" />
-                    Grabaciones de clases
-                </h2>
-                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+        <div className="ui-surface ui-page-enter bg-white rounded-2xl overflow-hidden relative">
+            <div className="px-5 sm:px-6 py-5 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-gradient-to-r from-orange-50/50 to-white">
+                <div className="flex items-center gap-3">
+                    <span className="ui-heading-icon flex-shrink-0" aria-hidden="true"><Video className="w-5 h-5" /></span>
+                    <div>
+                        <h2 className="text-lg font-semibold tracking-tight text-gray-900">Grabaciones de clases</h2>
+                        <p className="mt-1 text-sm text-gray-500">Repasa el contenido de tus clases recientes.</p>
+                    </div>
+                </div>
+                <span className="text-xs text-gray-600 bg-white border border-gray-200/80 px-3 py-1.5 rounded-full whitespace-nowrap">
                     {recordings.length} · se borran a las 48h
                 </span>
             </div>
 
             {error && (
-                <div className="p-4 bg-red-50 text-red-700 flex items-center border-l-4 border-red-500 mx-6 mt-4">
+                <div className="ui-feedback p-4 bg-red-50 text-red-700 flex items-center border-l-4 border-red-500 rounded-r-xl mx-6 mt-4">
                     <AlertCircle className="w-5 h-5 mr-2" /> {error}
                 </div>
             )}
 
             {loading ? (
                 <div className="p-12 text-center text-gray-500">
-                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-orange-500 mx-auto mb-3"></div>
-                    <p>Cargando...</p>
+                    <BrandLoader label="Cargando grabaciones..." />
                 </div>
             ) : (
                 <div className="overflow-x-auto">
@@ -127,7 +131,7 @@ const RecordingsList: React.FC<RecordingsListProps> = () => {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                             {recordings.map((rec) => (
-                                <tr key={rec.id} className="hover:bg-gray-50">
+                                <tr key={rec.id} className="ui-soft-row hover:bg-orange-50/40 transition-colors duration-200 motion-reduce:transition-none">
                                     <td className="px-6 py-4">
                                         <div className="text-sm font-medium text-gray-900">{rec.room_name || `Sala ${rec.room_id}`}</div>
                                         {rec.teacher && (
@@ -158,10 +162,10 @@ const RecordingsList: React.FC<RecordingsListProps> = () => {
                                         <button
                                             onClick={() => play(rec)}
                                             disabled={loadingId === rec.id}
-                                            className="text-orange-600 hover:text-orange-900 flex items-center ml-auto px-3 py-1 rounded-md hover:bg-orange-50 disabled:opacity-50 disabled:cursor-wait"
+                                            className="ui-interactive text-orange-600 hover:text-orange-900 flex items-center ml-auto px-3 py-1 rounded-lg hover:bg-orange-50 disabled:opacity-50 disabled:cursor-wait"
                                         >
                                             {loadingId === rec.id
-                                                ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Cargando...</>
+                                                ? <BrandLoader inline size="sm" label="Cargando..." />
                                                 : <><Play className="w-4 h-4 mr-1" /> Reproducir</>}
                                         </button>
                                     </td>
@@ -170,10 +174,10 @@ const RecordingsList: React.FC<RecordingsListProps> = () => {
                             {recordings.length === 0 && !error && (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
-                                        <div className="flex flex-col items-center justify-center">
-                                            <Video className="w-12 h-12 text-gray-300 mb-2" />
-                                            <p className="text-lg font-medium text-gray-600">No hay grabaciones</p>
-                                            <p className="text-sm text-gray-400">Las grabaciones de tus clases aparecen acá (se borran a las 48h).</p>
+                                        <div className="ui-empty-state ui-feedback flex flex-col items-center justify-center p-5 rounded-2xl">
+                                            <span className="ui-icon-tile inline-flex p-4 rounded-2xl bg-orange-50 text-orange-500 mb-4" aria-hidden="true"><Video className="w-8 h-8" /></span>
+                                            <p className="text-lg font-semibold text-gray-700">No hay grabaciones</p>
+                                            <p className="text-sm text-gray-500 mt-2 max-w-md leading-relaxed">Las grabaciones de tus clases aparecen acá (se borran a las 48h).</p>
                                         </div>
                                     </td>
                                 </tr>
@@ -184,13 +188,13 @@ const RecordingsList: React.FC<RecordingsListProps> = () => {
             )}
 
             {videoUrl && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90 p-4">
-                    <div className="bg-gray-900 rounded-lg shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="ui-feedback fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90 backdrop-blur-sm p-4">
+                    <div className="ui-modal-panel bg-gray-900 rounded-2xl shadow-2xl border border-gray-700 w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
                         <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
                             <h3 className="text-white font-medium truncate pr-4">
                                 {recordings.find(r => r.id === playingId)?.room_name || 'Grabación'}
                             </h3>
-                            <button onClick={closePlayer} className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-gray-700">
+                            <button onClick={closePlayer} className="ui-interactive text-gray-400 hover:text-white p-1 rounded-full hover:bg-gray-700">
                                 <X className="w-6 h-6" />
                             </button>
                         </div>
@@ -200,7 +204,7 @@ const RecordingsList: React.FC<RecordingsListProps> = () => {
                             </video>
                         </div>
                         <div className="p-4 bg-gray-800 flex justify-end">
-                            <button onClick={closePlayer} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">
+                            <button onClick={closePlayer} className="ui-interactive bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-xl text-sm">
                                 Cerrar
                             </button>
                         </div>

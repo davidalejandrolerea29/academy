@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { User, UserRole, UserFormData, Option } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import BrandLoader from '../UI/BrandLoader';
+import { apiFetch as fetch } from '../../services/apiFetch';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -35,13 +37,13 @@ interface ModalWrapperProps {
 const ModalWrapper: React.FC<ModalWrapperProps> = ({ children, onClose, title }) => {
   return (
     // Ajustado para que el modal ocupe más espacio en móviles y tenga un padding responsive
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm sm:max-w-2xl transform transition-all my-auto mx-2 sm:mx-auto"> {/* Ajustado max-w y mx */}
+    <div className="ui-feedback fixed inset-0 bg-gray-950/50 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+      <div className="ui-modal-panel bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-sm sm:max-w-2xl my-auto mx-2 sm:mx-auto"> {/* Ajustado max-w y mx */}
         <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 flex justify-between items-center"> {/* Padding responsive */}
           <h3 className="text-lg sm:text-xl font-semibold text-gray-900">{title}</h3> {/* Tamaño de texto responsive */}
           <button
             type="button"
-            className="text-gray-400 hover:text-gray-600 focus:outline-none"
+            className="ui-interactive text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg focus:outline-none"
             onClick={onClose}
           >
             <X className="w-5 h-5 sm:w-6 sm:h-6" /> {/* Tamaño de ícono responsive */}
@@ -153,7 +155,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <input
           type="text"
           name="name"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
+          className="ui-interactive mt-1 block w-full border border-gray-200 px-3 py-2 rounded-xl bg-gray-50 focus:bg-white shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
           value={formData.name}
           onChange={handleInputChange}
           required
@@ -164,7 +166,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <input
           type="email"
           name="email"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
+          className="ui-interactive mt-1 block w-full border border-gray-200 px-3 py-2 rounded-xl bg-gray-50 focus:bg-white shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
           value={formData.email}
           onChange={handleInputChange}
           required
@@ -177,7 +179,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <input
           type="password"
           name="password"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
+          className="ui-interactive mt-1 block w-full border border-gray-200 px-3 py-2 rounded-xl bg-gray-50 focus:bg-white shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required={!isEditMode}
@@ -188,7 +190,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         <label className="block text-sm font-medium text-gray-700">Rol</label>
         <select
           name="role_id"
-          className="mt-1 block w-full border px-3 py-2 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
+          className="ui-interactive mt-1 block w-full border border-gray-200 px-3 py-2 rounded-xl bg-gray-50 focus:bg-white shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm sm:text-base" // Responsive text size
           value={formData.role_id}
           onChange={handleRoleChange}
         >
@@ -206,14 +208,14 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
               Seleccionar Alumnos a Asignar
             </div>
           </label>
-          <div className="max-h-32 sm:max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50"> 
+          <div className="max-h-32 sm:max-h-40 overflow-y-auto border border-gray-200 rounded-xl p-2 bg-gray-50">
             {fetchingAssignments ? (
-              <p className="text-gray-500 text-xs sm:text-sm p-2">Cargando alumnos...</p> 
+              <BrandLoader inline size="sm" label="Cargando alumnos..." className="p-2" />
             ) : availableStudents.length === 0 ? (
               <p className="text-gray-500 text-xs sm:text-sm p-2">No hay alumnos disponibles para asignar.</p> 
             ) : (
               availableStudents.map((student) => (
-                <div key={student.id} className="flex items-center p-1 sm:p-2 hover:bg-gray-100 cursor-pointer"> 
+                <div key={student.id} className="flex items-center p-1 sm:p-2 rounded-lg hover:bg-orange-50 cursor-pointer transition-colors duration-200 motion-reduce:transition-none">
                   <input
                     type="checkbox"
                     id={`assign-student-${student.id}`}
@@ -245,14 +247,14 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
               Seleccionar Profesores a Asignar
             </div>
           </label>
-          <div className="max-h-32 sm:max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 bg-gray-50"> 
+          <div className="max-h-32 sm:max-h-40 overflow-y-auto border border-gray-200 rounded-xl p-2 bg-gray-50">
             {fetchingAssignments ? (
-              <p className="text-gray-500 text-xs sm:text-sm p-2">Cargando profesores...</p> 
+              <BrandLoader inline size="sm" label="Cargando profesores..." className="p-2" />
             ) : availableTeachers.length === 0 ? (
               <p className="text-gray-500 text-xs sm:text-sm p-2">No hay profesores disponibles para asignar.</p> 
             ) : (
               availableTeachers.map((teacher) => (
-                <div key={teacher.id} className="flex items-center p-1 sm:p-2 hover:bg-gray-100 cursor-pointer"> 
+                <div key={teacher.id} className="flex items-center p-1 sm:p-2 rounded-lg hover:bg-orange-50 cursor-pointer transition-colors duration-200 motion-reduce:transition-none">
                   <input
                     type="checkbox"
                     id={`assign-teacher-${teacher.id}`}
@@ -276,19 +278,19 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
         </div>
       )}
 
-      {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+      {error && <p className="ui-feedback text-red-600 bg-red-50 border border-red-100 rounded-xl p-3 text-sm mt-2">{error}</p>}
 
       <div className="flex justify-end space-x-2 mt-6">
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm sm:text-base" // Responsive padding and text size
+          className="ui-interactive px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-100 text-sm sm:text-base" // Responsive padding and text size
         >
           Cancelar
         </button>
         <button
           type="submit"
-          className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-md bg-orange-600 text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 text-sm sm:text-base" // Responsive padding and text size
+          className="ui-interactive px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-sm bg-orange-600 text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 text-sm sm:text-base" // Responsive padding and text size
         >
           {isEditMode ? 'Guardar Cambios' : 'Crear Usuario'}
         </button>
@@ -564,8 +566,8 @@ const UserManagement: React.FC = () => {
 
   if (loading || fetchingAssignments || authLoading) {
     return (
-      <div className="flex justify-center items-center p-8">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500" />
+      <div className="ui-surface flex justify-center items-center p-8 bg-white rounded-2xl">
+        <BrandLoader label="Cargando usuarios..." />
       </div>
     );
   }
@@ -576,16 +578,16 @@ const UserManagement: React.FC = () => {
 
 
   return (
-    <div className="container mx-auto py-4 px-2 sm:py-6 sm:px-4"> 
+    <div className="ui-page-enter container mx-auto py-4 px-2 sm:py-6 sm:px-4">
       {/* Encabezado */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6">
         <div className="flex items-center mb-3 sm:mb-0">
           <Users className="w-6 h-6 sm:w-8 sm:h-8 text-orange-500 mr-2 sm:mr-3" /> 
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Gestión de Usuarios</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-800">Gestión de Usuarios</h1>
         </div>
         <button
           onClick={() => setShowCreateFormModal(true)}
-          className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded flex items-center text-sm sm:text-base" // Responsive padding and text size
+          className="ui-interactive bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-sm hover:shadow-md flex items-center text-sm sm:text-base" // Responsive padding and text size
         >
           <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2" />
           Crear Usuario
@@ -596,14 +598,14 @@ const UserManagement: React.FC = () => {
       <div className="flex flex-col sm:flex-row mb-4 space-y-3 sm:space-y-0 sm:space-x-4"> 
         <div className="relative w-full sm:w-1/2"> 
           <input
-            className="w-full border px-8 sm:px-10 py-2 rounded text-sm sm:text-base" // Responsive padding and text size
+            className="ui-interactive w-full border border-gray-200 bg-white px-8 sm:px-10 py-2 rounded-xl focus:border-orange-400 shadow-sm text-sm sm:text-base" // Responsive padding and text size
             placeholder="Buscar por nombre o email"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
           <Search className="absolute left-3 top-2.5 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" /> 
           {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5">
+            <button onClick={() => setSearchTerm('')} className="ui-interactive absolute right-3 top-2.5 rounded text-gray-500 hover:text-orange-600">
               <FilterX className="w-4 h-4 sm:w-5 sm:h-5" /> 
             </button>
           )}
@@ -611,7 +613,7 @@ const UserManagement: React.FC = () => {
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
-          className="border rounded px-2 py-1.5 text-sm sm:text-base w-full sm:w-auto" // Responsive width, padding, text size
+          className="ui-interactive border border-gray-200 bg-white rounded-xl px-2 py-1.5 shadow-sm focus:border-orange-400 text-sm sm:text-base w-full sm:w-auto" // Responsive width, padding, text size
         >
           <option value="all">Todos</option>
           <option value="Admin">Administrador</option>
@@ -620,9 +622,9 @@ const UserManagement: React.FC = () => {
         </select>
       </div>
 
-      <div className="overflow-x-auto shadow rounded-lg"> 
+      <div className="ui-surface overflow-x-auto rounded-2xl">
         <table className="min-w-full bg-white">
-          <thead className="bg-gray-100 hidden sm:table-header-group"> 
+          <thead className="bg-gray-50 hidden sm:table-header-group">
             <tr>
               <th className="text-left py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-600 uppercase tracking-wider">Usuario</th>
               <th className="text-left py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-600 uppercase tracking-wider">Email</th>
@@ -633,13 +635,13 @@ const UserManagement: React.FC = () => {
           <tbody className="block sm:table-row-group">
             {filteredUsers.length === 0 ? (
               <tr className="block sm:table-row">
-                <td colSpan={4} className="text-center py-6 text-gray-500 block sm:table-cell">
+                <td colSpan={4} className="ui-feedback text-center py-6 text-gray-500 block sm:table-cell">
                   No se encontraron usuarios
                 </td>
               </tr>
             ) : (
               filteredUsers.map((user) => (
-                <tr key={user.id} className="block border-t hover:bg-gray-50 mb-4 sm:mb-0 sm:table-row">
+                <tr key={user.id} className="block border-t border-gray-100 hover:bg-orange-50/40 mb-4 sm:mb-0 sm:table-row transition-colors duration-200 motion-reduce:transition-none">
                   <td data-label="Usuario" className="block sm:table-cell py-2 px-3 sm:py-3 sm:px-4 text-sm sm:text-base border-b sm:border-0 relative before:content-[attr(data-label)] before:font-bold before:block before:mb-0.5 sm:before:hidden"> {/* Añadir data-label y estilo para móviles */}
                       <div className="flex items-center space-x-1 sm:space-x-2"> 
                         <UserCircle className="w-5 h-5 text-gray-400 sm:w-6 sm:h-6" /> 
@@ -656,13 +658,13 @@ const UserManagement: React.FC = () => {
                       <div className="flex space-x-1 sm:space-x-2 justify-center"> 
                         <button
                           onClick={() => handleEditClick(user)}
-                          className="text-orange-600 hover:text-blue-800 p-1" // Añadido padding para touch target
+                          className="ui-interactive text-orange-600 hover:text-orange-800 hover:bg-orange-100 rounded-lg p-1" // Añadido padding para touch target
                         >
                           <Edit className="w-5 h-5" /> 
                         </button>
                         <button
                           onClick={() => handleDeleteUser(user.id)}
-                          className="text-red-600 hover:text-red-800 p-1" // Añadido padding para touch target
+                          className="ui-interactive text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg p-1" // Añadido padding para touch target
                         >
                           <Trash2 className="w-5 h-5" />
                         </button>
@@ -685,16 +687,16 @@ const UserManagement: React.FC = () => {
     <div className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-gray-700">Correo Electrónico</label>
-        <div className="flex items-center border rounded px-3 py-2">
+        <div className="flex items-center border border-gray-200 bg-gray-50 rounded-xl px-3 py-2">
           <input
             type="text"
             readOnly
-            className="flex-1 outline-none text-gray-800"
+            className="flex-1 outline-none text-gray-800 bg-transparent"
             value={createdCredentials.email}
           />
           <button
             onClick={() => navigator.clipboard.writeText(createdCredentials.email)}
-            className="ml-2 text-blue-600 hover:underline text-sm"
+            className="ui-interactive ml-2 text-blue-600 hover:underline rounded text-sm"
           >
             Copiar
           </button>
@@ -702,16 +704,16 @@ const UserManagement: React.FC = () => {
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700">Contraseña</label>
-        <div className="flex items-center border rounded px-3 py-2">
+        <div className="flex items-center border border-gray-200 bg-gray-50 rounded-xl px-3 py-2">
           <input
             type="text"
             readOnly
-            className="flex-1 outline-none text-gray-800"
+            className="flex-1 outline-none text-gray-800 bg-transparent"
             value={createdCredentials.password}
           />
           <button
             onClick={() => navigator.clipboard.writeText(createdCredentials.password)}
-            className="ml-2 text-blue-600 hover:underline text-sm"
+            className="ui-interactive ml-2 text-blue-600 hover:underline rounded text-sm"
           >
             Copiar
           </button>

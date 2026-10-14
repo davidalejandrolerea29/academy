@@ -18,21 +18,28 @@ const RoomManagementPage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto py-4 px-4 sm:px-6 lg:px-8"> {/* Ajuste de padding */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-        <div className="flex items-center mb-4 md:mb-0">
-          <Video className="w-7 h-7 sm:w-8 sm:h-8 text-orange-500 mr-2 sm:mr-3" /> {/* Tamaño de icono responsivo */}
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Gestión de Salas</h1> {/* Tamaño de texto responsivo */}
+    <div className="ui-page-enter container mx-auto py-4 px-4 sm:px-6 lg:px-8"> {/* Ajuste de padding */}
+      <div className="ui-page-heading flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5 mb-6 p-5 sm:p-6">
+        <div className="flex items-start gap-3 sm:gap-4 min-w-0">
+          <span className="ui-heading-icon flex-shrink-0" aria-hidden="true">
+            <Video className="w-6 h-6 sm:w-7 sm:h-7" />
+          </span>
+          <div className="min-w-0">
+            <p className="ui-eyebrow mb-1.5">Aula virtual</p>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Gestión de Salas</h1>
+            <p className="mt-2 text-sm text-gray-600 leading-relaxed">Consulta tus clases, accede a las salas y revisa las grabaciones.</p>
+          </div>
         </div>
 
         {(canCreateRooms || canViewRecordings) && (
           <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto"> {/* Apila en móvil, luego en fila */}
             <button
               onClick={() => setView('list')}
-              className={`w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center
+              aria-pressed={view === 'list'}
+              className={`ui-tab ui-interactive w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-medium flex items-center justify-center shadow-sm
                 ${view === 'list'
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}
+                  ? 'bg-orange-500 text-white shadow-orange-100'
+                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-orange-50 hover:border-orange-200'}
               `}
             >
               <List className="w-4 h-4 mr-2" />
@@ -42,10 +49,11 @@ const RoomManagementPage: React.FC = () => {
             {canViewRecordings && (
               <button
                 onClick={() => setView('recordings')}
-                className={`w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center
+                aria-pressed={view === 'recordings'}
+                className={`ui-tab ui-interactive w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-medium flex items-center justify-center shadow-sm
                   ${view === 'recordings'
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}
+                    ? 'bg-orange-500 text-white shadow-orange-100'
+                    : 'bg-white text-gray-700 border border-gray-200 hover:bg-orange-50 hover:border-orange-200'}
                 `}
               >
                 <Video className="w-4 h-4 mr-2" />
@@ -56,10 +64,11 @@ const RoomManagementPage: React.FC = () => {
             {canCreateRooms && (
               <button
                 onClick={() => setView('create')}
-                className={`w-full sm:w-auto px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center
+                aria-pressed={view === 'create'}
+                className={`ui-tab ui-interactive w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-medium flex items-center justify-center shadow-sm
                   ${view === 'create'
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'}
+                    ? 'bg-orange-500 text-white shadow-orange-100'
+                    : 'bg-white text-gray-700 border border-gray-200 hover:bg-orange-50 hover:border-orange-200'}
                 `}
               >
                 <Plus className="w-4 h-4 mr-2" />

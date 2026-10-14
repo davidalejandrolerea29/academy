@@ -4,6 +4,7 @@ import ItemIcon from './ItemIcon';
 import { MoreVertical, Download, ExternalLink as ExternalLinkIcon, Folder } from 'lucide-react';
 import { LibraryService } from '../../services/LibraryService';
 import { useAuth } from '../../contexts/AuthContext';
+import { isDevPreview } from '../../config/devPreview';
 
 interface LibraryListProps {
     items: LibraryItem[];
@@ -15,6 +16,7 @@ const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }
     const { currentUser } = useAuth();
 
     const handleDownload = async (item: LibraryItem) => {
+        if (isDevPreview) return;
         if (!currentUser?.token) return;
 
         if (item.type !== 'file' || !item.filePath) return;
@@ -32,6 +34,7 @@ const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }
         if (item.type === 'folder') {
             onNavigate(item.id);
         } else if (item.type === 'link') {
+            if (isDevPreview) return;
             window.open(item.externalUrl, '_blank');
         } else if (item.type === 'file') {
             handleDownload(item);
@@ -39,9 +42,9 @@ const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }
     };
 
     return (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="ui-surface ui-page-enter bg-white rounded-2xl overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50/80">
                     <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
@@ -53,12 +56,12 @@ const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }
                     {items.map((item) => (
                         <tr
                             key={item.id}
-                            className="hover:bg-gray-50 cursor-pointer transition-colors"
+                            className="hover:bg-blue-50/40 cursor-pointer transition-colors duration-200 motion-reduce:transition-none"
                             onClick={() => handleItemClick(item)}
                         >
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
-                                    <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-lg bg-gray-100">
+                                    <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-xl bg-gray-50 border border-gray-100">
                                         <ItemIcon
                                             type={item.type}
                                             mimeType={item.type === 'file' ? item.mimeType : undefined}
@@ -82,18 +85,18 @@ const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }
                                     {item.type === 'file' && (
                                         <button
                                             onClick={() => handleDownload(item)}
-                                            className="p-2 text-gray-400 hover:text-blue-600"
+                                            className="ui-interactive p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50"
                                             title="Descargar archivo"
                                         >
                                             <Download size={18} />
                                         </button>
                                     )}
                                     {item.type === 'link' && (
-                                        <a href={item.externalUrl} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-400 hover:text-blue-600">
+                                        <a href={isDevPreview ? undefined : item.externalUrl} aria-disabled={isDevPreview || undefined} title={isDevPreview ? 'Los enlaces externos están deshabilitados en esta vista previa local.' : undefined} target="_blank" rel="noopener noreferrer" className="ui-interactive p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50">
                                             <ExternalLinkIcon size={18} />
                                         </a>
                                     )}
-                                    <button onClick={() => onDelete(item.id)} className="p-2 text-gray-400 hover:text-red-600">
+                                    <button onClick={() => onDelete(item.id)} className="ui-interactive p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50">
                                         <MoreVertical size={18} />
                                     </button>
                                 </div>
@@ -103,9 +106,9 @@ const LibraryList: React.FC<LibraryListProps> = ({ items, onNavigate, onDelete }
                     {items.length === 0 && (
                         <tr>
                             <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
-                                <div className="flex flex-col items-center justify-center">
+                                <div className="ui-feedback flex flex-col items-center justify-center">
                                     <Folder className="h-12 w-12 text-gray-300 mb-3" />
-                                    <p>Esta carpeta está vacía</p>
+                                    <p className="font-medium">Esta carpeta está vacía</p>
                                 </div>
                             </td>
                         </tr>

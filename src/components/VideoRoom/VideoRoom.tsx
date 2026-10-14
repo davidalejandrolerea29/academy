@@ -8,6 +8,7 @@ import { Room } from '../../types'; // Asumo que este tipo está definido
 import { useMicVolume } from '../../hooks/useMicVolume'; // Asumo que tu hook está bien
 import { useCall } from '../../contexts/CallContext';
 import ScreenShareManager, { ScreenShareManagerHandle } from './ScreenShareManager'; // ¡Importa el tipo de handle también!
+import BrandLoader from '../UI/BrandLoader';
 
 import {
     Video, VideoOff, Mic, MicOff, ScreenShare, StopCircle,
@@ -2050,8 +2051,7 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full text-white bg-gray-900">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-                <p className="ml-4">Cargando sala de video...</p>
+                <BrandLoader label="Cargando sala de video..." tone="dark" size="lg" />
             </div>
         );
     }

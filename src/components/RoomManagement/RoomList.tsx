@@ -3,6 +3,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useCall } from '../../contexts/CallContext';
 import { Room, RoomStatus } from '../../types';
 import { useRoomStatus } from '../../hooks/useRoomStatus';
+import BrandLoader from '../UI/BrandLoader';
+import { apiFetch as fetch } from '../../services/apiFetch';
+import { isDevPreview } from '../../config/devPreview';
 import {
   Calendar,
   Clock,
@@ -65,7 +68,7 @@ const RoomList: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Use room status hook for automatic activation
-  const token = localStorage.getItem('token');
+  const token = isDevPreview ? currentUser?.token ?? null : localStorage.getItem('token');
   const { statusData } = useRoomStatus(token);
 
   // Update current time every 30 seconds to refresh room status automatically
@@ -218,40 +221,46 @@ const RoomList: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center p-8">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="ui-surface flex justify-center items-center p-8 bg-white rounded-2xl">
+        <BrandLoader label="Cargando salas..." />
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="mb-6 flex flex-col sm:flex-row items-center justify-between">
-        <h1 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-4 sm:mb-0">Salas de Videollamada</h1>
-        <div className="flex flex-wrap justify-center sm:justify-start gap-2 w-full sm:w-auto">
+    <div className="ui-page-enter">
+      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-gray-900">Salas de Videollamada</h1>
+          <p className="mt-1 text-sm text-gray-500">Encuentra tu próxima clase o consulta las anteriores.</p>
+        </div>
+        <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 w-full sm:w-auto rounded-xl border border-gray-200/80 bg-white/80 p-1.5">
           <button
             onClick={() => setFilter('upcoming')}
-            className={`px-3 py-1 rounded-md text-sm ${filter === 'upcoming'
-              ? 'bg-orange-500 text-white'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            aria-pressed={filter === 'upcoming'}
+            className={`ui-tab ui-interactive px-3 py-1.5 rounded-lg text-sm font-medium ${filter === 'upcoming'
+              ? 'bg-orange-500 text-white shadow-sm'
+              : 'bg-gray-100 text-gray-700 hover:bg-orange-50'
               }`}
           >
             Próximas
           </button>
           <button
             onClick={() => setFilter('past')}
-            className={`px-3 py-1 rounded-md text-sm ${filter === 'past'
-              ? 'bg-orange-500 text-white'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            aria-pressed={filter === 'past'}
+            className={`ui-tab ui-interactive px-3 py-1.5 rounded-lg text-sm font-medium ${filter === 'past'
+              ? 'bg-orange-500 text-white shadow-sm'
+              : 'bg-gray-100 text-gray-700 hover:bg-orange-50'
               }`}
           >
             Pasadas
           </button>
           <button
             onClick={() => setFilter('all')}
-            className={`px-3 py-1 rounded-md text-sm ${filter === 'all'
-              ? 'bg-orange-500 text-white'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            aria-pressed={filter === 'all'}
+            className={`ui-tab ui-interactive px-3 py-1.5 rounded-lg text-sm font-medium ${filter === 'all'
+              ? 'bg-orange-500 text-white shadow-sm'
+              : 'bg-gray-100 text-gray-700 hover:bg-orange-50'
               }`}
           >
             Todas
@@ -260,8 +269,10 @@ const RoomList: React.FC = () => {
       </div>
 
       {filteredRooms.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-6 sm:p-8 text-center mx-auto max-w-lg">
-          <AlertCircle className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400 mx-auto mb-3 sm:mb-4" />
+        <div className="ui-empty-state ui-surface ui-feedback bg-white rounded-2xl p-8 sm:p-10 text-center mx-auto max-w-lg">
+          <span className="ui-icon-tile inline-flex items-center justify-center p-4 rounded-2xl bg-orange-50 text-orange-500 mb-4" aria-hidden="true">
+            <Calendar className="w-8 h-8" />
+          </span>
           <h2 className="text-lg sm:text-xl font-medium text-gray-700 mb-1 sm:mb-2">No hay salas disponibles</h2>
           <p className="text-sm text-gray-500">
             {filter === 'upcoming'
@@ -304,11 +315,11 @@ const RoomList: React.FC = () => {
 
 
             return (
-              <div key={room.id} className="bg-white rounded-lg shadow overflow-hidden flex flex-col">
+              <div key={room.id} className="ui-card ui-stagger-item group bg-white rounded-2xl border border-gray-200 border-t-[3px] border-t-orange-200 overflow-hidden flex flex-col">
                 <div className="p-4 sm:p-5 flex-grow">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3">
-                    <h2 className="text-base sm:text-lg font-semibold text-gray-800 flex-1 mb-2 sm:mb-0">{room.name}</h2>
-                    <div className="flex items-center gap-2">
+                    <h2 className="text-base sm:text-lg font-semibold tracking-tight text-gray-900 flex-1 min-w-0 break-words mb-2 sm:mb-0 sm:pr-2">{room.name}</h2>
+                    <div className="flex flex-wrap items-center gap-2">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-${status.color}-100 text-${status.color}-800`}
                       >
@@ -316,16 +327,17 @@ const RoomList: React.FC = () => {
                         {status.label}
                       </span>
                       {(backendStatus?.status === 'active' || (backendStatus?.status === 'scheduled' && backendStatus.time_until_start <= 0)) && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 animate-pulse">
-                          🟢 En vivo
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <span className="ui-status-dot" aria-hidden="true" />
+                          En vivo
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <p className="text-gray-600 text-sm mb-3 sm:mb-4">{room.description}</p>
+                  <p className="text-gray-600 text-sm leading-relaxed break-words mb-3 sm:mb-4">{room.description}</p>
 
-                  <div className="space-y-1 sm:space-y-2 mb-3 sm:mb-4 text-xs sm:text-sm">
+                  <div className="space-y-2 mb-3 sm:mb-4 rounded-xl border border-gray-100 bg-gray-50/70 p-3 text-xs sm:text-sm">
                     <div className="flex items-center text-gray-500">
                       <Calendar className="w-4 h-4 mr-2" />
                       {formatDate(room.start_time)}
@@ -353,7 +365,9 @@ const RoomList: React.FC = () => {
                       canJoinRoom ? (
                         <button
                           onClick={() => startCall(String(room.id))}
-                          className="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-md flex items-center justify-center text-sm transition-colors w-full flex-grow"
+                          disabled={isDevPreview}
+                          title={isDevPreview ? 'Las videollamadas están deshabilitadas en esta vista previa local.' : undefined}
+                          className="ui-interactive bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-xl shadow-sm flex items-center justify-center text-sm w-full flex-grow"
                         >
                           <Video className="w-4 h-4 mr-2" />
                           Unirse
@@ -378,7 +392,7 @@ const RoomList: React.FC = () => {
                     {(currentUser?.role?.description === 'Admin' || (currentUser?.role?.description === 'Teacher' && room.teacher_id === currentUser.id)) && (
                       <button
                         onClick={() => toggleRoomActive(room.id, room.is_active)}
-                        className={`px-3 py-2 rounded-md text-sm w-full flex-grow ${room.is_active
+                        className={`ui-interactive px-3 py-2 rounded-xl text-sm w-full flex-grow ${room.is_active
                           ? 'bg-red-100 text-red-700 hover:bg-red-200'
                           : 'bg-green-100 text-green-700 hover:bg-green-200'
                           }`}
@@ -392,11 +406,11 @@ const RoomList: React.FC = () => {
 
                 {/* SEGUNDA FILA (INFERIOR): Botón de Ver Mensajes (solo para administradores) */}
                 {(currentUser?.role?.description === 'Admin') && (
-                  <div className="p-4 sm:p-5 border-t border-gray-200">
+                  <div className="p-4 sm:p-5 border-t border-gray-100 bg-gray-50/60">
                     {room.messages && room.messages.length > 0 ? (
                       <button
                         onClick={() => openMessageModal(room)}
-                        className="bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-2 rounded-md flex items-center justify-center text-sm transition-colors w-full"
+                        className="ui-interactive bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-2 rounded-xl flex items-center justify-center text-sm w-full"
                       >
                         <MessageSquare className="w-4 h-4 mr-2" />
                         Ver Mensajes ({room.messages.length})
@@ -416,11 +430,11 @@ const RoomList: React.FC = () => {
 
       {/* Modal para mostrar mensajes (sin cambios) */}
       {isMessageModalOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md md:max-w-lg lg:max-w-xl max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="ui-feedback fixed inset-0 bg-gray-950/50 backdrop-blur-sm flex justify-center items-center p-4 z-50">
+          <div className="ui-modal-panel bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-md md:max-w-lg lg:max-w-xl max-h-[80vh] overflow-hidden flex flex-col">
             <div className="flex justify-between items-center p-4 border-b">
               <h2 className="text-lg font-semibold text-gray-800">Mensajes de "{currentRoomName}"</h2>
-              <button onClick={closeMessageModal} className="text-gray-500 hover:text-gray-700">
+              <button onClick={closeMessageModal} className="ui-interactive text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg">
                 <XCircle className="w-6 h-6" />
               </button>
             </div>
@@ -430,7 +444,7 @@ const RoomList: React.FC = () => {
               ) : (
                 <div className="space-y-3">
                   {currentRoomMessages.map((msg) => (
-                    <div key={msg.id} className={`p-3 rounded-lg ${msg.banned ? 'bg-red-100' : 'bg-gray-100'}`}>
+                    <div key={msg.id} className={`p-3 rounded-xl ${msg.banned ? 'bg-red-100' : 'bg-gray-50 border border-gray-100'}`}>
                       <p className="text-xs text-gray-500 mb-1">
                         <span className="font-semibold">{msg.sender_name}</span> el {new Date(msg.timestamp).toLocaleString('es-ES')}
                       </p>
@@ -446,7 +460,7 @@ const RoomList: React.FC = () => {
             <div className="p-4 border-t">
               <button
                 onClick={closeMessageModal}
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-md text-sm transition-colors"
+                className="ui-interactive w-full bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl text-sm shadow-sm"
               >
                 Cerrar
               </button>

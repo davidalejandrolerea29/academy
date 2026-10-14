@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, AlertCircle, CheckCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import BrandLoader from '../UI/BrandLoader';
+import { apiFetch as fetch } from '../../services/apiFetch';
 
 const ChangePasswordPage: React.FC = () => {
   const navigate = useNavigate();
@@ -58,19 +60,19 @@ const ChangePasswordPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <div className="max-w-md w-full space-y-6 bg-white p-8 rounded shadow">
+    <div className="auth-page min-h-screen flex items-center justify-center p-4">
+      <div className="auth-card max-w-md w-full space-y-6 bg-white p-6 sm:p-8">
         <h2 className="text-2xl font-bold text-center text-gray-800">Cambiar Contraseña</h2>
 
         {error && (
-          <div className="flex items-center bg-red-100 text-red-700 p-3 rounded">
+          <div className="ui-feedback flex items-center border border-red-100 bg-red-50 text-red-700 p-3 rounded-xl">
             <AlertCircle className="w-5 h-5 mr-2" />
             <span>{error}</span>
           </div>
         )}
 
         {success && (
-          <div className="flex items-center bg-green-100 text-green-700 p-3 rounded">
+          <div className="ui-feedback flex items-center border border-green-100 bg-green-50 text-green-700 p-3 rounded-xl">
             <CheckCircle className="w-5 h-5 mr-2" />
             <span>Contraseña cambiada correctamente</span>
           </div>
@@ -106,11 +108,11 @@ const ChangePasswordPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className={`w-full py-2 px-4 rounded text-white font-medium ${
-              loading ? 'bg-blue-400' : 'bg-orange-600 hover:bg-orange-700'
+            className={`ui-interactive w-full min-h-12 flex items-center justify-center py-3 px-4 rounded-xl text-white font-semibold shadow-sm ${
+              loading ? 'bg-orange-400' : 'bg-orange-600 hover:bg-orange-700 hover:shadow-md'
             }`}
           >
-            {loading ? 'Guardando...' : 'Cambiar Contraseña'}
+            {loading ? <BrandLoader inline size="sm" label="Guardando..." /> : 'Cambiar Contraseña'}
           </button>
         </form>
       </div>

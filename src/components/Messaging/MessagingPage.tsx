@@ -6,6 +6,8 @@ import { User, PrivateChat as PrivateChatType } from '../../types';
 import { MessageSquare, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { ReverbWebSocketService, EchoChannel, createReverbWebSocketService } from '../../services/ReverbWebSocketService';
+import { apiFetch as fetch } from '../../services/apiFetch';
+import { isDevPreview } from '../../config/devPreview';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -119,6 +121,10 @@ const MessagingPage: React.FC = () => {
   // --- WebSocket real-time (direct + observation + counters) ---
   useEffect(() => {
     if (!currentUser?.token) return;
+    if (isDevPreview) {
+      fetchUnreadCounts();
+      return;
+    }
 
     const reverbService = reverbServiceRef.current ?? createReverbWebSocketService(currentUser.token);
     reverbServiceRef.current = reverbService;
@@ -192,11 +198,11 @@ const MessagingPage: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="ui-page-enter flex flex-col h-full">
       {/* Header */}
-      <div className="bg-white shadow p-4 border-b">
-        <h1 className="text-xl font-semibold text-gray-800 flex items-center">
-          <MessageSquare className="w-6 h-6 mr-2 text-orange-500" /> Mensajes
+      <div className="ui-page-heading bg-white shadow-sm p-4 border-b border-slate-100">
+        <h1 className="text-xl font-semibold tracking-tight text-slate-900 flex items-center">
+          <span className="ui-heading-icon mr-2" aria-hidden="true"><MessageSquare className="w-6 h-6 text-orange-500" /></span> Mensajes
           {currentUser?.role_id === 1 && <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">Modo Admin</span>}
         </h1>
       </div>
@@ -204,30 +210,30 @@ const MessagingPage: React.FC = () => {
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Mobile tabs */}
         {currentUser?.role_id !== 1 && (
-          <div className="lg:hidden flex items-center justify-around p-2 bg-gray-100 border-b w-full">
-            <button onClick={() => setMobileView('contacts')} className={`px-3 py-1 rounded-lg transition-colors ${mobileView === 'contacts' ? 'bg-orange-500 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>Contactos</button>
-            <button onClick={() => setMobileView('chat')} disabled={!selectedContactId} className={`px-3 py-1 rounded-lg transition-colors ${mobileView === 'chat' && selectedContactId ? 'bg-orange-500 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${!selectedContactId ? 'opacity-50 cursor-not-allowed' : ''}`}>Chat</button>
+          <div className="lg:hidden flex items-center justify-around p-2 bg-slate-50 border-b border-slate-100 w-full">
+            <button onClick={() => setMobileView('contacts')} aria-pressed={mobileView === 'contacts'} className={`ui-tab ui-interactive px-3 py-1 rounded-lg ${mobileView === 'contacts' ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/20' : 'bg-white text-slate-600 hover:bg-orange-50 hover:text-orange-700'}`}>Contactos</button>
+            <button onClick={() => setMobileView('chat')} disabled={!selectedContactId} aria-pressed={mobileView === 'chat' && !!selectedContactId} className={`ui-tab ui-interactive px-3 py-1 rounded-lg ${mobileView === 'chat' && selectedContactId ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/20' : 'bg-white text-slate-600 hover:bg-orange-50 hover:text-orange-700'} ${!selectedContactId ? 'opacity-50 cursor-not-allowed' : ''}`}>Chat</button>
           </div>
         )}
 
         {/* Admin back buttons */}
         {currentUser?.role_id === 1 && mobileView === 'chat' && chatMode === 'observation' && (
-          <div className="lg:hidden p-2 bg-gray-100 border-b">
-            <button onClick={handleBackToStudents} className="px-3 py-1 text-orange-500 flex items-center hover:text-orange-600">
+          <div className="lg:hidden p-2 bg-slate-50 border-b border-slate-100">
+            <button onClick={handleBackToStudents} className="ui-interactive px-3 py-1 rounded-lg text-orange-600 flex items-center hover:text-orange-700">
               <ChevronLeft className="inline-block mr-1" size={16} /> Volver a Alumnos
             </button>
           </div>
         )}
         {currentUser?.role_id === 1 && mobileView === 'chat' && chatMode === 'direct-chat' && adminView === 'all-students' && (
-          <div className="lg:hidden p-2 bg-gray-100 border-b">
-            <button onClick={handleBackToAllStudents} className="px-3 py-1 text-orange-500 flex items-center hover:text-orange-600">
+          <div className="lg:hidden p-2 bg-slate-50 border-b border-slate-100">
+            <button onClick={handleBackToAllStudents} className="ui-interactive px-3 py-1 rounded-lg text-orange-600 flex items-center hover:text-orange-700">
               <ChevronLeft className="inline-block mr-1" size={16} /> Volver a Alumnos
             </button>
           </div>
         )}
 
         {/* Contacts list */}
-        <div className={`${mobileView === 'contacts' ? 'block' : 'hidden'} lg:block w-full lg:w-1/3 border-r overflow-y-auto h-full`}>
+        <div className={`${mobileView === 'contacts' ? 'block' : 'hidden'} lg:block w-full lg:w-1/3 border-r border-slate-100 overflow-y-auto h-full`}>
           <ContactsList
             onSelectChatTarget={handleSelectChatTarget}
             onDirectChat={handleDirectChatWith}
@@ -254,8 +260,8 @@ const MessagingPage: React.FC = () => {
               onBackToContacts={handleBackToStudents}
             />
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-gray-100">
-              <MessageSquare className="w-12 h-12 mb-4 text-gray-300" />
+            <div className="ui-empty-state ui-feedback flex flex-col items-center justify-center h-full text-slate-500 bg-gradient-to-br from-slate-50 via-white to-orange-50/60">
+              <span className="ui-icon-tile mb-4 text-orange-400" aria-hidden="true"><MessageSquare className="w-12 h-12" /></span>
               <p className="text-center px-4">{getChatPanelPlaceholderMessage()}</p>
             </div>
           )}

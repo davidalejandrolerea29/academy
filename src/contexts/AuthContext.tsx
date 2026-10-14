@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
+import { isDevPreview, previewUser } from '../config/devPreview';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -24,13 +25,17 @@ export const useAuth = () => {
 const API_URL = import.meta.env.VITE_API_URL;
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(() => isDevPreview ? previewUser : null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const clearError = () => setError(null); // ✅ FUNCIÓN PARA LIMPIAR ERROR
 
   const register = async (email: string, password: string, displayName: string, role: UserRole) => {
+    if (isDevPreview) {
+      setError('El registro está deshabilitado durante la vista previa local.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -80,6 +85,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
 const login = async (email: string, password: string) => {
+  if (isDevPreview) {
+    setCurrentUser(previewUser);
+    return;
+  }
   setLoading(true);
   setError(null);
   try {
@@ -139,6 +148,7 @@ const login = async (email: string, password: string) => {
 
 
   const logout = async () => {
+    if (isDevPreview) return;
     const token = localStorage.getItem('token');
     if (token) {
       try {
@@ -159,6 +169,7 @@ const login = async (email: string, password: string) => {
   };
 
   const fetchCurrentUser = async () => {
+    if (isDevPreview) return;
     const token = localStorage.getItem('token');
     if (!token) return;
 

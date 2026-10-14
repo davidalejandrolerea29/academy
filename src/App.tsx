@@ -12,7 +12,9 @@ import UserManagement from './components/Admin/UserManagement';
 import RegisterPage from './components/Auth/RegisterPage';
 import ChangePasswordPage from './components/Auth/ChangePasswordPage';
 import LibraryExplorer from './components/Library/LibraryExplorer';
+import BrandLoader from './components/UI/BrandLoader';
 import { CallProvider } from './contexts/CallContext';
+import { isDevPreview } from './config/devPreview';
 // Protected route component
 const ProtectedRoute: React.FC<{
   children: React.ReactNode;
@@ -22,8 +24,8 @@ const ProtectedRoute: React.FC<{
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="auth-page flex items-center justify-center min-h-screen">
+        <BrandLoader size="lg" label="Preparando tu academia..." />
       </div>
     );
   }
@@ -51,7 +53,7 @@ function App() {
       <AuthProvider>
         <CallProvider>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/login" element={isDevPreview ? <Navigate to="/rooms" replace /> : <LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/cambiar-password" element={<ChangePasswordPage />} />
 

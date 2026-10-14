@@ -6,6 +6,7 @@ import { validateFile, formatBytes } from '../../utils/fileValidation';
 import LibraryList from './LibraryList';
 import LibraryGrid from './LibraryGrid';
 import CreateModal from './CreateModal';
+import BrandLoader from '../UI/BrandLoader';
 import {
     Search,
     Grid,
@@ -13,7 +14,6 @@ import {
     Plus,
     ChevronRight,
     Home,
-    Loader2,
     AlertCircle
 } from 'lucide-react';
 
@@ -135,15 +135,15 @@ const LibraryExplorer: React.FC = () => {
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="ui-page-enter p-6 max-w-7xl mx-auto">
             <div className="flex flex-col space-y-4 mb-6">
                 {/* Header */}
                 <div className="flex justify-between items-center">
-                    <h1 className="text-2xl font-bold text-gray-900">Biblioteca</h1>
+                    <h1 className="text-2xl font-bold tracking-tight text-gray-900">Biblioteca</h1>
                     {isTeacherOrAdmin && (
                         <button
                             onClick={() => setIsCreateModalOpen(true)}
-                            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            className="ui-interactive flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl shadow-sm hover:bg-blue-700 hover:shadow-md"
                         >
                             <Plus size={20} className="mr-2" />
                             Nuevo
@@ -152,12 +152,12 @@ const LibraryExplorer: React.FC = () => {
                 </div>
 
                 {/* Toolbar */}
-                <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 justify-between bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                <div className="ui-surface flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 justify-between bg-white p-3 rounded-xl border border-gray-200">
                     {/* Breadcrumbs */}
                     <div className="flex items-center overflow-x-auto whitespace-nowrap scrollbar-hide">
                         <button
                             onClick={() => handleNavigateUp(-1)}
-                            className={`p-1 hover:bg-gray-100 rounded text-gray-500 ${currentPath.length === 0 ? 'text-blue-600 font-semibold' : ''}`}
+                            className={`ui-interactive p-1 hover:bg-blue-50 rounded-lg text-gray-500 ${currentPath.length === 0 ? 'text-blue-600 font-semibold' : ''}`}
                         >
                             <Home size={18} />
                         </button>
@@ -166,7 +166,7 @@ const LibraryExplorer: React.FC = () => {
                                 <ChevronRight size={16} className="text-gray-400 mx-1" />
                                 <button
                                     onClick={() => handleNavigateUp(index)}
-                                    className={`text-sm hover:underline ${index === currentPath.length - 1 ? 'font-semibold text-blue-600' : 'text-gray-600'
+                                    className={`ui-interactive text-sm hover:text-blue-600 hover:underline rounded ${index === currentPath.length - 1 ? 'font-semibold text-blue-600' : 'text-gray-600'
                                         }`}
                                 >
                                     {item.title}
@@ -184,21 +184,21 @@ const LibraryExplorer: React.FC = () => {
                                 placeholder="Buscar..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full sm:w-64"
+                                className="ui-interactive pl-10 pr-4 py-2 border border-gray-200 bg-gray-50 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full sm:w-64"
                             />
                         </div>
 
                         {/* View Toggle */}
-                        <div className="flex items-center bg-gray-100 rounded-lg p-1">
+                        <div className="flex items-center bg-gray-100 rounded-xl p-1 border border-gray-200/70">
                             <button
                                 onClick={() => setViewMode('grid')}
-                                className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                className={`ui-interactive p-1.5 rounded-lg ${viewMode === 'grid' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-white/60'}`}
                             >
                                 <Grid size={18} />
                             </button>
                             <button
                                 onClick={() => setViewMode('list')}
-                                className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                className={`ui-interactive p-1.5 rounded-lg ${viewMode === 'list' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-white/60'}`}
                             >
                                 <List size={18} />
                             </button>
@@ -209,16 +209,16 @@ const LibraryExplorer: React.FC = () => {
 
             {/* Upload Progress Bar */}
             {isUploading && (
-                <div className="mb-4 bg-white p-4 rounded-lg shadow-sm border border-blue-100">
+                <div className="ui-feedback mb-4 bg-blue-50/60 p-4 rounded-xl shadow-sm border border-blue-100">
                     <div className="flex justify-between mb-1">
-                        <span className="text-sm font-medium text-blue-700">Subiendo archivo...</span>
+                        <BrandLoader inline size="sm" label="Subiendo archivo..." className="text-blue-700" />
                         <span className="text-sm font-medium text-blue-700">
                             {uploadProgress.percent}% ({formatBytes(uploadProgress.loaded)} / {formatBytes(uploadProgress.total)})
                         </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2.5">
                         <div
-                            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out"
+                            className="bg-blue-600 h-2.5 rounded-full transition-[width] duration-300 ease-in-out motion-reduce:transition-none"
                             style={{ width: `${uploadProgress.percent}%` }}
                         ></div>
                     </div>
@@ -227,7 +227,7 @@ const LibraryExplorer: React.FC = () => {
 
             {/* Upload Error */}
             {uploadError && (
-                <div className="mb-4 bg-red-50 p-4 rounded-lg shadow-sm border border-red-200">
+                <div className="ui-feedback mb-4 bg-red-50 p-4 rounded-xl shadow-sm border border-red-200">
                     <div className="flex items-center">
                         <AlertCircle className="h-5 w-5 text-red-600 mr-2" />
                         <span className="text-sm font-medium text-red-800">{uploadError}</span>
@@ -237,8 +237,8 @@ const LibraryExplorer: React.FC = () => {
 
             {/* Content */}
             {loading ? (
-                <div className="flex justify-center items-center h-64">
-                    <Loader2 className="animate-spin text-blue-500" size={32} />
+                <div className="ui-surface flex justify-center items-center h-64 bg-white rounded-xl border border-gray-200">
+                    <BrandLoader label="Cargando biblioteca..." />
                 </div>
             ) : (
                 <>

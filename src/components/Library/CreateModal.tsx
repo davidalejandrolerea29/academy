@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Dialog } from '@headlessui/react';
 import { FolderPlus, Link as LinkIcon, Upload, X } from 'lucide-react';
+import BrandLoader from '../UI/BrandLoader';
 
 interface CreateModalProps {
     isOpen: boolean;
@@ -66,13 +67,13 @@ const CreateModal: React.FC<CreateModalProps> = ({
 
     return (
         <Dialog open={isOpen} onClose={onClose} className="relative z-50">
-            <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+            <div className="ui-feedback fixed inset-0 bg-gray-950/50 backdrop-blur-sm" aria-hidden="true" />
 
             <div className="fixed inset-0 flex items-center justify-center p-4">
-                <Dialog.Panel className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+                <Dialog.Panel className="ui-modal-panel w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-gray-100">
                     <div className="flex justify-between items-center mb-6">
-                        <Dialog.Title className="text-lg font-medium">Nuevo Elemento</Dialog.Title>
-                        <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
+                        <Dialog.Title className="text-lg font-semibold tracking-tight text-gray-900">Nuevo Elemento</Dialog.Title>
+                        <button onClick={onClose} className="ui-interactive text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
                             <X size={20} />
                         </button>
                     </div>
@@ -80,7 +81,7 @@ const CreateModal: React.FC<CreateModalProps> = ({
                     <div className="flex space-x-4 mb-6">
                         <button
                             onClick={() => setMode('folder')}
-                            className={`flex-1 flex flex-col items-center p-3 rounded-lg border transition-colors ${mode === 'folder' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50'
+                            className={`ui-interactive flex-1 flex flex-col items-center p-3 rounded-xl border ${mode === 'folder' ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-gray-200 hover:bg-gray-50'
                                 }`}
                         >
                             <FolderPlus className="mb-2" />
@@ -88,7 +89,7 @@ const CreateModal: React.FC<CreateModalProps> = ({
                         </button>
                         <button
                             onClick={() => setMode('link')}
-                            className={`flex-1 flex flex-col items-center p-3 rounded-lg border transition-colors ${mode === 'link' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50'
+                            className={`ui-interactive flex-1 flex flex-col items-center p-3 rounded-xl border ${mode === 'link' ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-gray-200 hover:bg-gray-50'
                                 }`}
                         >
                             <LinkIcon className="mb-2" />
@@ -96,7 +97,7 @@ const CreateModal: React.FC<CreateModalProps> = ({
                         </button>
                         <button
                             onClick={() => fileInputRef.current?.click()}
-                            className={`flex-1 flex flex-col items-center p-3 rounded-lg border transition-colors ${mode === 'file' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50'
+                            className={`ui-interactive flex-1 flex flex-col items-center p-3 rounded-xl border ${mode === 'file' ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-gray-200 hover:bg-gray-50'
                                 }`}
                         >
                             <Upload className="mb-2" />
@@ -119,7 +120,7 @@ const CreateModal: React.FC<CreateModalProps> = ({
                                     required
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                    className="ui-interactive w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-blue-500 focus:border-blue-500"
                                     placeholder="Ej: Material de Matemáticas"
                                 />
                             </div>
@@ -134,7 +135,7 @@ const CreateModal: React.FC<CreateModalProps> = ({
                                         required
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
-                                        className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                        className="ui-interactive w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-blue-500 focus:border-blue-500"
                                         placeholder="Ej: Video Explicativo"
                                     />
                                 </div>
@@ -145,7 +146,7 @@ const CreateModal: React.FC<CreateModalProps> = ({
                                         required
                                         value={url}
                                         onChange={(e) => setUrl(e.target.value)}
-                                        className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                        className="ui-interactive w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-blue-500 focus:border-blue-500"
                                         placeholder="https://..."
                                     />
                                 </div>
@@ -156,7 +157,7 @@ const CreateModal: React.FC<CreateModalProps> = ({
                             <button
                                 type="button"
                                 onClick={onClose}
-                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                                className="ui-interactive px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200"
                             >
                                 Cancelar
                             </button>
@@ -164,9 +165,9 @@ const CreateModal: React.FC<CreateModalProps> = ({
                                 <button
                                     type="submit"
                                     disabled={isSubmitting}
-                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                                    className="ui-interactive px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl shadow-sm hover:bg-blue-700 hover:shadow-md disabled:opacity-50"
                                 >
-                                    {isSubmitting ? 'Creando...' : 'Crear'}
+                                    {isSubmitting ? <BrandLoader inline size="sm" tone="dark" label="Creando..." /> : 'Crear'}
                                 </button>
                             )}
                         </div>

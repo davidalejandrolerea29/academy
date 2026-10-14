@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { ChevronLeft, MessageSquare } from 'lucide-react';
+import BrandLoader from '../UI/BrandLoader';
+import { apiFetch as fetch } from '../../services/apiFetch';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -113,11 +115,11 @@ const ContactsList: React.FC<ContactsListProps> = ({
   }, [currentUser, currentAdminView, selectedTeacherForStudents]); // selectedTeacherForStudents como dependencia es crucial
 
   if (loading) {
-    return <div className="p-4 text-center">Cargando...</div>;
+    return <BrandLoader label="Cargando contactos..." className="p-4" />;
   }
 
   if (error) {
-    return <div className="p-4 text-center text-red-500">Error: {error}</div>;
+    return <div className="ui-feedback p-4 text-center text-red-700 bg-red-50 border border-red-100 rounded-xl">Error: {error}</div>;
   }
 
   const getHeaderTitle = () => {
@@ -144,9 +146,9 @@ const ContactsList: React.FC<ContactsListProps> = ({
   };
 
   return (
-    <div className="h-full bg-white overflow-y-auto shadow-sm">
+    <div className="ui-page-enter h-full bg-white overflow-y-auto shadow-sm">
       {currentUser?.role_id === 1 && (
-        <div className="p-4 border-b bg-gray-50">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/80">
           <div className="w-full flex flex-wrap justify-center sm:justify-start gap-2">
             <button
               onClick={() => {
@@ -154,7 +156,8 @@ const ContactsList: React.FC<ContactsListProps> = ({
                 onSetSelectedTeacher(null);
                 onClearChatPanel();
               }}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'teachers' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              aria-pressed={currentAdminView === 'teachers'}
+              className={`ui-tab ui-interactive px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'teachers' ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/20' : 'bg-white text-slate-600 shadow-sm hover:bg-orange-50 hover:text-orange-700'}`}
             >
               Profesores
             </button>
@@ -164,7 +167,8 @@ const ContactsList: React.FC<ContactsListProps> = ({
                 onSetSelectedTeacher(null);
                 onClearChatPanel();
               }}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'all-students' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              aria-pressed={currentAdminView === 'all-students'}
+              className={`ui-tab ui-interactive px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${currentAdminView === 'all-students' ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/20' : 'bg-white text-slate-600 shadow-sm hover:bg-orange-50 hover:text-orange-700'}`}
             >
               Todos los Alumnos
             </button>
@@ -178,7 +182,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
         </div>
       )}
 
-      <div className="p-4 border-b flex justify-between items-center">
+      <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-white to-orange-50/40 flex justify-between items-center">
         {currentUser?.role_id === 1 && currentAdminView === 'students' && (
           <button
             onClick={() => {
@@ -186,13 +190,13 @@ const ContactsList: React.FC<ContactsListProps> = ({
               onSetSelectedTeacher(null);
               onClearChatPanel();
             }}
-            className="flex items-center text-orange-500 hover:text-orange-600 text-sm"
+            className="ui-interactive rounded-lg flex items-center text-orange-600 hover:text-orange-700 text-sm"
           >
             <ChevronLeft className="w-4 h-4 mr-1" />
             Volver a Profesores
           </button>
         )}
-        <h2 className={`text-md font-semibold text-gray-700 ${currentUser?.role_id === 1 && currentAdminView === 'students' ? 'ml-auto' : 'mx-auto'}`}>
+        <h2 className={`text-md font-semibold text-slate-800 ${currentUser?.role_id === 1 && currentAdminView === 'students' ? 'ml-auto' : 'mx-auto'}`}>
           {getHeaderTitle()}
         </h2>
         {currentUser?.role_id === 1 && currentAdminView === 'students' && (
@@ -202,7 +206,7 @@ const ContactsList: React.FC<ContactsListProps> = ({
 
       <ul>
         {listItems.length === 0 ? (
-          <li className="p-4 text-gray-500 text-center text-sm">
+          <li className="ui-empty-state ui-feedback p-4 text-slate-500 text-center text-sm bg-slate-50/60">
             {getEmptyListMessage()}
           </li>
         ) : (
@@ -212,8 +216,8 @@ const ContactsList: React.FC<ContactsListProps> = ({
             return (
               <li
                 key={item.id}
-                className={`flex items-center p-3 border-b cursor-pointer hover:bg-blue-50 ${
-                  selectedChatTargetId === String(item.id) ? 'bg-blue-100' : ''
+                className={`ui-stagger-item ui-soft-row ui-interactive group flex items-center p-3 border-b border-slate-100 cursor-pointer hover:bg-orange-50 ${
+                  selectedChatTargetId === String(item.id) ? 'bg-orange-50 shadow-[inset_3px_0_0_#f97316]' : ''
                 }`}
                 onClick={() => {
                   if (currentUser?.role_id === 1) {
@@ -231,14 +235,14 @@ const ContactsList: React.FC<ContactsListProps> = ({
                 }}
               >
                 <div className="flex-1">
-                  <div className="font-medium text-gray-800">{item.name}</div>
-                  <div className="text-sm text-gray-500 capitalize">
+                  <div className="font-medium text-slate-800 group-hover:text-orange-700 transition-colors duration-200 motion-reduce:transition-none">{item.name}</div>
+                  <div className="text-sm text-slate-500 capitalize">
                     {item.role_id === 2 ? 'Profesor' : (item.role_id === 3 ? 'Estudiante' : 'Usuario')}
                   </div>
                 </div>
                 {/* --- ¡NUEVO! Mostrar el contador de mensajes no leídos --- */}
                 {unreadCount > 0 && (
-                  <span className="ml-2 px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                  <span className="ui-feedback ml-2 px-2 py-1 bg-orange-500 text-white text-xs font-bold rounded-full shadow-sm shadow-orange-500/20">
                     {unreadCount}
                   </span>
                 )}
@@ -247,7 +251,8 @@ const ContactsList: React.FC<ContactsListProps> = ({
                   <button
                     onClick={(e) => { e.stopPropagation(); onDirectChat(item.id, item); }}
                     title={`Chatear con ${item.name}`}
-                    className="ml-2 p-2 rounded-full text-orange-500 hover:bg-orange-100"
+                    aria-label={`Chatear con ${item.name}`}
+                    className="ui-icon-tile ui-interactive ml-2 p-2 rounded-full text-orange-600 hover:bg-orange-100"
                   >
                     <MessageSquare size={18} />
                   </button>

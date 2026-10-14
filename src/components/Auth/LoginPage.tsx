@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Lock, Mail, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import logo from '../../assets/logo.png';
+import BrandLoader from '../UI/BrandLoader';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -61,11 +62,11 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow">
+    <div className="auth-page min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="auth-card max-w-md w-full space-y-8 bg-white p-6 sm:p-8">
         <div className="text-center">
           <div className="flex justify-center">
-            <img src={logo} alt="Logo English New Path" className="h-20 w-20 object-contain" />
+            <img src={logo} alt="Logo English New Path" className="h-20 w-20 object-contain rounded-full ring-4 ring-orange-50 shadow-sm" />
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Iniciar sesión</h2>
           <p className="mt-2 text-sm text-gray-600">
@@ -74,7 +75,7 @@ const LoginPage: React.FC = () => {
         </div>
 
         {error && (
-          <div className="rounded-md bg-red-50 p-4">
+          <div className="ui-feedback rounded-xl border border-red-100 bg-red-50 p-4">
             <div className="flex">
               <AlertCircle className="h-5 w-5 text-red-400" />
               <div className="ml-3">
@@ -126,8 +127,9 @@ const LoginPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
+                  className="ui-interactive absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
                   tabIndex={-1}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 >
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
@@ -139,11 +141,11 @@ const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white ${
-                loading ? 'bg-blue-400' : 'bg-orange-600 hover:bg-orange-700'
+              className={`ui-interactive group relative w-full min-h-12 flex items-center justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-xl text-white shadow-sm ${
+                loading ? 'bg-orange-400' : 'bg-orange-600 hover:bg-orange-700 hover:shadow-md'
               } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-colors`}
             >
-              {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
+              {loading ? <BrandLoader inline size="sm" label="Iniciando sesión..." /> : 'Iniciar sesión'}
             </button>
           </div>
         </form>

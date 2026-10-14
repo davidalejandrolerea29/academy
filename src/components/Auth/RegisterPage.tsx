@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import BrandLoader from '../UI/BrandLoader';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Video, Lock, Mail, User, AlertCircle } from 'lucide-react';
@@ -48,8 +49,8 @@ const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow">
+    <div className="auth-page min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="auth-card max-w-md w-full space-y-8 bg-white p-6 sm:p-8">
         <div className="text-center">
           <div className="flex justify-center">
             <Video className="h-12 w-12 text-orange-500" />
@@ -63,7 +64,7 @@ const RegisterPage: React.FC = () => {
         </div>
         
         {error && (
-          <div className="rounded-md bg-red-50 p-4">
+          <div className="ui-feedback rounded-xl border border-red-100 bg-red-50 p-4">
             <div className="flex">
               <div className="flex-shrink-0">
                 <AlertCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
@@ -182,17 +183,17 @@ const RegisterPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white ${
-                loading ? 'bg-blue-400' : 'bg-orange-600 hover:bg-orange-700'
+              className={`ui-interactive group relative w-full min-h-12 flex items-center justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-xl text-white shadow-sm ${
+                loading ? 'bg-orange-400' : 'bg-orange-600 hover:bg-orange-700 hover:shadow-md'
               } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-colors`}
             >
-              {loading ? 'Registrando...' : 'Registrarse'}
+              {loading ? <BrandLoader inline size="sm" label="Registrando..." /> : 'Registrarse'}
             </button>
           </div>
           
           <div className="text-center text-sm">
             <span className="text-gray-600">¿Ya tienes una cuenta? </span>
-            <Link to="/login" className="font-medium text-orange-600 hover:text-orange-500">
+            <Link to="/login" className="ui-interactive rounded font-medium text-orange-600 hover:text-orange-500">
               Iniciar sesión
             </Link>
           </div>
