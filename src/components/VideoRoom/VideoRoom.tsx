@@ -147,10 +147,12 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     // Espejo de participants para leerlo desde intervalos/closures sin valores viejos.
     const participantsRef = useRef<Record<string, any>>({});
 
-    // --- Grabación propia (solo profesor) ---
+    // --- Grabación propia AUTOMÁTICA (solo profesor): arranca cuando hay alguien en la sala, corta al irse todos ---
     const [isRecording, setIsRecording] = useState(false);
     const recordingServiceRef = useRef<RecordingService | null>(null);
     const recordingSourceRef = useRef<RecordingSource>({ screen: null, cameras: [], audioStreams: [] });
+    const recordingBusyRef = useRef(false);        // evita starts/stops simultáneos
+    const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // gracia antes de cortar
     const channelRef = useRef<EchoChannel | null>(null);
 
     // Connection monitoring states
@@ -739,6 +741,15 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     const handleEndCall = useCallback(() => {
         console.log("🟢 ¡Botón de colgar presionado! Iniciando limpieza de la llamada.");
 
+        // 0. Detener y SUBIR la grabación si estaba activa (antes de cerrar streams/canal).
+        if (autoStopTimerRef.current) { clearTimeout(autoStopTimerRef.current); autoStopTimerRef.current = null; }
+        if (recordingServiceRef.current) {
+            const recSvc = recordingServiceRef.current;
+            recordingServiceRef.current = null;
+            setIsRecording(false);
+            recSvc.stop().catch(e => console.error('[Recording] error al detener en colgar:', e));
+        }
+
         // No necesitamos verificar `currentUser?.id` aquí si esta función solo se llama cuando hay un usuario activo.
         // Si esta función se puede llamar sin `currentUser`, entonces la verificación es útil.
 
@@ -1314,24 +1325,50 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
     }, [localStream, videoEnabled, localScreenShareStream, isSharingScreen, participants]);
 
     // Iniciar / detener grabación (solo el profesor)
-    const toggleRecording = useCallback(async () => {
-        if (!isRecording) {
-            try {
-                const svc = new RecordingService(API_URL, currentUser?.token || '', () => recordingSourceRef.current);
-                await svc.start(roomId);
-                recordingServiceRef.current = svc;
-                setIsRecording(true);
-            } catch (e) {
-                console.error('[Recording] no se pudo iniciar:', e);
-                alert('No se pudo iniciar la grabación.');
-            }
-        } else {
-            setIsRecording(false);
-            const svc = recordingServiceRef.current;
-            recordingServiceRef.current = null;
-            try { await svc?.stop(); } catch (e) { console.error('[Recording] error al detener:', e); }
+    const startRecording = useCallback(async () => {
+        if (recordingServiceRef.current || recordingBusyRef.current) return;
+        recordingBusyRef.current = true;
+        try {
+            const svc = new RecordingService(API_URL, currentUser?.token || '', () => recordingSourceRef.current);
+            await svc.start(roomId);
+            recordingServiceRef.current = svc;
+            setIsRecording(true);
+            console.log('[Recording] AUTO: grabación iniciada.');
+        } catch (e) {
+            console.error('[Recording] no se pudo iniciar:', e);
+        } finally {
+            recordingBusyRef.current = false;
         }
-    }, [isRecording, API_URL, currentUser, roomId]);
+    }, [API_URL, currentUser, roomId]);
+
+    const stopRecording = useCallback(async () => {
+        if (autoStopTimerRef.current) { clearTimeout(autoStopTimerRef.current); autoStopTimerRef.current = null; }
+        const svc = recordingServiceRef.current;
+        if (!svc) { setIsRecording(false); return; }
+        recordingServiceRef.current = null;
+        setIsRecording(false);
+        try { await svc.stop(); console.log('[Recording] AUTO: grabación detenida y subida.'); }
+        catch (e) { console.error('[Recording] error al detener:', e); }
+    }, []);
+
+    // --- Grabación AUTOMÁTICA: arranca cuando el profe tiene al menos 1 participante; corta al irse todos ---
+    const remoteParticipantCount = Object.keys(participants).length;
+    useEffect(() => {
+        if (!isTeacher) return; // solo el profe graba
+        if (remoteParticipantCount >= 1) {
+            // Hay alguien en la sala → cancelar cualquier corte pendiente y asegurar que esté grabando.
+            if (autoStopTimerRef.current) { clearTimeout(autoStopTimerRef.current); autoStopTimerRef.current = null; }
+            if (!recordingServiceRef.current) startRecording();
+        } else {
+            // Se fueron todos → cortar con una gracia (por si fue un micro-corte y vuelven).
+            if (recordingServiceRef.current && !autoStopTimerRef.current) {
+                autoStopTimerRef.current = setTimeout(() => {
+                    autoStopTimerRef.current = null;
+                    if (Object.keys(participantsRef.current || {}).length === 0) stopRecording();
+                }, 20000); // 20s de gracia
+            }
+        }
+    }, [isTeacher, remoteParticipantCount, startRecording, stopRecording]);
 
     // --- WATCHDOG de recuperación: mantiene las conexiones firmes sin tener que re-entrar ---
     // Cada 5s: (1) asegura que cada participante tenga PeerConnection; (2) reinicia ICE en
@@ -2255,16 +2292,6 @@ const VideoRoom: React.FC<VideoRoomProps> = ({
                         >
                             <ScreenShare size={20} />
                         </button>
-
-                        {isTeacher && (
-                            <button
-                                onClick={toggleRecording}
-                                title={isRecording ? 'Detener grabación' : 'Grabar la clase'}
-                                className={`w-11 h-11 md:w-12 md:h-12 rounded-full flex items-center justify-center transition ${isRecording ? 'bg-red-600 hover:bg-red-700 animate-pulse' : 'bg-gray-700 hover:bg-gray-600'}`}
-                            >
-                                {isRecording ? <StopCircle size={20} /> : <Circle size={20} className="text-red-500" fill="currentColor" />}
-                            </button>
-                        )}
 
                         <button
                             onClick={() => setIsChatOpenDesktop(prev => !prev)}
